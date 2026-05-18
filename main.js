@@ -3,6 +3,7 @@ const path = require('node:path')
 const fs = require('node:fs')
 const os = require('node:os')
 const zlib = require('node:zlib')
+const crypto = require('node:crypto')
 const { spawnSync, spawn } = require('node:child_process')
 const pkg = require(app.getAppPath() + '/package.json')
 const { checkForUpdate } = require('./src/update-check')
@@ -85,6 +86,295 @@ if (profile) {
       off += 12 + len
     }
     return null
+  }
+
+  // Uploads a local file to the configured rclone Google Drive remote and returns
+  // the Google Docs edit URL for the uploaded file. Resolves to null on any error
+  // (missing config, rclone failure, no file ID returned).
+  // The window is opened at the default URL first so the user isn't staring at a
+  // blank screen during the upload; navigation happens once the ID is known.
+  function fmtBytes(b) {
+    if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB'
+    if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB'
+    if (b >= 1e3) return (b / 1e3).toFixed(0) + ' KB'
+    return b + ' B'
+  }
+
+  // Reads the installed app icon and returns a base64 data URL for inline embedding.
+  // Prefers SVG over PNG; returns null if neither exists.
+  function appIconDataUrl() {
+    const desktopName = `wrapweb-${pkg.profile}`
+    const hicolor     = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
+    const svgPath     = path.join(hicolor, 'scalable', 'apps', `${desktopName}.svg`)
+    const pngPath     = path.join(hicolor, '48x48',    'apps', `${desktopName}.png`)
+    if (fs.existsSync(svgPath)) return `data:image/svg+xml;base64,${fs.readFileSync(svgPath).toString('base64')}`
+    if (fs.existsSync(pngPath)) return `data:image/png;base64,${fs.readFileSync(pngPath).toString('base64')}`
+    return null
+  }
+
+  // Builds a self-contained confirm page with a local-vs-Drive comparison table.
+  // localStat is an fs.Stats object; existing is an rclone lsjson entry.
+  function buildConfirmPage(filename, existing, localStat, de) {
+    const title      = de ? 'Datei überschreiben?' : 'Overwrite file?'
+    const btnOpen    = de ? 'Bestehende öffnen'    : 'Open existing'
+    const btnOver    = de ? 'Überschreiben'        : 'Overwrite'
+    const labelLocal = de ? 'Lokal'                : 'Local'
+    const labelDrive = 'Google Drive'
+    const labelMod   = de ? 'Geändert'             : 'Modified'
+    const labelSize  = de ? 'Größe'                : 'Size'
+
+    const localMod    = localStat.mtime.toLocaleString()
+    const localSize   = fmtBytes(localStat.size)
+    const remMod      = new Date(existing.ModTime).toLocaleString()
+    const remSize     = fmtBytes(existing.Size)
+    const appIconUrl  = appIconDataUrl()
+    const wrapwebSvg  = path.join(__dirname, 'assets', 'wrapweb.svg')
+    const wrapwebIcon = fs.existsSync(wrapwebSvg)
+      ? `data:image/svg+xml;base64,${fs.readFileSync(wrapwebSvg).toString('base64')}`
+      : null
+    const rcloneSvg  = path.join(__dirname, 'assets', 'rclone.svg')
+    const rcloneIcon = fs.existsSync(rcloneSvg)
+      ? `data:image/svg+xml;base64,${fs.readFileSync(rcloneSvg).toString('base64')}`
+      : null
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+      :root{
+        --bg:#f0f0f0;--card-bg:white;--card-fg:#1e1e1e;
+        --card-url:#888;--muted-bg:#e9e9e9;--muted-fg:#666;
+        --shadow:rgba(0,0,0,0.25);--div:#d8d8d8;
+      }
+      body{display:flex;align-items:center;justify-content:center;
+           height:100vh;background:var(--bg);
+           font-family:'Ubuntu',sans-serif;color:var(--card-fg);color-scheme:light}
+      .dialog{background:var(--card-bg);border-radius:12px;width:460px;max-width:90vw;
+              box-shadow:0 8px 32px var(--shadow);
+              display:flex;flex-direction:column;overflow:hidden}
+      .dialog-header{
+        background:linear-gradient(135deg,#5ab4f0 0%,#1a7bc4 100%);
+        padding:8px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+      .header-icon-wrap{position:relative;width:32px;height:32px;flex-shrink:0}
+      .header-icon-wrap>img{width:32px;height:32px;
+                            filter:drop-shadow(0 1px 3px rgba(0,0,0,0.25))}
+      .header-rclone-badge{position:absolute;bottom:-3px;right:-3px;
+        width:16px;height:16px;border-radius:50%;
+        background:rgba(255,255,255,0.9);
+        box-shadow:0 1px 3px rgba(0,0,0,0.30);
+        display:flex;align-items:center;justify-content:center}
+      .header-rclone-badge img{width:10px;height:10px}
+      .dialog-body{padding:20px 24px 18px;display:flex;flex-direction:column;gap:16px}
+      .title{font-size:15px;font-weight:600}
+      .file-row{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+      .file-icon{width:16px;height:16px;flex-shrink:0;object-fit:contain}
+      .filename{font-size:13px;font-weight:600;word-break:break-all;color:var(--card-fg)}
+      .compare{background:var(--muted-bg);border-radius:6px;padding:10px 12px;
+               display:grid;grid-template-columns:auto 1fr 1fr;
+               gap:5px 16px;align-items:center}
+      .col-head{font-size:11px;font-weight:600;text-transform:uppercase;
+                letter-spacing:.05em;color:var(--card-url);text-align:center;
+                padding-bottom:3px;border-bottom:1px solid var(--div)}
+      .col-head:first-child{border-bottom:none}
+      .row-label{font-size:12px;color:var(--card-url)}
+      .row-val{font-size:13px;color:var(--card-fg);text-align:center}
+      .actions{display:flex;justify-content:flex-end;gap:8px}
+      button{padding:7px 18px;border-radius:8px;border:none;cursor:pointer;
+             font-size:13px;font-weight:500;font-family:'Ubuntu',sans-serif;
+             transition:opacity .15s}
+      button:hover{opacity:.85}
+      .btn-sec{background:var(--muted-bg);color:var(--muted-fg)}
+      .btn-pri{background:#1a73e8;color:#fff}
+    </style></head><body>
+    <div class="dialog">
+      <div class="dialog-header">
+        <div class="header-icon-wrap">
+          ${wrapwebIcon ? `<img src="${wrapwebIcon}" alt="wrapweb">` : ''}
+          ${rcloneIcon  ? `<span class="header-rclone-badge"><img src="${rcloneIcon}" alt=""></span>` : ''}
+        </div>
+      </div>
+      <div class="dialog-body">
+        <span class="title">${title}</span>
+        <div>
+          <div class="file-row">
+            ${appIconUrl ? `<img class="file-icon" src="${appIconUrl}" alt="">` : ''}
+            <span class="filename">${filename}</span>
+          </div>
+          <div class="compare">
+            <span></span>
+            <span class="col-head">${labelLocal}</span>
+            <span class="col-head">${labelDrive}</span>
+
+            <span class="row-label">${labelMod}</span>
+            <span class="row-val">${localMod}</span>
+            <span class="row-val">${remMod}</span>
+
+            <span class="row-label">${labelSize}</span>
+            <span class="row-val">${localSize}</span>
+            <span class="row-val">${remSize}</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn-sec" onclick="c(1)">${btnOpen}</button>
+          <button class="btn-pri" onclick="c(0)">${btnOver}</button>
+        </div>
+      </div>
+    </div>
+    <script>function c(v){window.electronAPI.rcloneConfirm(v)}<\/script>
+    </body></html>`
+    return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+  }
+
+  // Computes the MD5 hash of a local file.
+  function localMd5(filePath) {
+    return crypto.createHash('md5').update(fs.readFileSync(filePath)).digest('hex')
+  }
+
+  // Fetches the MD5 hash of a single remote rclone path via `rclone md5sum`.
+  // Returns null if the remote doesn't support MD5 or the call fails.
+  // Uses spawn (not spawnSync) to avoid blocking the main process.
+  function remoteMd5(remotePath) {
+    return new Promise(resolve => {
+      const child = spawn('rclone', ['md5sum', remotePath])
+      let out = ''
+      child.stdout?.on('data', d => { out += d.toString() })
+      child.on('close', code => {
+        if (code !== 0) { resolve(null); return }
+        const match = out.trim().match(/^([0-9a-f]{32})/)
+        resolve(match ? match[1] : null)
+      })
+      child.on('error', () => resolve(null))
+    })
+  }
+
+  // Polls remoteMd5 until it matches expectedHash or the deadline is reached.
+  // Used after upload to wait for Drive to finish processing the new file before
+  // navigating — Drive can lag several seconds between upload and content availability.
+  async function waitForDriveSync(remotePath, expectedHash, win, de) {
+    const processingText = de ? 'Wird verarbeitet …' : 'Processing …'
+    if (!win.isDestroyed()) win.webContents.loadURL(buildRcloneLoadingPage(processingText))
+    const deadline = Date.now() + 20000
+    while (Date.now() < deadline) {
+      const remoteHash = await remoteMd5(remotePath)
+      if (remoteHash === expectedHash) return
+      await new Promise(r => setTimeout(r, 1500))
+    }
+  }
+
+  function rcloneList(folder) {
+    return new Promise(resolve => {
+      const child = spawn('rclone', ['lsjson', folder])
+      let out = ''
+      child.stdout?.on('data', d => { out += d.toString() })
+      child.on('close', code => {
+        if (code !== 0) { resolve([]); return }
+        try { resolve(JSON.parse(out)) } catch { resolve([]) }
+      })
+      child.on('error', () => resolve([]))
+    })
+  }
+
+  // Registers a one-shot 'close' handler that downloads the Drive file back to the
+  // original local path before allowing the window to close. Only called when an
+  // actual upload happened — not when the user chose "open existing" without uploading.
+  function registerRcloneSyncBack(win, remotePath, localPath, de) {
+    if (win.isDestroyed()) return
+    const syncText = de ? 'Wird synchronisiert …' : 'Syncing …'
+    win.once('close', async (event) => {
+      event.preventDefault()
+      if (!win.isDestroyed()) win.webContents.loadURL(buildRcloneLoadingPage(syncText))
+      await new Promise(resolve => {
+        const child = spawn('rclone', ['copyto', remotePath, localPath])
+        child.on('close', () => resolve())
+        child.on('error', () => resolve())
+      })
+      win.destroy()
+    })
+  }
+
+  // Uploads a local file to the configured rclone Google Drive remote and returns
+  // the Google Docs edit URL. Checks for an existing Drive file first and asks
+  // the user whether to overwrite; if declined, opens the existing file directly.
+  async function resolveRcloneFileUrl(raw, win) {
+    if (!raw || !pkg.rcloneFileHandler) return null
+    const filePath = raw.startsWith('file://') ? new URL(raw).pathname : raw
+    if (!path.isAbsolute(filePath)) return null
+
+    const cfgPath = path.join(app.getPath('appData'), 'wrapweb', 'rclone.json')
+    let remote, uploadFolder
+    try {
+      const cfgJson    = JSON.parse(fs.readFileSync(cfgPath, 'utf8'))
+      remote           = cfgJson.googleDriveRemote
+      // Per-app folder name, defaults to the app profile if not explicitly configured.
+      const folderName = cfgJson.uploadFolders?.[pkg.profile] ?? pkg.profile
+      uploadFolder     = `${remote}:${folderName}`
+    } catch { return null }
+    if (!remote) return null
+
+    const filename = path.basename(filePath)
+    const dest     = `${uploadFolder}/${filename}`
+    const de           = app.getLocale().split('-')[0].toLowerCase() === 'de'
+
+    // Check whether the file already exists on Drive before uploading.
+    const localStat = fs.statSync(filePath)   // file existence already verified above
+    const files     = await rcloneList(uploadFolder)
+    const existing  = files.find(f => f.Name === filename)
+
+    if (existing) {
+      // Fast-path: skip upload entirely when local and Drive file are identical.
+      // Size is checked first (free); hashes only compared when sizes match.
+      if (existing.Size === localStat.size) {
+        const lHash = localMd5(filePath)
+        const rHash = await remoteMd5(dest)
+        if (lHash && rHash && lHash === rHash) {
+          registerRcloneSyncBack(win, dest, filePath, de)
+          return `${pkg.rcloneEditUrlBase}/${existing.ID}/edit`
+        }
+      }
+
+      // Show the HTML confirm page and wait for the user's button click via IPC.
+      // Clean up both listeners (IPC + window close) whichever fires first.
+      const choice = await new Promise(resolve => {
+        const done = (v) => {
+          ipcMain.removeListener('rclone-confirm', onIpc)
+          win.removeListener('closed', onClose)
+          resolve(v)
+        }
+        const onIpc   = (_, v) => done(v)
+        const onClose = ()     => done(1)   // treat window close as "open existing"
+        ipcMain.once('rclone-confirm', onIpc)
+        win.once('closed', onClose)
+        win.webContents.loadURL(buildConfirmPage(filename, existing, localStat, de))
+      })
+
+      // User chose not to overwrite — open the existing Drive file directly.
+      if (choice !== 0) return `${pkg.rcloneEditUrlBase}/${existing.ID}/edit`
+
+      // Show loading page while the overwrite upload runs.
+      if (!win.isDestroyed()) win.webContents.loadURL(buildRcloneLoadingPage())
+    }
+
+    // Upload (overwrite or new file). --no-check-dest bypasses rclone's skip logic so
+    // the local file is always transferred, even if rclone considers the remote up to date.
+    const uploadOk = await new Promise(resolve => {
+      const child = spawn('rclone', ['copyto', '--no-check-dest', filePath, dest])
+      child.on('close', code => resolve(code === 0))
+      child.on('error', () => resolve(false))
+    })
+    if (!uploadOk) return null
+
+    // Wait for Drive to finish processing the uploaded file before navigating.
+    // Without this, Google Docs may open the previous cached version.
+    const uploadedHash = localMd5(filePath)
+    await waitForDriveSync(dest, uploadedHash, win, de)
+
+    // Register sync-back: on window close, copy the Drive file back to the local path.
+    registerRcloneSyncBack(win, dest, filePath, de)
+
+    // Drive keeps the same ID when overwriting; for new files fetch it from the listing.
+    if (existing) return `${pkg.rcloneEditUrlBase}/${existing.ID}/edit`
+
+    const updated = await rcloneList(uploadFolder)
+    const id = updated.find(f => f.Name === filename)?.ID
+    return id ? `${pkg.rcloneEditUrlBase}/${id}/edit` : null
   }
 
   function resolveFileUrl(raw) {
@@ -179,7 +469,7 @@ if (profile) {
   }
 
   const rawArg   = process.argv.slice(1).find(a => /^(https?:|mailto:|file:)/.test(a) ||
-    (pkg.fileHandler && path.isAbsolute(a) && fs.existsSync(a)))
+    ((pkg.fileHandler || pkg.rcloneFileHandler) && path.isAbsolute(a) && fs.existsSync(a)))
   const urlArg   = resolveUrl(rawArg) ?? resolveFileUrl(rawArg)
   const jsArg    = resolveMailtoJs(rawArg)
   const jsFields = (rawArg?.startsWith('mailto:') && pkg.mailtoJs) ? parseMailtoFields(rawArg) : null
@@ -191,7 +481,7 @@ if (profile) {
     if (!gotLock) { app.quit(); return }
     app.on('second-instance', (event, argv) => {
       const raw2     = argv.slice(1).find(a => /^(https?:|mailto:|file:)/.test(a) ||
-        (pkg.fileHandler && path.isAbsolute(a) && fs.existsSync(a)))
+        ((pkg.fileHandler || pkg.rcloneFileHandler) && path.isAbsolute(a) && fs.existsSync(a)))
       const url      = resolveUrl(raw2) ?? resolveFileUrl(raw2)
       const js       = resolveMailtoJs(raw2)
       const js2Fields = (raw2?.startsWith('mailto:') && pkg.mailtoJs) ? parseMailtoFields(raw2) : null
@@ -208,9 +498,50 @@ if (profile) {
     })
   }
 
+  // Builds a self-contained data: URL loading page shown while the rclone upload runs.
+  // Ubuntu is a system font on Ubuntu Linux and picked up by Chromium without a network request.
+  function buildRcloneLoadingPage(text) {
+    const lang = app.getLocale().split('-')[0].toLowerCase()
+    if (!text) text = lang === 'de' ? 'Wird hochgeladen …' : 'Uploading …'
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      * { margin: 0; padding: 0; box-sizing: border-box }
+      body {
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; height: 100vh;
+        background: #fff; font-family: 'Ubuntu', sans-serif; color: #3c4043;
+        color-scheme: light;
+      }
+      .spinner {
+        width: 48px; height: 48px;
+        border: 4px solid #e8eaed; border-top-color: #4285f4;
+        border-radius: 50%; animation: spin .9s linear infinite;
+        margin-bottom: 20px;
+      }
+      @keyframes spin { to { transform: rotate(360deg) } }
+      p { font-size: 15px; font-weight: 400 }
+    </style></head><body>
+      <div class="spinner"></div>
+      <p>${text}</p>
+    </body></html>`
+    return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+  }
+
   const { createWindow } = require('./src/window')
-  app.whenReady().then(() => {
-    const win = createWindow(urlArg ? { ...pkg, url: urlArg } : pkg)
+  app.whenReady().then(async () => {
+    const useRclone = pkg.rcloneFileHandler && rawArg && !urlArg
+    const initialUrl = useRclone ? buildRcloneLoadingPage() : (urlArg ?? null)
+    const win = createWindow(initialUrl ? { ...pkg, url: initialUrl } : pkg)
+
+    // rclone file handler: window shows a loading page while the upload runs,
+    // then navigates to the edit URL (or falls back to the default URL on error).
+    if (useRclone) {
+      resolveRcloneFileUrl(rawArg, win).then(editUrl => {
+        if (!win.isDestroyed()) win.webContents.loadURL(editUrl ?? pkg.url)
+      }).catch(() => {
+        if (!win.isDestroyed()) win.webContents.loadURL(pkg.url)
+      })
+    }
+
     if (jsArg) {
       win.webContents.once('did-finish-load', () => {
         win.webContents.executeJavaScript(jsArg).catch(() => {})
@@ -249,8 +580,19 @@ if (profile) {
         const profilePath  = path.join(app.getPath('appData'), 'wrapweb', cfg.profile)
         const isDefaultMailHandler = defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`
         let builtVersion = null
+        let builtRclone  = false
         if (built) {
-          try { builtVersion = fs.readFileSync(path.join(__dirname, 'dist', `wrapweb-${cfg.profile}.version`), 'utf8').trim() } catch {}
+          try {
+            const raw = fs.readFileSync(path.join(__dirname, 'dist', `wrapweb-${cfg.profile}.version`), 'utf8').trim()
+            try {
+              // New format: JSON with version + optional capability flags.
+              const meta  = JSON.parse(raw)
+              builtVersion = meta.version   ?? null
+              builtRclone  = meta.rcloneFileHandler ?? false
+            } catch {
+              builtVersion = raw   // backward compat: plain version string from older builds
+            }
+          } catch {}
         }
         // In tests, only flag as outdated when a .version file is present and older
         // than minVer — avoids false positives for AppImages built without the sidecar.
@@ -260,7 +602,7 @@ if (profile) {
             ? builtVersion !== null && semverLt(builtVersion, minVer)
             : semverLt(builtVersion ?? '0.0.0', minVer)
         )
-        return { profile: cfg.profile, configLabel, name: cfg.name, url: cfg.url, built, installed, isPrivate: f.startsWith('build.private.'), iconValue, appImagePath, profilePath, icon: cfg.icon || null, geometry: cfg.geometry || null, userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false, singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null, mimeTypes: cfg.mimeTypes || null, mailtoJs: cfg.mailtoJs || null, isDefaultMailHandler, category: cfg.category || null, builtVersion, needsRebuild }
+        return { profile: cfg.profile, configLabel, name: cfg.name, url: cfg.url, built, installed, isPrivate: f.startsWith('build.private.'), iconValue, appImagePath, profilePath, icon: cfg.icon || null, geometry: cfg.geometry || null, userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false, singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null, mimeTypes: cfg.mimeTypes || null, mailtoJs: cfg.mailtoJs || null, isDefaultMailHandler, category: cfg.category || null, builtVersion, builtRclone, rcloneFileHandler: cfg.rcloneFileHandler || false, needsRebuild }
       })
 
     configs.sort((a, b) => {
@@ -302,7 +644,9 @@ if (profile) {
       // Falls back to the bundled SVG when GTK is unavailable (e.g. CI without a theme).
       const r = resolveIconsByGtk(['application-default-icon'])
       const appDefault = r['application-default-icon'] || path.join(__dirname, 'assets', 'webapps', 'application-default-icon.svg')
-      return fi ? { appDefault, filterMicrosoft: fi, filterGoogle: fi } : { appDefault }
+      const rclone = path.join(__dirname, 'assets', 'rclone.svg')
+      const googledrive = path.join(__dirname, 'assets', 'webapps', 'googledrive.svg')
+      return fi ? { appDefault, rclone, googledrive, filterMicrosoft: fi, filterGoogle: fi } : { appDefault, rclone, googledrive }
     }
     const r = resolveIconsByGtk([
       'weather-clear-symbolic', 'weather-clear-night-symbolic',
@@ -319,6 +663,8 @@ if (profile) {
       info: r['dialog-information-symbolic'], build: r['system-run-symbolic'],
       install: r['system-software-install-symbolic'], delete: r['edit-delete-symbolic'],
       appDefault: r['application-default-icon'] || path.join(__dirname, 'assets', 'webapps', 'application-default-icon.svg'),
+      rclone:      path.join(__dirname, 'assets', 'rclone.svg'),
+      googledrive: path.join(__dirname, 'assets', 'webapps', 'googledrive.svg'),
       menu: r['open-menu-symbolic'],
       filterAll: r['view-app-grid-symbolic'], filterPublic: r['applications-internet-symbolic'],
       filterPrivate: r['avatar-default-symbolic'], hideFilter: r['view-filter-symbolic'],
@@ -515,6 +861,48 @@ for name in sorted(theme.list_icons(None)):
 
   ipcMain.handle('manager:check-update', () => checkForUpdate(pkg.version))
 
+  // Synchronous which-check: if rclone is not on PATH the status is 1.
+  ipcMain.handle('manager:rclone-status', () => {
+    const r = spawnSync('which', ['rclone'], { encoding: 'utf8', timeout: 2000 })
+    return { available: r.status === 0 }
+  })
+
+  // Returns names of all rclone remotes configured as Google Drive (type = drive).
+  ipcMain.handle('manager:rclone-drive-remotes', () => {
+    const r = spawnSync('rclone', ['config', 'dump'], { encoding: 'utf8', timeout: 5000 })
+    if (r.status !== 0) return []
+    try {
+      const config = JSON.parse(r.stdout)
+      return Object.entries(config)
+        .filter(([, v]) => v.type === 'drive')
+        .map(([name]) => name)
+    } catch { return [] }
+  })
+
+  // WRAPWEB_TEST_DATA_DIR redirects the rclone config into a temp dir in tests
+  // so tests never read or write the user's real ~/.config/wrapweb/rclone.json.
+  function rcloneConfigPath() {
+    const testDir = process.env.WRAPWEB_TEST_DATA_DIR
+    return testDir
+      ? path.join(testDir, 'rclone.json')
+      : path.join(app.getPath('appData'), 'wrapweb', 'rclone.json')
+  }
+
+  ipcMain.handle('manager:rclone-load-config', () => {
+    try { return JSON.parse(fs.readFileSync(rcloneConfigPath(), 'utf8')) } catch { return {} }
+  })
+
+  ipcMain.handle('manager:rclone-save-config', (event, config) => {
+    const cfgPath = rcloneConfigPath()
+    try {
+      fs.mkdirSync(path.dirname(cfgPath), { recursive: true })
+      fs.writeFileSync(cfgPath, JSON.stringify(config, null, 2))
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
   ipcMain.handle('manager:open-external', (event, url) => {
     const allowed = /^https:\/\/github\.com\//
     if (allowed.test(url)) shell.openExternal(url)
@@ -552,8 +940,18 @@ for name in sorted(theme.list_icons(None)):
       let stdout = '', stderr = ''
       child.stdout?.on('data', d => { stdout += d.toString() })
       child.stderr?.on('data', d => { stderr += d.toString() })
-      child.on('close', code => resolve({ success: code === 0, stdout, stderr }))
-      child.on('error', err => resolve({ success: false, stdout, stderr: err.message }))
+      child.on('close', code => {
+        let builtRclone = false
+        if (code === 0) {
+          try {
+            const raw  = fs.readFileSync(path.join(__dirname, 'dist', `wrapweb-${configLabel}.version`), 'utf8').trim()
+            const meta = JSON.parse(raw)
+            builtRclone = meta.rcloneFileHandler ?? false
+          } catch { /* version file missing or old plain-string format */ }
+        }
+        resolve({ success: code === 0, stdout, stderr, builtRclone })
+      })
+      child.on('error', err => resolve({ success: false, stdout, stderr: err.message, builtRclone: false }))
     })
   })
 

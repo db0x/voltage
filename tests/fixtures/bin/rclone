@@ -1,0 +1,50 @@
+#!/bin/sh
+# Fake rclone binary for Playwright tests.
+# Handles only the subset of commands that wrapweb actually invokes.
+# Never touches the user's real rclone config or Google Drive.
+#
+# Behaviour can be changed per-test via WRAPWEB_TEST_RCLONE_MODE:
+#   new (default)  lsjson returns [] — no existing file in Drive
+#   existing       lsjson returns one entry with a different size
+#   identical      lsjson returns one entry whose size matches
+#                  WRAPWEB_TEST_RCLONE_SIZE; md5sum returns
+#                  WRAPWEB_TEST_RCLONE_HASH
+
+CMD="$1"
+SUB="$2"
+MODE="${WRAPWEB_TEST_RCLONE_MODE:-new}"
+
+case "$CMD $SUB" in
+  "config dump")
+    printf '{"test-drive":{"type":"drive","scope":"drive"}}\n'
+    ;;
+
+  "lsjson"*)
+    case "$MODE" in
+      existing)
+        printf '[{"ID":"test-file-id","Name":"test.docx","Size":9999,"MimeType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","ModTime":"2024-01-01T00:00:00.000000000Z","IsDir":false,"Path":"test.docx"}]\n'
+        ;;
+      identical)
+        SIZE="${WRAPWEB_TEST_RCLONE_SIZE:-0}"
+        printf '[{"ID":"test-file-id","Name":"test.docx","Size":%s,"MimeType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","ModTime":"2024-01-01T00:00:00.000000000Z","IsDir":false,"Path":"test.docx"}]\n' "$SIZE"
+        ;;
+      *)
+        printf '[]\n'
+        ;;
+    esac
+    ;;
+
+  "copyto"*)
+    exit 0
+    ;;
+
+  "md5sum"*)
+    HASH="${WRAPWEB_TEST_RCLONE_HASH:-d41d8cd98f00b204e9800998ecf8427e}"
+    # rclone md5sum output format: "<hash>  <path>"
+    printf '%s  %s\n' "$HASH" "$3"
+    ;;
+
+  *)
+    exit 0
+    ;;
+esac

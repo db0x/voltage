@@ -22,4 +22,8 @@ contextBridge.exposeInMainWorld('managerAPI', {
   deleteProfileData:    (profile) => ipcRenderer.invoke('manager:delete-profile-data', profile),
   openExternal:    (url)  => ipcRenderer.invoke('manager:open-external', url),
   checkUpdate:     ()     => ipcRenderer.invoke('manager:check-update'),
+  getRcloneStatus:      ()       => ipcRenderer.invoke('manager:rclone-status'),
+  getRcloneDriveRemotes: ()      => ipcRenderer.invoke('manager:rclone-drive-remotes'),
+  loadRcloneConfig:     ()       => ipcRenderer.invoke('manager:rclone-load-config'),
+  saveRcloneConfig:     (config) => ipcRenderer.invoke('manager:rclone-save-config', config),
 })

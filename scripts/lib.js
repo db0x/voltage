@@ -199,6 +199,20 @@ function installDesktop(app) {
       try { execSync(`which ${cmd}`, { stdio: 'ignore' }); return true } catch { return false }
     })
 
+    // Papirus and similar themes store SVGs in per-size dirs rather than scalable/.
+    // Detect this by checking for SVG files in the theme's size subdirs — if found,
+    // we copy SVGs directly instead of rendering PNGs, so the user-local copy wins
+    // over the system theme's icon-theme.cache (which GTK consults before scanning).
+    const themeUsesSvgInSizeDirs = activeTheme !== 'hicolor' && (() => {
+      try {
+        const hit = execSync(
+          `find /usr/share/icons/${activeTheme} -name "*.svg" -not -path "*/symbolic/*" 2>/dev/null | head -1`,
+          { encoding: 'utf8', timeout: 3000 }
+        )
+        return hit.trim().length > 0
+      } catch { return false }
+    })()
+
     for (const [mimeType, assetFile] of Object.entries(app.mimeIcons)) {
       const src      = path.join(PROJECT_ROOT, 'assets', 'mimetypes', assetFile)
       if (!fs.existsSync(src)) continue
@@ -210,24 +224,38 @@ function installDesktop(app) {
       fs.copyFileSync(src, path.join(svgDir, `${iconName}.svg`))
       console.log(`  MIME icon (SVG) installed: ${path.join(svgDir, iconName + '.svg')}`)
 
-      // For PNG-only themes, render PNGs into the user theme override dir
-      if (converter && activeTheme !== 'hicolor') {
+      if (activeTheme !== 'hicolor') {
         const themeSizes = [16, 22, 24, 32, 48, 64, 96, 128]
-        for (const size of themeSizes) {
-          const pngDir  = path.join(os.homedir(), '.local', 'share', 'icons', activeTheme, `${size}x${size}`, 'mimetypes')
-          const destPng = path.join(pngDir, `${iconName}.png`)
-          try {
-            fs.mkdirSync(pngDir, { recursive: true })
-            if (converter === 'inkscape') {
-              execSync(`inkscape -o "${destPng}" --export-width=${size} "${src}"`, { stdio: 'ignore', timeout: 10000 })
-            } else if (converter === 'rsvg-convert') {
-              execSync(`rsvg-convert -w ${size} -h ${size} -o "${destPng}" "${src}"`, { stdio: 'ignore', timeout: 5000 })
-            } else {
-              execSync(`convert -background none -resize ${size}x${size} "${src}" "${destPng}"`, { stdio: 'ignore', timeout: 5000 })
-            }
-            if (fs.existsSync(destPng))
-              console.log(`  MIME icon (${size}px) installed: ${destPng}`)
-          } catch { /* non-fatal */ }
+        if (themeUsesSvgInSizeDirs) {
+          // SVG theme (e.g. Papirus): copy SVG into each size dir so the user-local
+          // version shadows the system entry without relying on the hicolor fallback.
+          for (const size of themeSizes) {
+            const dir  = path.join(os.homedir(), '.local', 'share', 'icons', activeTheme, `${size}x${size}`, 'mimetypes')
+            const dest = path.join(dir, `${iconName}.svg`)
+            try {
+              fs.mkdirSync(dir, { recursive: true })
+              fs.copyFileSync(src, dest)
+              console.log(`  MIME icon (SVG ${size}px override) installed: ${dest}`)
+            } catch { /* non-fatal */ }
+          }
+        } else if (converter) {
+          // PNG-only theme: render rasterised copies into the user theme override dir
+          for (const size of themeSizes) {
+            const pngDir  = path.join(os.homedir(), '.local', 'share', 'icons', activeTheme, `${size}x${size}`, 'mimetypes')
+            const destPng = path.join(pngDir, `${iconName}.png`)
+            try {
+              fs.mkdirSync(pngDir, { recursive: true })
+              if (converter === 'inkscape') {
+                execSync(`inkscape -o "${destPng}" --export-width=${size} "${src}"`, { stdio: 'ignore', timeout: 10000 })
+              } else if (converter === 'rsvg-convert') {
+                execSync(`rsvg-convert -w ${size} -h ${size} -o "${destPng}" "${src}"`, { stdio: 'ignore', timeout: 5000 })
+              } else {
+                execSync(`convert -background none -resize ${size}x${size} "${src}" "${destPng}"`, { stdio: 'ignore', timeout: 5000 })
+              }
+              if (fs.existsSync(destPng))
+                console.log(`  MIME icon (${size}px) installed: ${destPng}`)
+            } catch { /* non-fatal */ }
+          }
         }
       }
     }

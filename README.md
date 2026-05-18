@@ -246,6 +246,7 @@ App configs live in the `webapps/` directory. For apps you don't want to commit,
 | `mimeExtensions` | object | Maps MIME types to file extensions for system registration (e.g. `{ "application/x-drawio": ["drawio"] }`) — triggers `update-mime-database` on install |
 | `mimeIcons` | object | Maps MIME types to SVG asset filenames (from `assets/`) installed as system file-type icons (e.g. `{ "application/x-drawio": "application-vnd.x-drawio.svg" }`) |
 | `fileHandler` | boolean | Enable local file handling — files passed via the system (e.g. double-click in Nautilus) are read and passed to the app; also grants the `fileSystem` permission required for the File System Access API |
+| `rcloneFileHandler` | boolean | Enable rclone-based file handling — files are uploaded to the configured Google Drive remote (set via the Manager's rclone Integration dialog) and opened via their Google Docs/Sheets/Slides edit URL |
 | `mailtoTemplate` | string | Base URL for the compose window — `mailto:` parameters are appended as a query string |
 | `mailtoParamMap` | object | Rename `mailto:` parameters before appending (e.g. `{ "subject": "su" }` for Gmail) |
 | `mailtoJs` | string | JavaScript injected after page load to open compose — use `{to}`, `{subject}`, `{body}`, `{cc}`, `{bcc}` as placeholders; for web apps that open compose via JS API rather than URL routing (e.g. Open-Xchange / Strato) |

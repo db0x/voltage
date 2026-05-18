@@ -1,10 +1,11 @@
 // Single source of truth for card visibility. applyVisibility() is called
 // whenever a filter changes, a card is added, or an app is installed/deleted.
-export function initDrawer({ i18n, icons }) {
+export function initDrawer({ i18n, icons, rcloneAvailable }) {
   const { sun: sunSrc, moon: moonSrc, menu: menuSrc,
           filterAll: filterAllSrc, filterPublic: filterPublicSrc,
           filterPrivate: filterPrivateSrc,
-          filterMicrosoft: filterMicrosoftSrc, filterGoogle: filterGoogleSrc } = icons
+          filterMicrosoft: filterMicrosoftSrc, filterGoogle: filterGoogleSrc,
+          rclone: rcloneIconSrc } = icons
 
   const menuBtn  = document.getElementById('menu-btn')
   const menuIcon = document.getElementById('menu-icon')
@@ -52,6 +53,13 @@ export function initDrawer({ i18n, icons }) {
     <button class="menu-item" id="menu-profiles">
       <span>${i18n.drawerProfiles}</span>
     </button>
+    ${rcloneAvailable ? `
+    <hr class="drawer-divider">
+    <div class="drawer-section-label">${i18n.drawerRcloneSection}</div>
+    <button class="menu-item" id="menu-rclone">
+      ${rcloneIconSrc ? `<img src="${rcloneIconSrc}" alt="">` : ''}
+      <span>${i18n.drawerRclone}</span>
+    </button>` : ''}
     <button class="menu-item drawer-about-btn" id="menu-about">
       <span>${i18n.drawerAbout}</span>
     </button>

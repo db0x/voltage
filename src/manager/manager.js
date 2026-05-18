@@ -10,6 +10,7 @@ import { initEditDialog }      from './dialogs/edit.js'
 import { initAboutDialog }     from './dialogs/about.js'
 import { initRebuildNotice }   from './dialogs/rebuild-notice.js'
 import { initUpdateNotice }    from './dialogs/update-notice.js'
+import { initRcloneDialog }    from './dialogs/rclone.js'
 import { initCards }           from './cards.js'
 import { initTooltip }         from './tooltip.js'
 
@@ -24,13 +25,14 @@ function toDisplayName(profile) {
 const dark = localStorage.getItem('dark') === '1'
 if (dark) document.body.classList.add('dark')
 
-const [apps, version, uiIcons, i18n, uaPresets, plugins] = await Promise.all([
+const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus] = await Promise.all([
   window.managerAPI.getApps(),
   window.managerAPI.getVersion(),
   window.managerAPI.getUiIcons(),
   window.managerAPI.getI18n(),
   window.managerAPI.getUaPresets(),
   window.managerAPI.getPlugins(),
+  window.managerAPI.getRcloneStatus(),
 ])
 
 // String interpolation for i18n keys — falls back to the key name if missing.
@@ -44,6 +46,7 @@ const appDefaultSrc = s('appDefault')
 
 const ctx = {
   i18n, tr, apps, version, toDisplayName, appDefaultSrc, uaPresets, plugins,
+  rcloneAvailable: rcloneStatus?.available ?? false,
   icons: {
     sun:          s('sun'),
     moon:         s('moon'),
@@ -59,6 +62,8 @@ const ctx = {
     filterMicrosoft: s('filterMicrosoft'),
     filterGoogle:    s('filterGoogle'),
     hideFilter:   s('hideFilter'),
+    rclone:       s('rclone'),
+    googledrive:  s('googledrive'),
     github:         s('github'),
     updateNotifier: s('updateNotifier'),
   },
@@ -71,6 +76,7 @@ const info         = initInfoDialog(ctx)
 const profiles     = initProfilesDialog(ctx, { showConfirm: confirm.showConfirm })
 const iconPicker   = initIconPicker(ctx)
 const about        = initAboutDialog(ctx)
+const rcloneDialog = initRcloneDialog(ctx)
 const editDialog   = initEditDialog(ctx, { iconPicker, showConfirm: confirm.showConfirm })
 
 const cards = initCards(ctx, {
@@ -112,6 +118,15 @@ document.getElementById('menu-about').addEventListener('click', () => {
   about.openAboutDialog()
   drawer.closeDrawer()
 })
+
+// Only rendered when rclone is available — guard against missing element on startup.
+const rcloneBtn = document.getElementById('menu-rclone')
+if (rcloneBtn) {
+  rcloneBtn.addEventListener('click', () => {
+    drawer.closeDrawer()
+    rcloneDialog.openRcloneDialog()
+  })
+}
 
 OverlayScrollbars(document.getElementById('grid-wrapper'), { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
 drawer.applyInitialFilter()

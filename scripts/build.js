@@ -45,6 +45,8 @@ function expandConfig(app) {
       ...(app.crossOriginIsolation && { crossOriginIsolation: true }),
       ...(app.singleInstance      && { singleInstance:       true }),
       ...(app.fileHandler        && { fileHandler:          true }),
+      ...(app.rcloneFileHandler  && { rcloneFileHandler:    true }),
+      ...(app.rcloneEditUrlBase && { rcloneEditUrlBase:   app.rcloneEditUrlBase }),
       ...(app.mimeTypes?.length  && { mimeTypes:            app.mimeTypes }),
       ...(app.mailtoTemplate    && { mailtoTemplate:       app.mailtoTemplate }),
       ...(app.mailtoParamMap    && { mailtoParamMap:       app.mailtoParamMap }),
@@ -63,10 +65,12 @@ async function buildOne(configFile) {
   const label = configFile.replace(/^build\.(.+)\.json$/, '$1')
   console.log(`\n=== Building ${label} ===`)
   await build({ config: expandConfig(app), projectDir: process.cwd() })
-  // Write the wrapweb version alongside the AppImage so the Manager can detect
-  // outdated builds without mounting or inspecting the AppImage itself.
+  // Write build metadata alongside the AppImage so the Manager can detect
+  // outdated builds and query capabilities (e.g. rclone binding) without
+  // mounting or inspecting the AppImage itself.
   const { version } = require('../package.json')
-  fs.writeFileSync(path.join('dist', `wrapweb-${app.profile}.version`), version, 'utf8')
+  const meta = { version, ...(app.rcloneFileHandler && { rcloneFileHandler: true }) }
+  fs.writeFileSync(path.join('dist', `wrapweb-${app.profile}.version`), JSON.stringify(meta), 'utf8')
   installIcon()
   installDesktop(app)
 }
