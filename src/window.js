@@ -1,6 +1,8 @@
 const { BrowserWindow, shell, ipcMain, dialog, app } = require('electron')
-const path = require('node:path')
-const fs   = require('node:fs')
+const path   = require('node:path')
+const fs     = require('node:fs')
+const crypto = require('node:crypto')
+const https  = require('node:https')
 const { spawn, spawnSync } = require('node:child_process')
 const { createSession } = require('./session')
 const { showContextMenu } = require('./context-menu')
@@ -8,9 +10,87 @@ const windowState = require('./window-state')
 
 const ROUTING_FILE = path.join(app.getPath('appData'), 'wrapweb', 'plugins', 'routing', 'routing.json')
 
+// In-memory cache: origin → { result: 'safe'|'unsafe', expiresAt }
+// Avoids repeated API calls for the same domain during a browsing session.
+const safeBrowsingCache = new Map()
+
+function safeBrowsingConfigPath() {
+  const testDir = process.env.WRAPWEB_TEST_DATA_DIR
+  return testDir
+    ? path.join(testDir, 'safe-browsing.json')
+    : path.join(app.getPath('appData'), 'wrapweb', 'safe-browsing.json')
+}
+
+function httpsPost(url, body) {
+  return new Promise((resolve, reject) => {
+    const { hostname, pathname, search } = new URL(url)
+    const req = https.request({
+      hostname, path: pathname + search, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, res => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => resolve(data))
+    })
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
+ipcMain.handle('safe-browsing:check', async (_, url) => {
+  let origin
+  try { origin = new URL(url).origin } catch { return 'unknown' }
+
+  const cached = safeBrowsingCache.get(origin)
+  if (cached && Date.now() < cached.expiresAt) return cached.result
+
+  const config = (() => {
+    try { return JSON.parse(fs.readFileSync(safeBrowsingConfigPath(), 'utf8')) } catch { return {} }
+  })()
+  if (!config.apiKey || !config.enabled) return 'unknown'
+
+  // Only the origin is hashed — path and query never leave the device.
+  const fullHash  = crypto.createHash('sha256').update(origin).digest()
+  const prefixB64 = fullHash.slice(0, 4).toString('base64')
+
+  const body = JSON.stringify({
+    client:     { clientId: 'wrapweb', clientVersion: '1.0' },
+    threatInfo: {
+      threatTypes:      ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
+      platformTypes:    ['ANY_PLATFORM'],
+      threatEntryTypes: ['URL'],
+      threatEntries:    [{ hash: prefixB64 }],
+    },
+  })
+
+  try {
+    const data   = await httpsPost(`https://safebrowsing.googleapis.com/v4/fullHashes:find?key=${config.apiKey}`, body)
+    const json   = JSON.parse(data)
+    const myHash = fullHash.toString('base64')
+    const unsafe = json.matches?.some(m => m.threat?.hash === myHash) ?? false
+    const result = unsafe ? 'unsafe' : 'safe'
+    // Google recommends caching safe lookups ≥5 min; keep unsafe results longer.
+    safeBrowsingCache.set(origin, { result, expiresAt: Date.now() + (unsafe ? 30 : 5) * 60_000 })
+    return result
+  } catch {
+    return 'unknown'
+  }
+})
+
 function loadRouting() {
   try { return JSON.parse(fs.readFileSync(ROUTING_FILE, 'utf8')) } catch { return {} }
 }
+
+// Read once at module load — these are our own assets, always present.
+function readSvgDataUrl(assetName) {
+  try {
+    const b64 = fs.readFileSync(path.join(__dirname, '..', 'assets', assetName)).toString('base64')
+    return `data:image/svg+xml;base64,${b64}`
+  } catch { return null }
+}
+const safeIconDataUrl   = readSvgDataUrl('safe-browsing.svg')
+const unsafeIconDataUrl = readSvgDataUrl('security-low.svg')
 
 // Lazily resolved once per process — xdg-mime is a subprocess call and the
 // result never changes while the app is running.
@@ -251,17 +331,128 @@ function createWindow(pkg) {
   })
 
   mainWindow.webContents.on('did-finish-load', () => {
+    const browserIconPath = getDefaultBrowserIconPath()
+    const browserIconDataUrl = (() => {
+      if (!browserIconPath) return null
+      try {
+        const b64 = fs.readFileSync(browserIconPath).toString('base64')
+        return `data:image/png;base64,${b64}`
+      } catch { return null }
+    })()
+
     mainWindow.webContents.insertCSS(`
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.4); border-radius: 4px; }
       ::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.7); }
       ::-webkit-scrollbar-corner { background: transparent; }
+
+      #wrapweb-link-tooltip {
+        position: fixed;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2147483647;
+        max-width: 60%;
+        padding: 3px 10px 4px;
+        font: 12px/1.5 -apple-system, system-ui, sans-serif;
+        color: #fff;
+        background: rgba(30, 30, 30, 0.85);
+        border-top-left-radius: 5px;
+        border-top-right-radius: 5px;
+        pointer-events: none;
+        display: none;
+        backdrop-filter: blur(4px);
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      #wrapweb-link-tooltip img {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        object-fit: contain;
+      }
+      #wrapweb-link-shield {
+        width: 16px;
+        height: 16px;
+        margin-right: 2px;
+      }
+      #wrapweb-link-tooltip span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
     `)
     mainWindow.webContents.executeJavaScript(`
       window.addEventListener('wheel', (e) => {
         if (e.ctrlKey) window.electronAPI.adjustZoom(e.deltaY < 0 ? 1 : -1);
       }, { passive: true });
+
+      (() => {
+        const iconDataUrl    = ${JSON.stringify(browserIconDataUrl)};
+        const safeSrc        = ${JSON.stringify(safeIconDataUrl)};
+        const unsafeSrc      = ${JSON.stringify(unsafeIconDataUrl)};
+
+        const tip = document.createElement('div');
+        tip.id = 'wrapweb-link-tooltip';
+
+        if (iconDataUrl) {
+          const img = document.createElement('img');
+          img.src = iconDataUrl;
+          img.alt = '';
+          tip.appendChild(img);
+        }
+
+        const shield = document.createElement('img');
+        shield.id    = 'wrapweb-link-shield';
+        shield.alt   = '';
+        shield.style.display = 'none';
+        tip.appendChild(shield);
+
+        const label = document.createElement('span');
+        tip.appendChild(label);
+
+        document.body.appendChild(tip);
+
+        // Sequence counter guards against stale async results: if the mouse moves
+        // to a new link before the check finishes, the old result is discarded.
+        let checkSeq = 0;
+
+        document.addEventListener('mouseover', (e) => {
+          const a = e.target.closest('a[href]');
+          const url = a?.href ?? '';
+          // Skip javascript: pseudo-links — they carry no real destination.
+          if (url && !url.startsWith('javascript:')) {
+            label.textContent = url;
+            shield.style.display = 'none';
+            tip.style.display = 'flex';
+            const seq = ++checkSeq;
+            window.electronAPI.checkSafeBrowsing(url).then(result => {
+              if (seq !== checkSeq) return;
+              if (result === 'safe' && safeSrc) {
+                shield.src = safeSrc;
+                shield.style.display = '';
+              } else if (result === 'unsafe' && unsafeSrc) {
+                shield.src = unsafeSrc;
+                shield.style.display = '';
+              }
+            }).catch(() => {});
+          } else {
+            tip.style.display = 'none';
+          }
+        }, { passive: true });
+
+        document.addEventListener('mouseout', (e) => {
+          // Only hide when the cursor leaves the anchor entirely, not when
+          // moving between child nodes inside the same link.
+          if (!e.relatedTarget?.closest('a[href]')) {
+            tip.style.display = 'none';
+            ++checkSeq;
+          }
+        }, { passive: true });
+      })();
     `)
   })
 

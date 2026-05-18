@@ -25,8 +25,9 @@ if (process.argv.includes('--wrapweb-file-handler')) {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  adjustZoom:    (delta)  => ipcRenderer.send('adjust-zoom',    delta),
-  rcloneConfirm: (choice) => ipcRenderer.send('rclone-confirm', choice),
+  adjustZoom:        (delta)  => ipcRenderer.send('adjust-zoom',       delta),
+  rcloneConfirm:     (choice) => ipcRenderer.send('rclone-confirm',    choice),
+  checkSafeBrowsing: (url)    => ipcRenderer.invoke('safe-browsing:check', url),
 });
 
 window.addEventListener('DOMContentLoaded', () => {

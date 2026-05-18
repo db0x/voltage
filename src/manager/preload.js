@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('managerAPI', {
   checkUpdate:     ()     => ipcRenderer.invoke('manager:check-update'),
   getRcloneStatus:      ()       => ipcRenderer.invoke('manager:rclone-status'),
   getRcloneDriveRemotes: ()      => ipcRenderer.invoke('manager:rclone-drive-remotes'),
-  loadRcloneConfig:     ()       => ipcRenderer.invoke('manager:rclone-load-config'),
-  saveRcloneConfig:     (config) => ipcRenderer.invoke('manager:rclone-save-config', config),
+  loadRcloneConfig:          ()       => ipcRenderer.invoke('manager:rclone-load-config'),
+  saveRcloneConfig:          (config) => ipcRenderer.invoke('manager:rclone-save-config', config),
+  loadSafeBrowsingConfig:    ()       => ipcRenderer.invoke('manager:safe-browsing-load-config'),
+  saveSafeBrowsingConfig:    (config) => ipcRenderer.invoke('manager:safe-browsing-save-config', config),
 })

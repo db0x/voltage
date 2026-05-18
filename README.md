@@ -192,6 +192,29 @@ wrapweb can act as a system file handler for Office formats and route them throu
 
 > Uploaded files land in the configured Drive folder (e.g. `google-docs/` in your Drive root). The folder is created automatically on first use.
 
+## Google Safe Browsing
+
+wrapweb can check every external link you hover over against the **Google Safe Browsing** database. A small shield icon appears in the link tooltip — green for known-safe, red for a known threat.
+
+### Privacy
+
+Only the **origin** of the URL (`https://example.com`) is ever sent anywhere. Even then, the actual URL is never transmitted in plain text:
+
+1. The origin is hashed with SHA-256
+2. Only the first 4 bytes of the hash are sent to Google (`fullHashes:find` API)
+3. Google returns all full hashes that match that prefix
+4. The comparison happens locally — Google never learns the actual URL or which sites you hover over
+
+Results are cached per origin (5 minutes for safe, 30 minutes for flagged) to keep API calls to a minimum.
+
+### Setup
+
+1. Create an API key in the [Google Cloud Console](https://console.cloud.google.com/) — Project → APIs & Services → Credentials → Create credentials → API key. Enable the **Safe Browsing API** for the project.
+2. Open the Manager side menu → **Google Safe Browsing**
+3. Enable the toggle, paste your API key, click **Save**
+
+No AppImage rebuild is required — the key and enabled state are read at runtime from `~/.config/wrapweb/safe-browsing.json`.
+
 ## Included app configs
 
 | Config | App |

@@ -645,8 +645,13 @@ if (profile) {
       const r = resolveIconsByGtk(['application-default-icon'])
       const appDefault = r['application-default-icon'] || path.join(__dirname, 'assets', 'webapps', 'application-default-icon.svg')
       const rclone = path.join(__dirname, 'assets', 'rclone.svg')
-      const googledrive = path.join(__dirname, 'assets', 'webapps', 'googledrive.svg')
-      return fi ? { appDefault, rclone, googledrive, filterMicrosoft: fi, filterGoogle: fi } : { appDefault, rclone, googledrive }
+      const googledrive        = path.join(__dirname, 'assets', 'webapps', 'googledrive.svg')
+      const googleSafeBrowsing = path.join(__dirname, 'assets', 'safe-browsing.svg')
+      const eyeVisible = path.join(__dirname, 'assets', 'visible.svg')
+      const eyeHidden  = path.join(__dirname, 'assets', 'hidden.svg')
+      return fi
+        ? { appDefault, rclone, googledrive, googleSafeBrowsing, eyeVisible, eyeHidden, filterMicrosoft: fi, filterGoogle: fi }
+        : { appDefault, rclone, googledrive, googleSafeBrowsing, eyeVisible, eyeHidden }
     }
     const r = resolveIconsByGtk([
       'weather-clear-symbolic', 'weather-clear-night-symbolic',
@@ -663,8 +668,11 @@ if (profile) {
       info: r['dialog-information-symbolic'], build: r['system-run-symbolic'],
       install: r['system-software-install-symbolic'], delete: r['edit-delete-symbolic'],
       appDefault: r['application-default-icon'] || path.join(__dirname, 'assets', 'webapps', 'application-default-icon.svg'),
-      rclone:      path.join(__dirname, 'assets', 'rclone.svg'),
-      googledrive: path.join(__dirname, 'assets', 'webapps', 'googledrive.svg'),
+      rclone:            path.join(__dirname, 'assets', 'rclone.svg'),
+      googledrive:       path.join(__dirname, 'assets', 'webapps', 'googledrive.svg'),
+      googleSafeBrowsing: path.join(__dirname, 'assets', 'safe-browsing.svg'),
+      eyeVisible: path.join(__dirname, 'assets', 'visible.svg'),
+      eyeHidden:  path.join(__dirname, 'assets', 'hidden.svg'),
       menu: r['open-menu-symbolic'],
       filterAll: r['view-app-grid-symbolic'], filterPublic: r['applications-internet-symbolic'],
       filterPrivate: r['avatar-default-symbolic'], hideFilter: r['view-filter-symbolic'],
@@ -894,6 +902,28 @@ for name in sorted(theme.list_icons(None)):
 
   ipcMain.handle('manager:rclone-save-config', (event, config) => {
     const cfgPath = rcloneConfigPath()
+    try {
+      fs.mkdirSync(path.dirname(cfgPath), { recursive: true })
+      fs.writeFileSync(cfgPath, JSON.stringify(config, null, 2))
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  function safeBrowsingConfigPath() {
+    const testDir = process.env.WRAPWEB_TEST_DATA_DIR
+    return testDir
+      ? path.join(testDir, 'safe-browsing.json')
+      : path.join(app.getPath('appData'), 'wrapweb', 'safe-browsing.json')
+  }
+
+  ipcMain.handle('manager:safe-browsing-load-config', () => {
+    try { return JSON.parse(fs.readFileSync(safeBrowsingConfigPath(), 'utf8')) } catch { return {} }
+  })
+
+  ipcMain.handle('manager:safe-browsing-save-config', (event, config) => {
+    const cfgPath = safeBrowsingConfigPath()
     try {
       fs.mkdirSync(path.dirname(cfgPath), { recursive: true })
       fs.writeFileSync(cfgPath, JSON.stringify(config, null, 2))

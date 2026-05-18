@@ -120,6 +120,7 @@ const translations = {
     // rclone integration
     drawerRcloneSection:    'Integrationen',
     drawerRclone:           'rclone Integration',
+    drawerSafeBrowsing:     'Google Safe Browsing',
     rcloneDialogTitle:      'rclone Integration',
     rcloneDialogGdrive:     'Google Drive',
     rcloneDialogRemote:     'Remote',
@@ -130,6 +131,15 @@ const translations = {
     rcloneDialogFolderHint:      'Zielordner in Google Drive (wird automatisch erstellt)',
     rcloneDialogFolderRequired:  'Pflichtfeld',
     rcloneDialogSave:            'Speichern',
+
+    // Safe Browsing dialog
+    safeBrowsingDialogTitle:    'Google Safe Browsing',
+    safeBrowsingDialogApiKey:   'API-Key',
+    safeBrowsingDialogHint:     'Einen API-Key kannst du in der Google Cloud Console erstellen (Projekt → APIs & Dienste → Anmeldedaten). Weitere Infos in der Safe-Browsing-Dokumentation.',
+    safeBrowsingDialogSave:     'Speichern',
+    safeBrowsingDialogShow:     'Anzeigen',
+    safeBrowsingDialogHide:     'Verbergen',
+    safeBrowsingDialogEnabled:  'Schutz aktivieren',
 
     // Profile sizes dialog
     drawerProfiles:    'Profile',
@@ -272,6 +282,7 @@ const translations = {
     // rclone integration
     drawerRcloneSection:    'Integrations',
     drawerRclone:           'rclone Integration',
+    drawerSafeBrowsing:     'Google Safe Browsing',
     rcloneDialogTitle:      'rclone Integration',
     rcloneDialogGdrive:     'Google Drive',
     rcloneDialogRemote:     'Remote',
@@ -282,6 +293,15 @@ const translations = {
     rcloneDialogFolderHint:      'Target folder in Google Drive (created automatically)',
     rcloneDialogFolderRequired:  'Required',
     rcloneDialogSave:            'Save',
+
+    // Safe Browsing dialog
+    safeBrowsingDialogTitle:    'Google Safe Browsing',
+    safeBrowsingDialogApiKey:   'API Key',
+    safeBrowsingDialogHint:     'Create an API key in the Google Cloud Console (Project → APIs & Services → Credentials). See the Safe Browsing documentation for details.',
+    safeBrowsingDialogSave:     'Save',
+    safeBrowsingDialogShow:     'Show',
+    safeBrowsingDialogHide:     'Hide',
+    safeBrowsingDialogEnabled:  'Enable protection',
 
     // Profile sizes dialog
     drawerProfiles:    'Profiles',

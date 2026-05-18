@@ -1464,3 +1464,37 @@ body.dark .rclone-fieldset {
   color: var(--card-url);
   line-height: 1.5;
 }
+
+.input-password-wrap {
+  display: flex;
+  gap: 6px;
+}
+
+.input-password-wrap input {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-password-toggle {
+  background: var(--badge-unbuilt-bg);
+  color: var(--badge-unbuilt-fg);
+  border: none;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s;
+}
+
+.btn-password-toggle:hover {
+  opacity: 0.75;
+}
+
+body.dark .btn-password-toggle img {
+  filter: invert(1);
+}

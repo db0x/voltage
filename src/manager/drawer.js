@@ -5,7 +5,8 @@ export function initDrawer({ i18n, icons, rcloneAvailable }) {
           filterAll: filterAllSrc, filterPublic: filterPublicSrc,
           filterPrivate: filterPrivateSrc,
           filterMicrosoft: filterMicrosoftSrc, filterGoogle: filterGoogleSrc,
-          rclone: rcloneIconSrc } = icons
+          rclone: rcloneIconSrc,
+          googleSafeBrowsing: safeBrowsingIconSrc } = icons
 
   const menuBtn  = document.getElementById('menu-btn')
   const menuIcon = document.getElementById('menu-icon')
@@ -37,13 +38,13 @@ export function initDrawer({ i18n, icons, rcloneAvailable }) {
       ${filterPrivateSrc ? `<img src="${filterPrivateSrc}" alt="">` : ''}
       <span>${i18n.drawerUserApps}</span>
     </button>
-    <button class="menu-item" data-filter="microsoft">
-      ${filterMicrosoftSrc ? `<img src="${filterMicrosoftSrc}" alt="">` : ''}
-      <span>${i18n.drawerMicrosoft}</span>
-    </button>
     <button class="menu-item" data-filter="google">
       ${filterGoogleSrc ? `<img src="${filterGoogleSrc}" alt="">` : ''}
       <span>${i18n.drawerGoogle}</span>
+    </button>
+    <button class="menu-item" data-filter="microsoft">
+      ${filterMicrosoftSrc ? `<img src="${filterMicrosoftSrc}" alt="">` : ''}
+      <span>${i18n.drawerMicrosoft}</span>
     </button>
     <button class="menu-item menu-toggle" id="menu-hide-uninstalled">
       <span class="toggle-switch"></span>
@@ -53,9 +54,13 @@ export function initDrawer({ i18n, icons, rcloneAvailable }) {
     <button class="menu-item" id="menu-profiles">
       <span>${i18n.drawerProfiles}</span>
     </button>
-    ${rcloneAvailable ? `
     <hr class="drawer-divider">
     <div class="drawer-section-label">${i18n.drawerRcloneSection}</div>
+    <button class="menu-item" id="menu-safe-browsing">
+      ${safeBrowsingIconSrc ? `<img src="${safeBrowsingIconSrc}" alt="">` : ''}
+      <span>${i18n.drawerSafeBrowsing}</span>
+    </button>
+    ${rcloneAvailable ? `
     <button class="menu-item" id="menu-rclone">
       ${rcloneIconSrc ? `<img src="${rcloneIconSrc}" alt="">` : ''}
       <span>${i18n.drawerRclone}</span>

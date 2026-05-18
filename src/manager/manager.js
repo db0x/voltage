@@ -10,7 +10,8 @@ import { initEditDialog }      from './dialogs/edit.js'
 import { initAboutDialog }     from './dialogs/about.js'
 import { initRebuildNotice }   from './dialogs/rebuild-notice.js'
 import { initUpdateNotice }    from './dialogs/update-notice.js'
-import { initRcloneDialog }    from './dialogs/rclone.js'
+import { initRcloneDialog }      from './dialogs/rclone.js'
+import { initSafeBrowsingDialog } from './dialogs/safe-browsing.js'
 import { initCards }           from './cards.js'
 import { initTooltip }         from './tooltip.js'
 
@@ -62,8 +63,11 @@ const ctx = {
     filterMicrosoft: s('filterMicrosoft'),
     filterGoogle:    s('filterGoogle'),
     hideFilter:   s('hideFilter'),
-    rclone:       s('rclone'),
-    googledrive:  s('googledrive'),
+    rclone:             s('rclone'),
+    googledrive:        s('googledrive'),
+    googleSafeBrowsing: s('googleSafeBrowsing'),
+    eyeVisible: s('eyeVisible'),
+    eyeHidden:  s('eyeHidden'),
     github:         s('github'),
     updateNotifier: s('updateNotifier'),
   },
@@ -76,7 +80,8 @@ const info         = initInfoDialog(ctx)
 const profiles     = initProfilesDialog(ctx, { showConfirm: confirm.showConfirm })
 const iconPicker   = initIconPicker(ctx)
 const about        = initAboutDialog(ctx)
-const rcloneDialog = initRcloneDialog(ctx)
+const rcloneDialog      = initRcloneDialog(ctx)
+const safeBrowsingDialog = initSafeBrowsingDialog(ctx)
 const editDialog   = initEditDialog(ctx, { iconPicker, showConfirm: confirm.showConfirm })
 
 const cards = initCards(ctx, {
@@ -127,6 +132,11 @@ if (rcloneBtn) {
     rcloneDialog.openRcloneDialog()
   })
 }
+
+document.getElementById('menu-safe-browsing').addEventListener('click', () => {
+  drawer.closeDrawer()
+  safeBrowsingDialog.openSafeBrowsingDialog()
+})
 
 OverlayScrollbars(document.getElementById('grid-wrapper'), { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
 drawer.applyInitialFilter()
