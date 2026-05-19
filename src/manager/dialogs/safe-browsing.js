@@ -87,7 +87,7 @@ export function initSafeBrowsingDialog({ i18n, icons, apps, appDefaultSrc }) {
   // Rebuild the dropdown with apps not yet excluded (prevents duplicates).
   function updateAppSelect() {
     appList.innerHTML = ''
-    const available = apps.filter(a => !excludedProfiles.includes(a.profile))
+    const available = apps.filter(a => a.built && !excludedProfiles.includes(a.profile))
     appTrigger.disabled = available.length === 0
     for (const app of available) {
       const imgSrc = app.iconPath ? `file://${app.iconPath}` : appDefaultSrc
