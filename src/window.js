@@ -14,6 +14,10 @@ const ROUTING_FILE = path.join(app.getPath('appData'), 'wrapweb', 'plugins', 'ro
 // Avoids repeated API calls for the same domain during a browsing session.
 const safeBrowsingCache = new Map()
 
+// Tracks which profile is running in each BrowserWindow's webContents so the
+// safe-browsing:check handler can apply per-app exclusions without needing a preload change.
+const windowProfiles = new Map()  // webContentsId → profile
+
 function safeBrowsingConfigPath() {
   const testDir = process.env.WRAPWEB_TEST_DATA_DIR
   return testDir
@@ -38,7 +42,7 @@ function httpsPost(url, body) {
   })
 }
 
-ipcMain.handle('safe-browsing:check', async (_, url) => {
+ipcMain.handle('safe-browsing:check', async (event, url) => {
   let origin
   try { origin = new URL(url).origin } catch { return 'unknown' }
 
@@ -49,6 +53,12 @@ ipcMain.handle('safe-browsing:check', async (_, url) => {
     try { return JSON.parse(fs.readFileSync(safeBrowsingConfigPath(), 'utf8')) } catch { return {} }
   })()
   if (!config.apiKey || !config.enabled) return 'unknown'
+
+  // Skip check for apps that have opted out (e.g. Outlook, Teams with built-in protection).
+  const profile = windowProfiles.get(event.sender.id)
+  if (profile && Array.isArray(config.excludedProfiles) && config.excludedProfiles.includes(profile)) {
+    return 'unknown'
+  }
 
   // Only the origin is hashed — path and query never leave the device.
   const fullHash  = crypto.createHash('sha256').update(origin).digest()
@@ -216,6 +226,12 @@ function createWindow(pkg) {
   })
 
   if (!pkg.geometry) mainWindow.on('close', () => windowState.save(mainWindow))
+
+  // Register profile for safe-browsing:check exclusion lookups; clean up on close.
+  // webContentsId is captured now — webContents is already destroyed when 'closed' fires.
+  const webContentsId = mainWindow.webContents.id
+  windowProfiles.set(webContentsId, pkg.profile)
+  mainWindow.on('closed', () => windowProfiles.delete(webContentsId))
 
   if (pkg.userAgent) mainWindow.webContents.setUserAgent(pkg.userAgent)
   mainWindow.loadURL(pkg.url)

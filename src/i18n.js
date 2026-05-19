@@ -140,6 +140,8 @@ const translations = {
     safeBrowsingDialogShow:     'Anzeigen',
     safeBrowsingDialogHide:     'Verbergen',
     safeBrowsingDialogEnabled:  'Schutz aktivieren',
+    safeBrowsingDialogExclude:  'Apps ausschließen',
+    safeBrowsingDialogExcludeHint: 'App auswählen …',
 
     // Profile sizes dialog
     drawerProfiles:    'Profile',
@@ -302,6 +304,8 @@ const translations = {
     safeBrowsingDialogShow:     'Show',
     safeBrowsingDialogHide:     'Hide',
     safeBrowsingDialogEnabled:  'Enable protection',
+    safeBrowsingDialogExclude:  'Exclude apps',
+    safeBrowsingDialogExcludeHint: 'Select app …',
 
     // Profile sizes dialog
     drawerProfiles:    'Profiles',

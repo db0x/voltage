@@ -27,11 +27,12 @@ function createSession(profile, opts = {}) {
     callback(allowed.includes(permission))
   )
 
-  // Wayland: getSources() delegates to xdg-desktop-portal
+  // Wayland: getSources() triggers xdg-desktop-portal so the user picks the screen.
+  // No audio loopback — Teams manages its own audio routing in calls.
   customSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     try {
       const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] })
-      callback(sources.length > 0 ? { video: sources[0], audio: 'loopback' } : {})
+      callback(sources.length > 0 ? { video: sources[0] } : {})
     } catch {
       callback({})
     }
