@@ -92,6 +92,20 @@ function readSvgDataUrl(assetName) {
 const safeIconDataUrl   = readSvgDataUrl('safe-browsing.svg')
 const unsafeIconDataUrl = readSvgDataUrl('security-low.svg')
 
+const TOOLTIP_CSS = `
+  #wrapweb-link-tooltip {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    z-index: 2147483647; max-width: 60%; padding: 3px 10px 4px;
+    font: 12px/1.5 -apple-system, system-ui, sans-serif; color: #fff;
+    background: rgba(30,30,30,0.85); border-top-left-radius: 5px;
+    border-top-right-radius: 5px; pointer-events: none; display: none;
+    backdrop-filter: blur(4px); align-items: center; gap: 6px; min-width: 0;
+  }
+  #wrapweb-link-tooltip img { width:14px; height:14px; flex-shrink:0; object-fit:contain; }
+  #wrapweb-link-shield { width:16px; height:16px; margin-right:2px; }
+  #wrapweb-link-tooltip span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+`
+
 // Lazily resolved once per process — xdg-mime is a subprocess call and the
 // result never changes while the app is running.
 let _browserIconPath
@@ -330,129 +344,142 @@ function createWindow(pkg) {
       mainWindow.webContents.toggleDevTools()
   })
 
-  mainWindow.webContents.on('did-finish-load', () => {
-    const browserIconPath = getDefaultBrowserIconPath()
-    const browserIconDataUrl = (() => {
-      if (!browserIconPath) return null
-      try {
-        const b64 = fs.readFileSync(browserIconPath).toString('base64')
-        return `data:image/png;base64,${b64}`
-      } catch { return null }
-    })()
+  const browserIconDataUrl = (() => {
+    const p = getDefaultBrowserIconPath()
+    if (!p) return null
+    try { return `data:image/png;base64,${fs.readFileSync(p).toString('base64')}` } catch { return null }
+  })()
 
+  // Builds the tooltip injection script for the main frame.
+  // The tooltip DOM always lives in the main frame so position:fixed anchors to the main window bottom —
+  // even when the hovered link is inside a same-origin iframe.
+  function buildTooltipScript() {
+    return `
+      (() => {
+        // Bridge so iframe event handlers (which close over this window) can reach IPC.
+        window._wrapwebCheck = url => window.electronAPI?.checkSafeBrowsing(url) ?? Promise.resolve('unknown');
+
+        const browserIconUrl  = ${JSON.stringify(browserIconDataUrl)};
+        const safeSrc         = ${JSON.stringify(safeIconDataUrl)};
+        const unsafeSrc       = ${JSON.stringify(unsafeIconDataUrl)};
+        const appOrigin       = ${JSON.stringify(appOrigin)};
+        const internalDomains = ${JSON.stringify(internalDomains)};
+
+        // Mirrors setWindowOpenHandler — only show tooltip for links that leave the app.
+        function isExternalLink(url) {
+          try {
+            const { origin, hostname } = new URL(url);
+            if (origin === appOrigin) return false;
+            if (internalDomains.some(d => hostname === d || hostname.endsWith('.' + d))) return false;
+            return true;
+          } catch { return false; }
+        }
+
+        // Tooltip element lives in the main frame — position:fixed is relative to the main viewport.
+        const tip = document.createElement('div');
+        tip.id = 'wrapweb-link-tooltip';
+        if (browserIconUrl) {
+          const img = document.createElement('img');
+          img.src = browserIconUrl; img.alt = '';
+          tip.appendChild(img);
+        }
+        const shield = document.createElement('img');
+        shield.id = 'wrapweb-link-shield'; shield.alt = ''; shield.style.display = 'none';
+        tip.appendChild(shield);
+        const label = document.createElement('span');
+        tip.appendChild(label);
+        document.body.appendChild(tip);
+
+        // Re-attach if an SPA replaces document.body.
+        function ensureTip() {
+          if (document.body && !document.body.contains(tip)) {
+            document.body.appendChild(tip);
+            bodyObs.observe(document.body, { childList: true });
+          }
+        }
+        const bodyObs = new MutationObserver(ensureTip);
+        new MutationObserver(ensureTip).observe(document.documentElement, { childList: true });
+        bodyObs.observe(document.body, { childList: true });
+
+        // Sequence counter discards stale async results when the mouse moves on.
+        let checkSeq = 0;
+
+        function showTooltip(url) {
+          label.textContent = url;
+          shield.style.display = 'none';
+          tip.style.display = 'flex';
+          const cs = ++checkSeq;
+          window._wrapwebCheck(url).then(r => {
+            if (cs !== checkSeq) return;
+            if (r === 'safe'   && safeSrc)   { shield.src = safeSrc;   shield.style.display = ''; }
+            if (r === 'unsafe' && unsafeSrc) { shield.src = unsafeSrc; shield.style.display = ''; }
+          }).catch(() => {});
+        }
+
+        function hideTooltip() { tip.style.display = 'none'; ++checkSeq; }
+
+        // Tracks which documents already have listeners to prevent double-attaching.
+        const hookedDocs = new WeakSet();
+
+        // Attaches hover listeners to a document. All callbacks close over the main-frame scope,
+        // so showTooltip/hideTooltip always update the tooltip element in the main frame's DOM.
+        // This means iframes get correct tooltip positioning for free — no CSS injection needed.
+        function hookDoc(doc) {
+          if (hookedDocs.has(doc)) return;
+          hookedDocs.add(doc);
+          // capture: true fires before any stopPropagation() in the app's own handlers.
+          doc.addEventListener('mouseover', e => {
+            const url = e.target.closest('a[href]')?.href ?? '';
+            if (url && !url.startsWith('javascript:') && !url.startsWith('mailto:') && isExternalLink(url)) showTooltip(url);
+            else hideTooltip();
+          }, { passive: true, capture: true });
+          doc.addEventListener('mouseout', e => {
+            if (!e.relatedTarget?.closest('a[href]')) hideTooltip();
+          }, { passive: true, capture: true });
+        }
+
+        hookDoc(document);
+
+        // Monitor same-origin iframes — hook them so link hovers control the main frame's tooltip.
+        function watchIframe(iframe) {
+          function tryHook() {
+            try {
+              const doc = iframe.contentDocument;
+              if (doc && doc.body) hookDoc(doc);
+            } catch(e) {}
+          }
+          iframe.addEventListener('load', tryHook);
+          // Immediate check — Strato writes email content via document.write() synchronously
+          // after appending the iframe, before the MutationObserver microtask fires.
+          tryHook();
+        }
+
+        document.querySelectorAll('iframe').forEach(watchIframe);
+        // Watch for dynamically added iframes (e.g. single-page apps rendering email lists).
+        new MutationObserver(rs => {
+          for (const r of rs) for (const n of r.addedNodes) {
+            if (n.nodeName === 'IFRAME') watchIframe(n);
+            else if (n.querySelectorAll) n.querySelectorAll('iframe').forEach(watchIframe);
+          }
+        }).observe(document.documentElement, { childList: true, subtree: true });
+      })();
+    `
+  }
+
+  mainWindow.webContents.on('did-finish-load', () => {
     mainWindow.webContents.insertCSS(`
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.4); border-radius: 4px; }
       ::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.7); }
       ::-webkit-scrollbar-corner { background: transparent; }
-
-      #wrapweb-link-tooltip {
-        position: fixed;
-        bottom: 0;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 2147483647;
-        max-width: 60%;
-        padding: 3px 10px 4px;
-        font: 12px/1.5 -apple-system, system-ui, sans-serif;
-        color: #fff;
-        background: rgba(30, 30, 30, 0.85);
-        border-top-left-radius: 5px;
-        border-top-right-radius: 5px;
-        pointer-events: none;
-        display: none;
-        backdrop-filter: blur(4px);
-        align-items: center;
-        gap: 6px;
-        min-width: 0;
-      }
-      #wrapweb-link-tooltip img {
-        width: 14px;
-        height: 14px;
-        flex-shrink: 0;
-        object-fit: contain;
-      }
-      #wrapweb-link-shield {
-        width: 16px;
-        height: 16px;
-        margin-right: 2px;
-      }
-      #wrapweb-link-tooltip span {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        min-width: 0;
-      }
+      ${TOOLTIP_CSS}
     `)
     mainWindow.webContents.executeJavaScript(`
       window.addEventListener('wheel', (e) => {
         if (e.ctrlKey) window.electronAPI.adjustZoom(e.deltaY < 0 ? 1 : -1);
       }, { passive: true });
-
-      (() => {
-        const iconDataUrl    = ${JSON.stringify(browserIconDataUrl)};
-        const safeSrc        = ${JSON.stringify(safeIconDataUrl)};
-        const unsafeSrc      = ${JSON.stringify(unsafeIconDataUrl)};
-
-        const tip = document.createElement('div');
-        tip.id = 'wrapweb-link-tooltip';
-
-        if (iconDataUrl) {
-          const img = document.createElement('img');
-          img.src = iconDataUrl;
-          img.alt = '';
-          tip.appendChild(img);
-        }
-
-        const shield = document.createElement('img');
-        shield.id    = 'wrapweb-link-shield';
-        shield.alt   = '';
-        shield.style.display = 'none';
-        tip.appendChild(shield);
-
-        const label = document.createElement('span');
-        tip.appendChild(label);
-
-        document.body.appendChild(tip);
-
-        // Sequence counter guards against stale async results: if the mouse moves
-        // to a new link before the check finishes, the old result is discarded.
-        let checkSeq = 0;
-
-        document.addEventListener('mouseover', (e) => {
-          const a = e.target.closest('a[href]');
-          const url = a?.href ?? '';
-          // Skip javascript: pseudo-links — they carry no real destination.
-          if (url && !url.startsWith('javascript:')) {
-            label.textContent = url;
-            shield.style.display = 'none';
-            tip.style.display = 'flex';
-            const seq = ++checkSeq;
-            window.electronAPI.checkSafeBrowsing(url).then(result => {
-              if (seq !== checkSeq) return;
-              if (result === 'safe' && safeSrc) {
-                shield.src = safeSrc;
-                shield.style.display = '';
-              } else if (result === 'unsafe' && unsafeSrc) {
-                shield.src = unsafeSrc;
-                shield.style.display = '';
-              }
-            }).catch(() => {});
-          } else {
-            tip.style.display = 'none';
-          }
-        }, { passive: true });
-
-        document.addEventListener('mouseout', (e) => {
-          // Only hide when the cursor leaves the anchor entirely, not when
-          // moving between child nodes inside the same link.
-          if (!e.relatedTarget?.closest('a[href]')) {
-            tip.style.display = 'none';
-            ++checkSeq;
-          }
-        }, { passive: true });
-      })();
+      ${buildTooltipScript()}
     `)
   })
 
