@@ -116,18 +116,32 @@ const TOOLTIP_CSS = `
   #wrapweb-link-tooltip span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 `
 
-// Lazily resolved once per process — xdg-mime is a subprocess call and the
-// result never changes while the app is running.
-let _browserIconPath
-function getDefaultBrowserIconPath() {
-  if (_browserIconPath !== undefined) return _browserIconPath
-  try {
-    // xdg-mime returns the .desktop filename, not a path.
-    const r = spawnSync('xdg-mime', ['query', 'default', 'x-scheme-handler/https'],
-      { encoding: 'utf8', timeout: 500 })
-    if (!r.stdout) return (_browserIconPath = null)
-    const desktop = r.stdout.trim()
+// Looks up a PNG icon file by name in standard hicolor theme locations.
+// nativeImage.createFromPath() on Linux silently fails on SVG, so only PNG is used.
+function resolveIconPath(iconName) {
+  if (!iconName) return null
+  const iconBases = [
+    path.join(app.getPath('home'), '.local', 'share', 'icons', 'hicolor'),
+    '/usr/share/icons/hicolor',
+  ]
+  for (const base of iconBases) {
+    for (const size of ['48x48', '32x32', '64x64', '256x256', '128x128']) {
+      const p = path.join(base, size, 'apps', `${iconName}.png`)
+      if (fs.existsSync(p)) return p
+    }
+  }
+  const pixmap = `/usr/share/pixmaps/${iconName}.png`
+  if (fs.existsSync(pixmap)) return pixmap
+  return null
+}
 
+// Resolves the PNG icon path for the default handler of a given MIME/scheme type.
+// Lazily called — xdg-mime is a subprocess and the result never changes at runtime.
+function resolveHandlerIconPath(mimeType) {
+  try {
+    const r = spawnSync('xdg-mime', ['query', 'default', mimeType], { encoding: 'utf8', timeout: 500 })
+    if (!r.stdout) return null
+    const desktop = r.stdout.trim()
     const appDirs = [
       path.join(app.getPath('home'), '.local', 'share', 'applications'),
       '/usr/share/applications',
@@ -140,23 +154,21 @@ function getDefaultBrowserIconPath() {
         if (match) { iconName = match[1].trim(); break }
       } catch {}
     }
-
-    // nativeImage.createFromPath() on Linux silently fails on SVG files —
-    // only PNG is reliable for context menu icons.
-    const iconBases = [
-      path.join(app.getPath('home'), '.local', 'share', 'icons', 'hicolor'),
-      '/usr/share/icons/hicolor',
-    ]
-    for (const base of iconBases) {
-      for (const size of ['48x48', '32x32', '64x64', '256x256', '128x128']) {
-        const p = path.join(base, size, 'apps', `${iconName}.png`)
-        if (fs.existsSync(p)) return (_browserIconPath = p)
-      }
-    }
-    const pixmap = `/usr/share/pixmaps/${iconName}.png`
-    if (fs.existsSync(pixmap)) return (_browserIconPath = pixmap)
+    return resolveIconPath(iconName)
   } catch {}
-  return (_browserIconPath = null)
+  return null
+}
+
+let _browserIconPath
+function getDefaultBrowserIconPath() {
+  if (_browserIconPath !== undefined) return _browserIconPath
+  return (_browserIconPath = resolveHandlerIconPath('x-scheme-handler/https'))
+}
+
+let _mailIconPath
+function getDefaultMailIconPath() {
+  if (_mailIconPath !== undefined) return _mailIconPath
+  return (_mailIconPath = resolveHandlerIconPath('x-scheme-handler/mailto'))
 }
 
 // Some apps (e.g. Google) wrap external links as redirect URLs with the real
@@ -360,11 +372,29 @@ function createWindow(pkg) {
       mainWindow.webContents.toggleDevTools()
   })
 
-  const browserIconDataUrl = (() => {
-    const p = getDefaultBrowserIconPath()
-    if (!p) return null
-    try { return `data:image/png;base64,${fs.readFileSync(p).toString('base64')}` } catch { return null }
-  })()
+  const toDataUrl = p => { try { return p ? `data:image/png;base64,${fs.readFileSync(p).toString('base64')}` : null } catch { return null } }
+  const browserIconDataUrl = toDataUrl(getDefaultBrowserIconPath())
+  const mailIconDataUrl    = toDataUrl(getDefaultMailIconPath())
+
+  // Pre-compute route entries with icons so the tooltip can show the target app's icon.
+  // Sorted longest-prefix-first so path-specific entries win over hostname-only entries.
+  const routeEntries = Object.entries(loadRouting())
+    .reduce((acc, [key, target]) => {
+      const appImagePath   = typeof target === 'string' ? target : target.path
+      const name           = typeof target === 'string' ? null   : (target.name ?? null)
+      const iconName       = typeof target === 'string' ? null   : (target.icon ?? null)
+      const matchedProfile = path.basename(appImagePath).replace(/^wrapweb-/, '')
+      if (matchedProfile === pkg.profile || !fs.existsSync(appImagePath)) return acc
+      const slash  = key.indexOf('/')
+      const host   = slash !== -1 ? key.slice(0, slash) : key
+      const prefix = slash !== -1 ? '/' + key.slice(slash + 1) : '/'
+      // Fall back to the installed wrapweb icon (wrapweb-<profile>) when the build-config icon
+      // name doesn't resolve — installed AppImages always register their icon under this name.
+      const iconDataUrl = toDataUrl(resolveIconPath(iconName) ?? resolveIconPath(`wrapweb-${matchedProfile}`))
+      acc.push({ host, prefix, iconDataUrl, name: name || matchedProfile })
+      return acc
+    }, [])
+    .sort((a, b) => b.prefix.length - a.prefix.length)
 
   // Builds the tooltip injection script for the main frame.
   // The tooltip DOM always lives in the main frame so position:fixed anchors to the main window bottom —
@@ -376,10 +406,40 @@ function createWindow(pkg) {
         window._wrapwebCheck = url => window.electronAPI?.checkSafeBrowsing(url) ?? Promise.resolve('unknown');
 
         const browserIconUrl  = ${JSON.stringify(browserIconDataUrl)};
+        const mailIconUrl     = ${JSON.stringify(mailIconDataUrl)};
         const safeSrc         = ${JSON.stringify(safeIconDataUrl)};
         const unsafeSrc       = ${JSON.stringify(unsafeIconDataUrl)};
         const appOrigin       = ${JSON.stringify(appOrigin)};
         const internalDomains = ${JSON.stringify(internalDomains)};
+        const routeEntries    = ${JSON.stringify(routeEntries)};
+        const mailtoLabel     = ${JSON.stringify(
+          // Mirrors i18n.js keys mailtoCompose (de/en) — window.js cannot import the ES module.
+          app.getPreferredSystemLanguages()[0]?.startsWith('de')
+            ? 'Mail an {addr} verfassen'
+            : 'Compose mail to {addr}'
+        )};
+
+        // Unwraps redirect URLs (e.g. Outlook Safe Links, Google redirect) to the real target.
+        function unwrapUrl(url) {
+          try {
+            const wrapped = new URL(url).searchParams.get('url');
+            if (wrapped) { try { new URL(wrapped); return wrapped; } catch {} }
+          } catch {}
+          return url;
+        }
+
+        // Returns route info { iconDataUrl, name } if this URL would open in another wrapweb app.
+        // Unwraps redirect URLs first so Safe Links / Google redirects are matched correctly.
+        function getRouteInfo(url) {
+          try {
+            const resolved = unwrapUrl(url);
+            const { hostname, pathname } = new URL(resolved);
+            return routeEntries.find(e =>
+              (hostname === e.host || hostname.endsWith('.' + e.host)) &&
+              pathname.startsWith(e.prefix)
+            ) ?? null;
+          } catch { return null; }
+        }
 
         // Mirrors setWindowOpenHandler — only show tooltip for links that leave the app.
         function isExternalLink(url) {
@@ -394,11 +454,10 @@ function createWindow(pkg) {
         // Tooltip element lives in the main frame — position:fixed is relative to the main viewport.
         const tip = document.createElement('div');
         tip.id = 'wrapweb-link-tooltip';
-        if (browserIconUrl) {
-          const img = document.createElement('img');
-          img.src = browserIconUrl; img.alt = '';
-          tip.appendChild(img);
-        }
+        // Icon element is always present; src is swapped per link type (browser vs. mail app).
+        const iconEl = document.createElement('img');
+        iconEl.alt = ''; iconEl.style.display = 'none';
+        tip.appendChild(iconEl);
         const shield = document.createElement('img');
         shield.id = 'wrapweb-link-shield'; shield.alt = ''; shield.style.display = 'none';
         tip.appendChild(shield);
@@ -421,15 +480,25 @@ function createWindow(pkg) {
         let checkSeq = 0;
 
         function showTooltip(url) {
-          label.textContent = url;
+          const isMail = url.startsWith('mailto:');
+          const route  = isMail ? null : getRouteInfo(url);
+          const iconSrc = isMail ? mailIconUrl : (route?.iconDataUrl || browserIconUrl);
+          if (iconSrc) { iconEl.src = iconSrc; iconEl.style.display = ''; }
+          else iconEl.style.display = 'none';
+          label.textContent = isMail
+            ? mailtoLabel.replace('{addr}', url.slice(7).split('?')[0])
+            : unwrapUrl(url);
           shield.style.display = 'none';
           tip.style.display = 'flex';
-          const cs = ++checkSeq;
-          window._wrapwebCheck(url).then(r => {
-            if (cs !== checkSeq) return;
-            if (r === 'safe'   && safeSrc)   { shield.src = safeSrc;   shield.style.display = ''; }
-            if (r === 'unsafe' && unsafeSrc) { shield.src = unsafeSrc; shield.style.display = ''; }
-          }).catch(() => {});
+          // No safe-browsing for mail addresses or links routed to trusted wrapweb apps.
+          if (!isMail && !route) {
+            const cs = ++checkSeq;
+            window._wrapwebCheck(url).then(r => {
+              if (cs !== checkSeq) return;
+              if (r === 'safe'   && safeSrc)   { shield.src = safeSrc;   shield.style.display = ''; }
+              if (r === 'unsafe' && unsafeSrc) { shield.src = unsafeSrc; shield.style.display = ''; }
+            }).catch(() => {});
+          }
         }
 
         function hideTooltip() { tip.style.display = 'none'; ++checkSeq; }
@@ -446,7 +515,7 @@ function createWindow(pkg) {
           // capture: true fires before any stopPropagation() in the app's own handlers.
           doc.addEventListener('mouseover', e => {
             const url = e.target.closest('a[href]')?.href ?? '';
-            if (url && !url.startsWith('javascript:') && !url.startsWith('mailto:') && isExternalLink(url)) showTooltip(url);
+            if (url && !url.startsWith('javascript:') && (url.startsWith('mailto:') || isExternalLink(url))) showTooltip(url);
             else hideTooltip();
           }, { passive: true, capture: true });
           doc.addEventListener('mouseout', e => {

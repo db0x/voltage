@@ -142,6 +142,7 @@ const translations = {
     safeBrowsingDialogEnabled:  'Schutz aktivieren',
     safeBrowsingDialogExclude:  'Apps ausschließen',
     safeBrowsingDialogExcludeHint: 'App auswählen …',
+    mailtoCompose: 'Mail an {addr} verfassen',
 
     // Profile sizes dialog
     drawerProfiles:    'Profile',
@@ -306,6 +307,7 @@ const translations = {
     safeBrowsingDialogEnabled:  'Enable protection',
     safeBrowsingDialogExclude:  'Exclude apps',
     safeBrowsingDialogExcludeHint: 'Select app …',
+    mailtoCompose: 'Compose mail to {addr}',
 
     // Profile sizes dialog
     drawerProfiles:    'Profiles',
