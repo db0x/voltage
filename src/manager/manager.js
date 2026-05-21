@@ -92,6 +92,26 @@ const cards = initCards(ctx, {
   openEditDialog:   editDialog.openEditDialog,
 })
 
+// When the user copies an embedded config to private, replace the embedded card
+// with a new private card so editable controls become available immediately.
+info.setCopyCallback(async (embeddedApp) => {
+  const result = await window.managerAPI.copyToPrivate(embeddedApp.configLabel)
+  if (!result.success) return
+  const privateApp = {
+    ...embeddedApp,
+    isPrivate:         true,
+    configLabel:       result.privateConfigLabel,
+    overridesEmbedded: true,
+  }
+  const oldCard = document.querySelector(`.card[data-profile="${CSS.escape(embeddedApp.profile)}"][data-private="false"]`)
+  const newCard = cards.createCard(privateApp)
+  if (oldCard) {
+    oldCard.remove()
+  }
+  cards.insertCard(newCard)
+  drawer.applyVisibility()
+})
+
 const createDialog = initCreateDialog(ctx, {
   iconPicker,
   applyVisibility: drawer.applyVisibility,

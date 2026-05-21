@@ -11,9 +11,15 @@ export function initInfoDialog({ i18n, icons }) {
         <button class="dialog-close" id="info-close">✕</button>
       </div>
       <div class="dialog-fields" id="info-fields"></div>
+      <div class="confirm-actions" id="info-footer" style="display:none">
+        <button class="btn-save" id="info-copy-btn">${i18n.infoCopyToPrivate}</button>
+      </div>
     </div>
   `
   document.body.appendChild(overlay)
+
+  let copyCallback = null
+  let currentApp   = null
 
   function closeInfoDialog() { overlay.classList.add('hidden') }
 
@@ -21,7 +27,17 @@ export function initInfoDialog({ i18n, icons }) {
   document.getElementById('info-close').addEventListener('click', closeInfoDialog)
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInfoDialog() })
 
+  document.getElementById('info-copy-btn').addEventListener('click', async () => {
+    if (!copyCallback || !currentApp) return
+    const btn = document.getElementById('info-copy-btn')
+    btn.disabled = true
+    await copyCallback(currentApp)
+    closeInfoDialog()
+    btn.disabled = false
+  })
+
   function openInfoDialog(app, name) {
+    currentApp = app
     document.getElementById('info-title').textContent = name
     const fieldsEl = document.getElementById('info-fields')
 
@@ -67,8 +83,17 @@ export function initInfoDialog({ i18n, icons }) {
     fieldsEl.querySelectorAll('[data-reveal]').forEach(btn =>
       btn.addEventListener('click', () => window.managerAPI.revealPath(btn.dataset.reveal))
     )
+
+    // Copy button is only relevant for embedded (non-private) apps.
+    const footer = document.getElementById('info-footer')
+    footer.style.display = !app.isPrivate ? '' : 'none'
+
     overlay.classList.remove('hidden')
   }
 
-  return { openInfoDialog }
+  // Allows manager.js to register a callback that runs when the user copies
+  // an embedded config to private. Called with the current app object.
+  function setCopyCallback(fn) { copyCallback = fn }
+
+  return { openInfoDialog, setCopyCallback }
 }

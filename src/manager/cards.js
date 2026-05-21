@@ -62,7 +62,7 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons 
         ${app.isPrivate  ? `<button class="toolbar-btn" data-action="edit"    data-tooltip="${i18n.btnEdit}">${editSrc    ? `<img src="${editSrc}"    alt="${i18n.btnEdit}">` : ''}</button>` : ''}
         <button class="toolbar-btn" data-action="build"   data-tooltip="${app.built ? i18n.btnRebuild : i18n.btnBuild}">${buildSrc   ? `<img src="${buildSrc}"   alt="Build">` : ''}</button>
         <button class="toolbar-btn" data-action="install" data-tooltip="${app.installed ? tr('btnReinstallTooltip', { name }) : tr('btnInstallTooltip', { name })}" ${app.built ? '' : 'disabled'}>${installSrc ? `<img src="${installSrc}" alt="${i18n.btnInstall}">` : ''}</button>
-        <button class="toolbar-btn danger" data-action="delete" data-tooltip="${i18n.btnDelete}" ${app.built ? '' : 'disabled'}>${deleteSrc  ? `<img src="${deleteSrc}"  alt="${i18n.btnDelete}">` : ''}</button>
+        <button class="toolbar-btn danger" data-action="delete" data-tooltip="${i18n.btnDelete}" ${app.built || app.isPrivate ? '' : 'disabled'}>${deleteSrc  ? `<img src="${deleteSrc}"  alt="${i18n.btnDelete}">` : ''}</button>
       </div>
     `
 
@@ -109,7 +109,14 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons 
       btn.classList.remove('loading')
       if (result.success) {
         if (deleteConfig) {
-          card.remove()
+          // If the deleted private config overrode an embedded one, restore the embedded card.
+          if (result.restoredApp) {
+            const embeddedCard = createCard(result.restoredApp)
+            card.remove()
+            insertCard(embeddedCard)
+          } else {
+            card.remove()
+          }
         } else {
           app.built = false
           app.installed = false

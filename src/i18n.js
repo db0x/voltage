@@ -112,6 +112,9 @@ const translations = {
     iconPickerSearch:  'Suchen …',
     iconPickerLoading: 'Lädt Icons …',
 
+    // Info dialog — copy to private
+    infoCopyToPrivate: 'Als private Config kopieren',
+
     // About dialog
     drawerAbout:       'Über wrapweb',
     aboutLicense:      'MIT-Lizenz',
@@ -276,6 +279,9 @@ const translations = {
     createIconChoose:  'Choose icon …',
     iconPickerSearch:  'Search …',
     iconPickerLoading: 'Loading icons …',
+
+    // Info dialog — copy to private
+    infoCopyToPrivate: 'Copy to private config',
 
     // About dialog
     drawerAbout:       'About wrapweb',

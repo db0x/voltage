@@ -553,15 +553,76 @@ if (profile) {
     })
   })
 } else {
+  // Returns the current default mailto handler desktop filename, or null.
+  function getDefaultMailDesktop() {
+    try {
+      const r = spawnSync('xdg-mime', ['query', 'default', 'x-scheme-handler/mailto'], { encoding: 'utf8', timeout: 2000 })
+      return r.stdout.trim() || null
+    } catch { return null }
+  }
+
+  // Builds a full app object for a single config file, resolving icon paths individually.
+  // Used when a single restored app needs to be returned after a delete operation.
+  function buildSingleApp(configFile, defaultMailDesktop) {
+    const f   = path.basename(configFile)
+    const cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'))
+    const configLabel  = f.replace(/^build\.(.+)\.json$/, '$1')
+    const built        = fs.existsSync(path.join(__dirname, 'dist', `wrapweb-${cfg.profile}`))
+    const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `wrapweb-${cfg.profile}.desktop`)
+    const installed    = fs.existsSync(desktopFile)
+    let   iconValue    = cfg.icon || null
+    if (installed) {
+      const m = fs.readFileSync(desktopFile, 'utf8').match(/^Icon=(.+)$/m)
+      if (m) iconValue = m[1].trim()
+    }
+    const appImagePath = path.join(__dirname, 'dist', `wrapweb-${cfg.profile}`)
+    const profilePath  = path.join(app.getPath('appData'), 'wrapweb', cfg.profile)
+    const isDefaultMailHandler = defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`
+    let builtVersion = null
+    let builtRclone  = false
+    if (built) {
+      try {
+        const raw = fs.readFileSync(path.join(__dirname, 'dist', `wrapweb-${cfg.profile}.version`), 'utf8').trim()
+        try {
+          const meta  = JSON.parse(raw)
+          builtVersion = meta.version          ?? null
+          builtRclone  = meta.rcloneFileHandler ?? false
+        } catch { builtVersion = raw }
+      } catch {}
+    }
+    const minVer      = pkg.minAppImageVersion ?? pkg.version
+    const needsRebuild = built && (
+      process.env.WRAPWEB_TEST
+        ? builtVersion !== null && semverLt(builtVersion, minVer)
+        : semverLt(builtVersion ?? '0.0.0', minVer)
+    )
+    let iconPath = null
+    if (iconValue && iconValue !== 'wrapweb') {
+      if (path.isAbsolute(iconValue) && fs.existsSync(iconValue)) {
+        iconPath = iconValue
+      } else {
+        const bundled  = path.join(__dirname, 'assets', 'webapps', `${iconValue}.svg`)
+        const resolved = resolveIconsByGtk([iconValue])
+        iconPath = resolved[iconValue] || (fs.existsSync(bundled) ? bundled : null)
+      }
+    }
+    return {
+      profile: cfg.profile, configLabel, name: cfg.name, url: cfg.url,
+      built, installed, isPrivate: f.startsWith('build.private.'),
+      iconPath, appImagePath, profilePath,
+      icon: cfg.icon || null, geometry: cfg.geometry || null,
+      userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
+      singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
+      mimeTypes: cfg.mimeTypes || null, mailtoJs: cfg.mailtoJs || null,
+      isDefaultMailHandler, category: cfg.category || null,
+      builtVersion, builtRclone, rcloneFileHandler: cfg.rcloneFileHandler || false, needsRebuild,
+    }
+  }
+
   ipcMain.handle('manager:apps', () => {
     // xdg-mime returns a .desktop filename (e.g. "wrapweb-thunderbird.desktop");
     // compare against each app's desktop name to determine the current mail handler.
-    const defaultMailDesktop = (() => {
-      try {
-        const r = spawnSync('xdg-mime', ['query', 'default', 'x-scheme-handler/mailto'], { encoding: 'utf8', timeout: 2000 })
-        return r.stdout.trim() || null
-      } catch { return null }
-    })()
+    const defaultMailDesktop = getDefaultMailDesktop()
 
     const configs = fs.readdirSync(CONFIGS_DIR)
       .filter(f => /^build\..+\.json$/.test(f))
@@ -605,20 +666,28 @@ if (profile) {
         return { profile: cfg.profile, configLabel, name: cfg.name, url: cfg.url, built, installed, isPrivate: f.startsWith('build.private.'), iconValue, appImagePath, profilePath, icon: cfg.icon || null, geometry: cfg.geometry || null, userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false, singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null, mimeTypes: cfg.mimeTypes || null, mailtoJs: cfg.mailtoJs || null, isDefaultMailHandler, category: cfg.category || null, builtVersion, builtRclone, rcloneFileHandler: cfg.rcloneFileHandler || false, needsRebuild }
       })
 
-    configs.sort((a, b) => {
+    // When a private config and an embedded config share the same profile,
+    // only the private one is shown — it takes precedence and becomes editable.
+    const privateProfiles  = new Set(configs.filter(c => c.isPrivate).map(c => c.profile))
+    const embeddedProfiles = new Set(configs.filter(c => !c.isPrivate).map(c => c.profile))
+    const visible = configs
+      .filter(c => c.isPrivate || !privateProfiles.has(c.profile))
+      .map(c => c.isPrivate && embeddedProfiles.has(c.profile) ? { ...c, overridesEmbedded: true } : c)
+
+    visible.sort((a, b) => {
       const nameA = (a.name || a.profile.replace(/^private\./, '').replace(/-/g, ' ')).toLowerCase()
       const nameB = (b.name || b.profile.replace(/^private\./, '').replace(/-/g, ' ')).toLowerCase()
       return nameA.localeCompare(nameB)
     })
 
     // Separate absolute paths from theme names — batch-resolve theme names via GTK
-    const themeNames = [...new Set(configs
+    const themeNames = [...new Set(visible
       .map(c => c.iconValue)
       .filter(v => v && v !== 'wrapweb' && !path.isAbsolute(v))
     )]
     const resolved = resolveIconsByGtk(themeNames)
 
-    return configs.map(({ iconValue, ...c }) => {
+    return visible.map(({ iconValue, ...c }) => {
       let iconPath = null
       if (iconValue && iconValue !== 'wrapweb') {
         if (path.isAbsolute(iconValue) && fs.existsSync(iconValue)) {
@@ -630,6 +699,21 @@ if (profile) {
       }
       return { ...c, iconPath }
     })
+  })
+
+  // Copies an embedded config to build.private.<profile>.json, making it editable.
+  // Returns the new configLabel so the client can update the card without a full reload.
+  ipcMain.handle('manager:copy-to-private', (event, configLabel) => {
+    const srcFile = path.join(CONFIGS_DIR, `build.${configLabel}.json`)
+    if (!fs.existsSync(srcFile)) return { success: false, error: 'Source config not found' }
+    try {
+      const cfg     = JSON.parse(fs.readFileSync(srcFile, 'utf8'))
+      const dstFile = path.join(CONFIGS_DIR, `build.private.${cfg.profile}.json`)
+      fs.writeFileSync(dstFile, JSON.stringify(cfg, null, 2), 'utf8')
+      return { success: true, privateConfigLabel: `private.${cfg.profile}` }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
   })
 
   ipcMain.handle('manager:version',    () => pkg.version)
@@ -700,7 +784,19 @@ if (profile) {
       if (fs.existsSync(appImageFile))                                   fs.rmSync(appImageFile)
       if (deleteConfig     && configFile && fs.existsSync(configFile))   fs.rmSync(configFile)
       if (deleteProfileData && fs.existsSync(profileDir))                fs.rmSync(profileDir, { recursive: true })
-      return { success: true }
+
+      // When a private config is deleted, check if an embedded config for the same
+      // profile exists so the client can restore the (now visible again) embedded card.
+      let restoredApp = null
+      if (deleteConfig && configLabel?.startsWith('private.')) {
+        const embeddedLabel = configLabel.replace(/^private\./, '')
+        const embeddedFile  = path.join(CONFIGS_DIR, `build.${embeddedLabel}.json`)
+        if (fs.existsSync(embeddedFile)) {
+          restoredApp = buildSingleApp(embeddedFile, getDefaultMailDesktop())
+        }
+      }
+
+      return { success: true, restoredApp }
     } catch (err) {
       return { success: false, error: err.message }
     }
