@@ -32,7 +32,7 @@ function openManager() {
     height:    saved?.height ?? 820,
     minWidth:  400,
     minHeight: 400,
-    title: 'wrapweb',
+    title: 'wrapweb Manager',
     webPreferences: {
       preload: path.join(APP_ROOT, 'src', 'manager', 'preload.js'),
       contextIsolation: true,

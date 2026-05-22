@@ -163,4 +163,68 @@ const rcloneTest = base.extend({
   },
 })
 
-module.exports = { test, expect, FAKE_ICON_PATH, base, rcloneTest }
+// ── Mail-handler test helpers ────────────────────────────────────────────────
+
+// Config for a mail-capable app that will appear as both built and installed.
+const MAIL_TEST_CONFIG = {
+  file:    'build.private.test-mail-dialog-app.json',
+  content: {
+    profile:   'test-mail-dialog-app',
+    name:      'Test Mail Dialog App',
+    url:       'https://mail.example.com',
+    mimeTypes: ['x-scheme-handler/mailto'],
+  },
+}
+const MAIL_DESKTOP_FILE = path.join(
+  os.homedir(), '.local', 'share', 'applications', 'wrapweb-test-mail-dialog-app.desktop'
+)
+// Fake AppImage file — presence makes built:true in manager:apps.
+const MAIL_DIST_FILE = path.join(ROOT, 'dist', 'wrapweb-test-mail-dialog-app')
+
+function writeMailTestConfig() {
+  fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true })
+  fs.writeFileSync(path.join(CONFIGS_DIR, MAIL_TEST_CONFIG.file), JSON.stringify(MAIL_TEST_CONFIG.content, null, 4))
+  fs.writeFileSync(MAIL_DIST_FILE, '')  // fake binary so built:true
+  fs.mkdirSync(path.dirname(MAIL_DESKTOP_FILE), { recursive: true })
+  fs.writeFileSync(MAIL_DESKTOP_FILE, [
+    '[Desktop Entry]', 'Type=Application',
+    'Name=Test Mail Dialog App', 'Icon=wrapweb', 'Exec=/dev/null',
+  ].join('\n') + '\n')
+}
+
+function cleanupMailTestConfig() {
+  fs.rmSync(path.join(CONFIGS_DIR, MAIL_TEST_CONFIG.file), { force: true })
+  fs.rmSync(MAIL_DIST_FILE, { force: true })
+  fs.rmSync(MAIL_DESKTOP_FILE, { force: true })
+}
+
+async function launchAppWithMailHandler(extraEnv = {}) {
+  writeMailTestConfig()
+  const { app, userDataDir } = await launchApp({
+    // Pretend the test mail dialog app is already the default handler.
+    WRAPWEB_TEST_MAIL_HANDLER: 'wrapweb-test-mail-dialog-app.desktop',
+    ...extraEnv,
+  })
+  return { app, userDataDir }
+}
+
+async function closeAppWithMailHandler(app, userDataDir) {
+  await closeApp(app, userDataDir)
+  cleanupMailTestConfig()
+}
+
+const mailHandlerTest = base.extend({
+  electronAppWithMailHandler: [async ({}, use) => {
+    const { app, userDataDir } = await launchAppWithMailHandler()
+    await use(app)
+    await closeAppWithMailHandler(app, userDataDir)
+  }, { scope: 'test' }],
+
+  managerPageWithMailHandler: async ({ electronAppWithMailHandler }, use) => {
+    const page = await electronAppWithMailHandler.firstWindow()
+    await page.waitForSelector('.card-add', { timeout: 30_000 })
+    await use(page)
+  },
+})
+
+module.exports = { test, expect, FAKE_ICON_PATH, base, rcloneTest, mailHandlerTest }

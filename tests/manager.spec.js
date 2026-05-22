@@ -2,9 +2,9 @@ const { test, expect } = require('./fixtures')
 
 // Setup:    Manager launched with standard test configs (5 apps: public, private, MS, Google, mail).
 // Action:   (none — reads window title attribute)
-// Expected: Title is "wrapweb".
+// Expected: Title starts with "wrapweb Manager" followed by the version string.
 test('manager window has correct title', async ({ managerPage }) => {
-  await expect(managerPage).toHaveTitle('wrapweb')
+  await expect(managerPage).toHaveTitle(/^wrapweb Manager \d+\.\d+\.\d+/)
 })
 
 // Setup:    Manager launched with standard test configs.

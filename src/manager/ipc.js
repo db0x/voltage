@@ -46,7 +46,9 @@ for name in sys.argv[1:]:
 }
 
 // Returns the current default mailto handler desktop filename, or null.
+// In test mode, WRAPWEB_TEST_MAIL_HANDLER overrides the real xdg-mime query.
 function getDefaultMailDesktop() {
+  if (process.env.WRAPWEB_TEST) return process.env.WRAPWEB_TEST_MAIL_HANDLER || null
   try {
     const r = spawnSync('xdg-mime', ['query', 'default', 'x-scheme-handler/mailto'], { encoding: 'utf8', timeout: 2000 })
     return r.stdout.trim() || null
@@ -266,6 +268,7 @@ module.exports = function registerManagerIpc() {
       profiles:      read('dialogs/profiles.html'),
       rebuildNotice: read('dialogs/rebuild-notice.html'),
       updateNotice:  read('dialogs/update-notice.html'),
+      mailHandler:   read('dialogs/mail-handler.html'),
       rclone:        read('dialogs/rclone.html'),
       safeBrowsing:  read('dialogs/safe-browsing.html'),
       iconPicker:    read('dialogs/icon-picker.html'),
@@ -304,6 +307,8 @@ module.exports = function registerManagerIpc() {
       github:         a('github.svg'),
       updateNotifier: a('system-software-update.svg'),
       profiles:       a('profiles.svg'),
+      mail:               a('mail.svg'),
+      mailApp:            a('webapps/mail.svg'),
       rclone:             a('rclone.svg'),
       'google-drive':     a('webapps/google-drive.svg'),
       googleSafeBrowsing: a('safe-browsing.svg'),
@@ -496,6 +501,17 @@ for name in sorted(theme.list_icons(None)):
   })
 
   ipcMain.handle('manager:check-update', () => checkForUpdate(pkg.version))
+
+  ipcMain.handle('manager:get-mail-handler', () => getDefaultMailDesktop())
+
+  // Sets the default mail handler using xdg-mime.
+  // desktopName is the full filename, e.g. "wrapweb-gmail.desktop".
+  // In test mode, the xdg-mime call is skipped to avoid touching the real system config.
+  ipcMain.handle('manager:set-mail-handler', (event, desktopName) => {
+    if (process.env.WRAPWEB_TEST) return true
+    const r = spawnSync('xdg-mime', ['default', desktopName, 'x-scheme-handler/mailto'], { timeout: 2000 })
+    return r.status === 0
+  })
 
   // Synchronous which-check: if rclone is not on PATH the status is 1.
   ipcMain.handle('manager:rclone-status', () => {

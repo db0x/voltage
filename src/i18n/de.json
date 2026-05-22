@@ -109,6 +109,10 @@
   "aboutGithub":   "wrapweb bei GitHub",
 
   "drawerRcloneSection":       "Integrationen",
+  "drawerMailHandler":         "Mail-Handler",
+  "mailHandlerDialogTitle":    "Mail-Handler",
+  "mailHandlerDialogHint":     "Wähle die App, die als Standard-Mail-Handler registriert werden soll.",
+  "mailHandlerDialogSave":     "Speichern",
   "drawerRclone":              "rclone Integration",
   "drawerSafeBrowsing":        "Google Safe Browsing",
   "rcloneDialogTitle":         "rclone Integration",

@@ -220,8 +220,20 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons 
   }
   grid.appendChild(addCard)
 
+  // Updates all mail-handler badges to reflect a new system default.
+  // Called after the mail-handler dialog saves so cards stay in sync without a reload.
+  function setDefaultMailHandler(profile) {
+    for (const app of apps) {
+      if (!app.mimeTypes?.includes('x-scheme-handler/mailto')) continue
+      app.isDefaultMailHandler = app.profile === profile
+      const card = grid.querySelector(`.card[data-profile="${CSS.escape(app.profile)}"]`)
+      if (card) refreshMailHandlerBadge(app, card)
+    }
+  }
+
   return { createCard, insertCard, addCard,
     getBuildRunning: () => isBuildRunning,
     setBuildRunning: v  => { isBuildRunning = v },
+    setDefaultMailHandler,
   }
 }

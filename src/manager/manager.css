@@ -1549,3 +1549,45 @@ body.dark .rclone-fieldset {
 body.dark .btn-password-toggle img {
   filter: invert(1);
 }
+
+/* ── Mail-handler dialog ──────────────────────────────────────── */
+
+.mail-handler-dialog {
+  width: 380px;
+}
+
+.mail-handler-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.mail-handler-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mail-handler-item:hover {
+  background: var(--surface3);
+}
+
+.mail-handler-item.active {
+  border-color: var(--accent);
+  background: var(--surface3);
+  font-weight: 600;
+}
+
+body.dark .mail-handler-item img {
+  filter: none;
+}

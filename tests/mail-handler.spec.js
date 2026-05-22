@@ -1,4 +1,4 @@
-const { test, expect } = require('./fixtures')
+const { test, expect, mailHandlerTest } = require('./fixtures')
 
 // ── Badge rendering ───────────────────────────────────────────────────────────
 
@@ -160,4 +160,61 @@ test('mail handler badge appears after toggling handler on and saving', async ({
   await expect(managerPage.locator('#edit-save')).not.toBeVisible()
 
   await expect(card.locator('[data-role="mail-handler-badge"]')).toBeAttached()
+})
+
+// ── Drawer menu item ──────────────────────────────────────────────────────────
+
+// Setup:    Manager launched with a mail-capable app that is built AND installed.
+// Action:   Open the side drawer.
+// Expected: The mail-handler menu item is visible.
+mailHandlerTest('mail handler menu item is visible when a mail app is built and installed', async ({ managerPageWithMailHandler }) => {
+  const page = managerPageWithMailHandler
+  await page.click('#menu-btn')
+  await expect(page.locator('#menu-mail-handler')).toBeVisible()
+})
+
+// ── Dialog ────────────────────────────────────────────────────────────────────
+
+// Setup:    Drawer open, mail-capable app is built and installed.
+// Action:   Click the mail-handler menu item.
+// Expected: The mail-handler dialog opens.
+mailHandlerTest('mail handler dialog opens when menu item is clicked', async ({ managerPageWithMailHandler }) => {
+  const page = managerPageWithMailHandler
+  await page.click('#menu-btn')
+  await page.click('#menu-mail-handler')
+  await expect(page.locator('.mail-handler-dialog')).toBeVisible()
+})
+
+// Setup:    Mail-handler dialog is open; WRAPWEB_TEST_MAIL_HANDLER set to the test app.
+// Action:   (none — reads initial state)
+// Expected: The test app is listed in the dialog and shown as the active (selected) entry.
+mailHandlerTest('mail handler dialog shows the current default app as selected', async ({ managerPageWithMailHandler }) => {
+  const page = managerPageWithMailHandler
+  await page.click('#menu-btn')
+  await page.click('#menu-mail-handler')
+  const item = page.locator('.mail-handler-item', { hasText: 'Test Mail Dialog App' })
+  await expect(item).toBeVisible()
+  await expect(item).toHaveClass(/active/)
+})
+
+// Setup:    Mail-handler dialog is open; the test app is the current default (active).
+// Action:   Click Save without changing the selection.
+// Expected: The dialog closes.
+mailHandlerTest('mail handler dialog closes on Save', async ({ managerPageWithMailHandler }) => {
+  const page = managerPageWithMailHandler
+  await page.click('#menu-btn')
+  await page.click('#menu-mail-handler')
+  await page.click('#mail-handler-save')
+  await expect(page.locator('.mail-handler-dialog')).not.toBeVisible()
+})
+
+// Setup:    Mail-handler dialog is open.
+// Action:   Click Cancel.
+// Expected: The dialog closes without saving.
+mailHandlerTest('mail handler dialog closes on Cancel', async ({ managerPageWithMailHandler }) => {
+  const page = managerPageWithMailHandler
+  await page.click('#menu-btn')
+  await page.click('#menu-mail-handler')
+  await page.click('#mail-handler-cancel')
+  await expect(page.locator('.mail-handler-dialog')).not.toBeVisible()
 })

@@ -10,6 +10,7 @@ import { initEditDialog }      from './dialogs/edit.js'
 import { initAboutDialog }     from './dialogs/about.js'
 import { initRebuildNotice }   from './dialogs/rebuild-notice.js'
 import { initUpdateNotice }    from './dialogs/update-notice.js'
+import { initMailHandlerDialog }  from './dialogs/mail-handler.js'
 import { initRcloneDialog }      from './dialogs/rclone.js'
 import { initSafeBrowsingDialog } from './dialogs/safe-browsing.js'
 import { initCards }           from './cards.js'
@@ -37,6 +38,8 @@ const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates
   window.managerAPI.getTemplates(),
 ])
 
+document.title = `wrapweb Manager ${version}`
+
 // String interpolation for i18n keys — falls back to the key name if missing.
 const tr = (key, params = {}) =>
   (i18n[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? ''))
@@ -46,9 +49,15 @@ const s = k => uiIcons[k] ? `file://${uiIcons[k]}` : null
 // appDefault is always provided by main (system theme in production, wrapweb.svg in tests).
 const appDefaultSrc = s('appDefault')
 
+// An app is "mail-capable" when it declares the mailto scheme handler and is both built and installed.
+const mailHandlerAvailable = apps.some(
+  a => a.mimeTypes?.includes('x-scheme-handler/mailto') && a.built && a.installed
+)
+
 const ctx = {
   i18n, tr, apps, version, toDisplayName, appDefaultSrc, uaPresets, plugins, templates,
   rcloneAvailable: rcloneStatus?.available ?? false,
+  mailHandlerAvailable,
   icons: {
     sun:          s('sun'),
     moon:         s('moon'),
@@ -64,6 +73,8 @@ const ctx = {
     filterMicrosoft: s('filterMicrosoft'),
     filterGoogle:    s('filterGoogle'),
     hideFilter:   s('hideFilter'),
+    mail:               s('mail'),
+    mailApp:            s('mailApp'),
     rclone:             s('rclone'),
     'google-drive':     s('google-drive'),
     googleSafeBrowsing: s('googleSafeBrowsing'),
@@ -82,6 +93,11 @@ const info         = initInfoDialog(ctx)
 const profiles     = initProfilesDialog(ctx, { showConfirm: confirm.showConfirm })
 const iconPicker   = initIconPicker(ctx)
 const about        = initAboutDialog(ctx)
+// onSave is a late-bound closure — cards is assigned after initMailHandlerDialog returns.
+let onMailHandlerSave = null
+const mailHandlerDialog  = initMailHandlerDialog(ctx, {
+  onSave: profile => onMailHandlerSave?.(profile),
+})
 const rcloneDialog      = initRcloneDialog(ctx)
 const safeBrowsingDialog = initSafeBrowsingDialog(ctx)
 const editDialog   = initEditDialog(ctx, { iconPicker, showConfirm: confirm.showConfirm })
@@ -93,6 +109,8 @@ const cards = initCards(ctx, {
   hideBuildOverlay: buildOverlay.hideBuildOverlay,
   openEditDialog:   editDialog.openEditDialog,
 })
+
+onMailHandlerSave = profile => cards.setDefaultMailHandler(profile)
 
 // When the user copies an embedded config to private, replace the embedded card
 // with a new private card so editable controls become available immediately.
@@ -145,6 +163,15 @@ document.getElementById('menu-about').addEventListener('click', () => {
   about.openAboutDialog()
   drawer.closeDrawer()
 })
+
+// Only rendered when ≥1 mail-capable app is installed — guard against missing element.
+const mailHandlerBtn = document.getElementById('menu-mail-handler')
+if (mailHandlerBtn) {
+  mailHandlerBtn.addEventListener('click', () => {
+    drawer.closeDrawer()
+    mailHandlerDialog.openMailHandlerDialog()
+  })
+}
 
 // Only rendered when rclone is available — guard against missing element on startup.
 const rcloneBtn = document.getElementById('menu-rclone')
