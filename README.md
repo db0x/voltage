@@ -215,6 +215,31 @@ Results are cached per origin (5 minutes for safe, 30 minutes for flagged) to ke
 
 No AppImage rebuild is required — the key and enabled state are read at runtime from `~/.config/wrapweb/safe-browsing.json`.
 
+## Obsidian Plugin
+
+wrapweb ships a plugin for [Obsidian](https://obsidian.md/). Once installed, external links in your notes that match a wrapweb-routed app open directly in that app instead of the system browser. All external links show a **link tooltip** at the bottom of the screen — identical in style to the tooltips in wrapweb app windows: the app icon and URL for wrapweb targets, the browser icon and URL for everything else.
+
+### Prerequisites
+
+- Obsidian ≥ 1.12.7 installed with at least one vault
+- At least one wrapweb app built and installed (so `routing.json` exists)
+
+### Setup
+
+1. Open the Manager side menu → **Obsidian Integration**
+2. The dialog lists all known vaults with their current plugin status
+3. Click **Plugin installieren** — the plugin files are copied into every vault's `.obsidian/plugins/wrapweb/` directory
+4. In Obsidian: **Settings → Community Plugins → wrapweb** → enable
+
+When wrapweb is updated and ships a newer plugin version, the dialog shows **Update verfügbar** per vault and an **Plugin aktualisieren** button.
+
+### How it works
+
+The plugin reads `~/.config/wrapweb/plugins/routing/routing.json` at runtime — the same file that is written automatically whenever you install a wrapweb app. No rebuild and no Obsidian restart are required when routing changes.
+
+The plugin works in both **Reading Mode** and **Live Preview** (CodeMirror 6). Routing and icon data are cached in memory; the routing file is re-read at most once per second to pick up changes without measurable overhead.
+
+
 ## Included app configs
 
 | Config | App |

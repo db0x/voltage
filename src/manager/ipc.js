@@ -25,12 +25,7 @@ function semverLt(a, b) {
   return false
 }
 
-// Resolves GTK icon names to absolute file paths using the system icon theme.
-// A single Python/GTK subprocess handles all names in one call to amortize startup cost.
-// Returns null for names that are not found in any installed theme.
-function resolveIconsByGtk(names) {
-  if (names.length === 0) return {}
-  const script = `
+const GTK_ICON_SCRIPT = `
 import gi, sys
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
@@ -39,11 +34,50 @@ for name in sys.argv[1:]:
     info = theme.lookup_icon(name, 64, 0)
     print(info.get_filename() if info else '')
 `
-  const r = spawnSync('python3', ['-c', script, ...names], { encoding: 'utf8', timeout: 3000 })
+
+// Resolves GTK icon names to absolute file paths using the system icon theme.
+// A single Python/GTK subprocess handles all names in one call to amortize startup cost.
+// Returns null for names that are not found in any installed theme.
+function resolveIconsByGtk(names) {
+  if (names.length === 0) return {}
+  const r = spawnSync('python3', ['-c', GTK_ICON_SCRIPT, ...names], { encoding: 'utf8', timeout: 3000 })
   if (r.error || r.status !== 0) return {}
   const lines = (r.stdout || '').split('\n')
   return Object.fromEntries(names.map((name, i) => [name, lines[i] || null]))
 }
+
+// Runs a command asynchronously and resolves with stdout string ('' on error or timeout).
+function runAsync(cmd, args, timeoutMs = 3000) {
+  return new Promise(resolve => {
+    let stdout = ''
+    let settled = false
+    const done = val => { if (!settled) { settled = true; resolve(val) } }
+    try {
+      const child = spawn(cmd, args)
+      const timer = setTimeout(() => { child.kill(); done('') }, timeoutMs)
+      child.stdout.on('data', d => { stdout += d })
+      child.on('close', () => { clearTimeout(timer); done(stdout) })
+      child.on('error', () => { clearTimeout(timer); done('') })
+    } catch { done('') }
+  })
+}
+
+// Async variant of resolveIconsByGtk — returns a Promise so the call can be pre-warmed.
+function resolveIconsByGtkAsync(names) {
+  if (names.length === 0) return Promise.resolve({})
+  return runAsync('python3', ['-c', GTK_ICON_SCRIPT, ...names], 3000).then(stdout => {
+    const lines = stdout.split('\n')
+    return Object.fromEntries(names.map((name, i) => [name, lines[i] || null]))
+  })
+}
+
+// Pre-warm slow subprocess results the moment this module is loaded — Electron's app.whenReady()
+// and BrowserWindow creation run in parallel, so these are usually resolved before the first IPC call.
+// The Python/GTK call is skipped in tests (no display server in headless Playwright).
+// xdg-mime and which run in tests too — rclone tests inject a fake binary and rely on the real check.
+const prefetchedAppDefaultIcon    = process.env.WRAPWEB_TEST ? Promise.resolve({}) : resolveIconsByGtkAsync(['application-default-icon'])
+const prefetchedObsidianAvailable = runAsync('xdg-mime', ['query', 'default', 'x-scheme-handler/obsidian'], 2000).then(out => !!out.trim())
+const prefetchedRcloneAvailable   = runAsync('which', ['rclone'], 2000).then(out => ({ available: !!out.trim() }))
 
 // Returns the current default mailto handler desktop filename, or null.
 // In test mode, WRAPWEB_TEST_MAIL_HANDLER overrides the real xdg-mime query.
@@ -280,6 +314,7 @@ module.exports = function registerManagerIpc() {
       globalSettings: read('dialogs/global-settings.html'),
       mailHandler:   read('dialogs/mail-handler.html'),
       rclone:        read('dialogs/rclone.html'),
+      obsidian:      read('dialogs/obsidian.html'),
       safeBrowsing:  read('dialogs/safe-browsing.html'),
       iconPicker:    read('dialogs/icon-picker.html'),
       create:        read('dialogs/create.html'),
@@ -288,14 +323,15 @@ module.exports = function registerManagerIpc() {
     }
   })
 
-  ipcMain.handle('manager:ui-icons', () => {
+  ipcMain.handle('manager:ui-icons', async () => {
     const a = name => path.join(APP_ROOT, 'assets', name)
 
     // All UI chrome icons are bundled under assets/ to avoid missing icons on
     // desktops that don't ship the full GNOME icon set (e.g. KDE Plasma).
     // Only the generic app placeholder tries the system theme first so it blends
     // in with the desktop; the bundled SVG is the fallback.
-    const r          = resolveIconsByGtk(['application-default-icon'])
+    // Uses the pre-warmed Promise so no subprocess is started at this point.
+    const r          = await prefetchedAppDefaultIcon
     const appDefault = r['application-default-icon'] || a('webapps/application-default-icon.svg')
 
     const icons = {
@@ -329,6 +365,10 @@ module.exports = function registerManagerIpc() {
       plus:               a('plus.svg'),
       minus:              a('minus.svg'),
       globe:              a('globe.svg'),
+      obsidianMenu:       a('obsidian.svg'),
+      obsidian:           a('plugins/obsidian.svg'),
+      rclonePlugin:       a('plugins/rclone.svg'),
+      pluginBadge:        a('plugins/plugin.svg'),
     }
 
     // In tests, WRAPWEB_TEST_FILTER_ICONS replaces the category filter icons with a
@@ -528,10 +568,67 @@ for name in sorted(theme.list_icons(None)):
     return r.status === 0
   })
 
-  // Synchronous which-check: if rclone is not on PATH the status is 1.
-  ipcMain.handle('manager:rclone-status', () => {
-    const r = spawnSync('which', ['rclone'], { encoding: 'utf8', timeout: 2000 })
-    return { available: r.status === 0 }
+  // Both handlers return pre-warmed results — the subprocesses were already started
+  // when this module loaded, so by the time the renderer calls these, they are resolved.
+  ipcMain.handle('manager:obsidian-available', () => prefetchedObsidianAvailable)
+
+  ipcMain.handle('manager:rclone-status', () => prefetchedRcloneAvailable)
+
+  // Returns the list of known Obsidian vaults with the plugin install status for each.
+  // Vault list is read from the Obsidian app config (obsidian.json) at query time.
+  ipcMain.handle('manager:obsidian-plugin-status', () => {
+    const configHome    = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
+    const obsidianJson  = path.join(configHome, 'obsidian', 'obsidian.json')
+    const bundledManifest = path.join(APP_ROOT, 'src', 'plugins', 'obsidian', 'manifest.json')
+
+    let bundledVersion = null
+    try { bundledVersion = JSON.parse(fs.readFileSync(bundledManifest, 'utf8')).version } catch {}
+
+    let vaults = []
+    try {
+      const data = JSON.parse(fs.readFileSync(obsidianJson, 'utf8'))
+      vaults = Object.values(data.vaults || {})
+        .filter(v => v.path && fs.existsSync(v.path))
+        .map(v => {
+          const pluginDir      = path.join(v.path, '.obsidian', 'plugins', 'wrapweb')
+          const manifestFile   = path.join(pluginDir, 'manifest.json')
+          const mainFile       = path.join(pluginDir, 'main.js')
+          let installedVersion = null
+          if (fs.existsSync(manifestFile) && fs.existsSync(mainFile)) {
+            try { installedVersion = JSON.parse(fs.readFileSync(manifestFile, 'utf8')).version } catch {}
+          }
+          return { path: v.path, name: path.basename(v.path), installedVersion }
+        })
+    } catch {}
+
+    return { bundledVersion, vaults }
+  })
+
+  // Copies manifest.json and main.js into every known Obsidian vault.
+  ipcMain.handle('manager:obsidian-plugin-install', () => {
+    const configHome   = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
+    const obsidianJson = path.join(configHome, 'obsidian', 'obsidian.json')
+    const srcDir       = path.join(APP_ROOT, 'src', 'plugins', 'obsidian')
+
+    let vaultPaths = []
+    try {
+      const data = JSON.parse(fs.readFileSync(obsidianJson, 'utf8'))
+      vaultPaths = Object.values(data.vaults || {})
+        .filter(v => v.path && fs.existsSync(v.path))
+        .map(v => v.path)
+    } catch {}
+
+    let count = 0
+    for (const vaultPath of vaultPaths) {
+      try {
+        const dest = path.join(vaultPath, '.obsidian', 'plugins', 'wrapweb')
+        fs.mkdirSync(dest, { recursive: true })
+        fs.copyFileSync(path.join(srcDir, 'manifest.json'), path.join(dest, 'manifest.json'))
+        fs.copyFileSync(path.join(srcDir, 'main.js'),       path.join(dest, 'main.js'))
+        count++
+      } catch {}
+    }
+    return { success: count > 0, count }
   })
 
   // Returns names of all rclone remotes configured as Google Drive (type = drive).

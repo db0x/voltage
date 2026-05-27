@@ -1,0 +1,24 @@
+<div class="dialog-overlay hidden">
+  <div class="dialog obsidian-dialog">
+    <div class="dialog-header">
+      <img data-icon="obsidian" width="20" height="20" alt="">
+      <span class="dialog-title">{{obsidianDialogTitle}}</span>
+      <button class="dialog-close" id="obsidian-close">✕</button>
+    </div>
+    <div class="dialog-fields">
+      <fieldset class="obsidian-fieldset">
+        <legend class="obsidian-fieldset-legend">
+          {{obsidianDialogVaults}}
+          <span class="obsidian-legend-spacer"></span>
+          <span id="obsidian-bundled-version" class="obsidian-bundled-version"></span>
+        </legend>
+        <div id="obsidian-vault-list" class="obsidian-vault-list"></div>
+        <p class="obsidian-hint" id="obsidian-no-vaults-hint" style="display:none">{{obsidianDialogNoVaults}}</p>
+      </fieldset>
+    </div>
+    <div class="confirm-actions">
+      <button class="btn-cancel" id="obsidian-cancel">{{confirmCancel}}</button>
+      <button class="btn-secondary" id="obsidian-install" disabled>{{obsidianDialogInstall}}</button>
+    </div>
+  </div>
+</div>
