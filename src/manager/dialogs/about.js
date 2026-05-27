@@ -8,11 +8,28 @@ const ASCII_ART = [
   '              /_/                   ',
 ].join('\n')
 
-export function initAboutDialog({ i18n, version, icons, templates }) {
+export function initAboutDialog({ i18n, version, icons, templates }, { obsidianAvailable = false, rcloneAvailable = false, onOpenObsidian = null, onOpenRclone = null } = {}) {
   const overlay = applyTemplate(templates.about, { i18n, icons, vars: { version } })
   document.body.appendChild(overlay)
 
   overlay.querySelector('.about-ascii').textContent = ASCII_ART
+
+  if (obsidianAvailable) {
+    const obsidianEl = document.getElementById('about-obsidian')
+    obsidianEl.hidden = false
+    if (onOpenObsidian) {
+      obsidianEl.style.cursor = 'pointer'
+      obsidianEl.addEventListener('click', () => { closeAboutDialog(); onOpenObsidian() })
+    }
+  }
+  if (rcloneAvailable) {
+    const rcloneEl = document.getElementById('about-rclone-plugin')
+    rcloneEl.hidden = false
+    if (onOpenRclone) {
+      rcloneEl.style.cursor = 'pointer'
+      rcloneEl.addEventListener('click', () => { closeAboutDialog(); onOpenRclone() })
+    }
+  }
 
   function closeAboutDialog() { overlay.classList.add('hidden') }
 

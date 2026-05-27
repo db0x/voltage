@@ -2,7 +2,7 @@
 // whenever a filter changes, a card is added, or an app is installed/deleted.
 import { applyTemplate } from './template.js'
 
-export function initDrawer({ i18n, icons, rcloneAvailable, mailHandlerAvailable, templates }) {
+export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, mailHandlerAvailable, templates }) {
   const { sun: sunSrc, moon: moonSrc, menu: menuSrc } = icons
 
   const menuBtn  = document.getElementById('menu-btn')
@@ -18,7 +18,8 @@ export function initDrawer({ i18n, icons, rcloneAvailable, mailHandlerAvailable,
   const wrapper = applyTemplate(templates.drawer, { i18n, icons })
   // Mail-handler and rclone buttons are always in the template; remove when not applicable.
   if (!mailHandlerAvailable) wrapper.querySelector('#menu-mail-handler')?.remove()
-  if (!rcloneAvailable) wrapper.querySelector('#menu-rclone')?.remove()
+  if (!rcloneAvailable)    wrapper.querySelector('#menu-rclone')?.remove()
+  if (!obsidianAvailable)  wrapper.querySelector('#menu-obsidian')?.remove()
   drawer.innerHTML = wrapper.innerHTML
   document.body.appendChild(drawer)
 

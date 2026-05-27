@@ -13,6 +13,7 @@ import { initUpdateNotice }    from './dialogs/update-notice.js'
 import { initGlobalSettingsDialog } from './dialogs/global-settings.js'
 import { initMailHandlerDialog }  from './dialogs/mail-handler.js'
 import { initRcloneDialog }      from './dialogs/rclone.js'
+import { initObsidianDialog }    from './dialogs/obsidian.js'
 import { initSafeBrowsingDialog } from './dialogs/safe-browsing.js'
 import { initCards }           from './cards.js'
 import { initTooltip }         from './tooltip.js'
@@ -28,7 +29,7 @@ function toDisplayName(profile) {
 const dark = localStorage.getItem('dark') === '1'
 if (dark) document.body.classList.add('dark')
 
-const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates, globalSettings] = await Promise.all([
+const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates, globalSettings, obsidianAvailable] = await Promise.all([
   window.managerAPI.getApps(),
   window.managerAPI.getVersion(),
   window.managerAPI.getUiIcons(),
@@ -38,6 +39,7 @@ const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates
   window.managerAPI.getRcloneStatus(),
   window.managerAPI.getTemplates(),
   window.managerAPI.loadGlobalSettings(),
+  window.managerAPI.getObsidianAvailable(),
 ])
 
 document.title = `wrapweb Manager ${version}`
@@ -96,16 +98,28 @@ const ctx = {
     globe:          s('globe'),
     plus:           s('plus'),
     minus:          s('minus'),
+    obsidianMenu:   s('obsidianMenu'),
+    obsidian:       s('obsidian'),
+    rclonePlugin:   s('rclonePlugin'),
+    pluginBadge:    s('pluginBadge'),
   },
 }
 
-const drawer       = initDrawer(ctx)
+const drawer       = initDrawer({ ...ctx, obsidianAvailable })
 const buildOverlay = initBuildOverlay(ctx)
 const confirm      = initConfirmDialog(ctx)
 const info         = initInfoDialog(ctx)
 const profiles     = initProfilesDialog(ctx, { showConfirm: confirm.showConfirm })
 const iconPicker   = initIconPicker(ctx)
-const about        = initAboutDialog(ctx)
+// Both integration callbacks are late-bound because their dialogs are initialized after about.
+let onRcloneFromAbout   = null
+let onObsidianFromAbout = null
+const about        = initAboutDialog(ctx, {
+  obsidianAvailable,
+  rcloneAvailable: rcloneStatus?.available ?? false,
+  onOpenObsidian: () => onObsidianFromAbout?.(),
+  onOpenRclone:   () => onRcloneFromAbout?.(),
+})
 // Late-bound closures — cards is assigned after these dialogs are initialized.
 let onGlobalSettingsSave = null
 let onMailHandlerSave    = null
@@ -117,6 +131,9 @@ const mailHandlerDialog  = initMailHandlerDialog(ctx, {
   onSave: profile => onMailHandlerSave?.(profile),
 })
 const rcloneDialog      = initRcloneDialog(ctx)
+onRcloneFromAbout   = () => rcloneDialog.openRcloneDialog()
+const obsidianDialog    = initObsidianDialog(ctx)
+onObsidianFromAbout = () => obsidianDialog.openObsidianDialog()
 const safeBrowsingDialog = initSafeBrowsingDialog(ctx)
 const editDialog   = initEditDialog(ctx, { iconPicker, showConfirm: confirm.showConfirm })
 
@@ -209,6 +226,15 @@ if (rcloneBtn) {
   rcloneBtn.addEventListener('click', () => {
     drawer.closeDrawer()
     rcloneDialog.openRcloneDialog()
+  })
+}
+
+// Only rendered when Obsidian is available — guard against missing element on startup.
+const obsidianBtn = document.getElementById('menu-obsidian')
+if (obsidianBtn) {
+  obsidianBtn.addEventListener('click', () => {
+    drawer.closeDrawer()
+    obsidianDialog.openObsidianDialog()
   })
 }
 

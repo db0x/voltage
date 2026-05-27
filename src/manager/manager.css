@@ -1451,6 +1451,50 @@ body.dark .dialog-field-toggle {
   object-fit: contain;
 }
 
+.about-integrations {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.about-integration {
+  display: flex;
+  align-items: center;
+  cursor: default;
+}
+
+.about-integration-icon-wrap {
+  position: relative;
+  width: 38px;
+  height: 38px;
+}
+
+.about-integration-icon-wrap > img {
+  width: 38px;
+  height: 38px;
+}
+
+.about-plugin-badge {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.30);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.about-plugin-badge img {
+  width: 12px;
+  height: 12px;
+}
+
 /* ── rclone dialog ── */
 
 .rclone-fieldset {
@@ -1553,6 +1597,79 @@ body.dark .rclone-fieldset {
   font-size: 12px;
   color: var(--card-url);
   line-height: 1.5;
+}
+
+/* ── Obsidian dialog ── */
+
+.obsidian-fieldset {
+  border: 1.5px solid var(--card-border, rgba(0,0,0,0.12));
+  border-radius: 8px;
+  padding: 12px 14px 10px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+body.dark .obsidian-fieldset {
+  border-color: rgba(255,255,255,0.12);
+}
+
+.obsidian-fieldset-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--card-url);
+}
+
+.obsidian-hint {
+  font-size: 12px;
+  color: var(--card-url);
+  line-height: 1.5;
+}
+
+.obsidian-vault-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.obsidian-vault-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.obsidian-vault-name {
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obsidian-legend-spacer { flex: 1; }
+
+.obsidian-bundled-version {
+  font-size: 11px;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.6;
+}
+
+.obsidian-vault-version {
+  font-size: 11px;
+  color: var(--card-url);
+  flex-shrink: 0;
 }
 
 .input-password-wrap {
