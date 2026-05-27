@@ -7,9 +7,10 @@
     "typeRoots": ["../../../node_modules/@types"],
     "strict": true,
     "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
     "isolatedModules": true,
-    "outDir": "."
+    "noEmit": true
   },
   "include": ["main.ts"]
 }

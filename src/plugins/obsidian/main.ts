@@ -4,8 +4,13 @@ import { join, basename } from 'path'
 import { spawn, spawnSync } from 'child_process'
 import { homedir } from 'os'
 
-// Respect XDG_CONFIG_HOME if set — same logic as Electron's app.getPath('appData').
-const CONFIG_HOME  = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config')
+// When Obsidian runs as a Flatpak, XDG_CONFIG_HOME and XDG_DATA_DIRS are redirected to
+// the app's private sandbox dirs — not the host's ~/.config or /usr/share. We detect
+// the Flatpak sandbox and bypass those overrides to reach the real host paths.
+const IS_FLATPAK   = !!process.env.FLATPAK_ID || existsSync('/.flatpak-info')
+const CONFIG_HOME  = IS_FLATPAK
+  ? join(homedir(), '.config')
+  : (process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'))
 const ROUTING_FILE = join(CONFIG_HOME, 'wrapweb', 'plugins', 'routing', 'routing.json')
 
 interface RouteTarget {
@@ -40,9 +45,18 @@ function loadRouting(): Routing {
 // --- Icon resolution (mirrors window.js logic) ---
 
 // Returns all XDG data directories in priority order.
-// Includes Flatpak export directories which are listed in XDG_DATA_DIRS on systems
-// where Flatpak is installed — this makes browser icon resolution work for Flatpak apps.
+// Inside a Flatpak sandbox, XDG_DATA_DIRS is sandboxed too, so we use the real host
+// paths directly — including both user-level and system-level Flatpak export dirs.
 function getXdgDataDirs(): string[] {
+  if (IS_FLATPAK) {
+    return [
+      join(homedir(), '.local', 'share'),
+      join(homedir(), '.local', 'share', 'flatpak', 'exports', 'share'),
+      '/var/lib/flatpak/exports/share',
+      '/usr/local/share',
+      '/usr/share',
+    ]
+  }
   const fromEnv = (process.env.XDG_DATA_DIRS ?? '/usr/local/share:/usr/share').split(':').filter(Boolean)
   return [join(homedir(), '.local', 'share'), ...fromEnv]
 }
@@ -81,9 +95,13 @@ function pathToDataUrl(p: string): string | null {
 
 // Resolves the icon for the default handler of a given MIME/scheme type.
 // Mirrors resolveHandlerIconPath() in window.js.
+// Inside a Flatpak sandbox we use flatpak-spawn --host so xdg-mime reads the host MIME DB.
 function resolveHandlerIconDataUrl(mimeType: string): string | null {
   try {
-    const r = spawnSync('xdg-mime', ['query', 'default', mimeType], { encoding: 'utf8', timeout: 500 })
+    const [cmd, args] = IS_FLATPAK
+      ? ['flatpak-spawn', ['--host', 'xdg-mime', 'query', 'default', mimeType]]
+      : ['xdg-mime', ['query', 'default', mimeType]]
+    const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 1500 })
     if (!r.stdout) return null
     const desktop = r.stdout.trim()
     // Search all XDG data dirs — covers Flatpak exports (/var/lib/flatpak/exports/share, etc.)
@@ -167,10 +185,11 @@ function resolveRoute(url: string): ResolvedRoute | null {
 }
 
 function openInWrapweb(route: ResolvedRoute, url: string): void {
-  spawn(route.appImagePath, ['--no-sandbox', url], {
-    detached: true,
-    stdio: 'ignore',
-  }).unref()
+  // Inside Flatpak the sandbox may block arbitrary binary execution; run on the host.
+  const [cmd, args] = IS_FLATPAK
+    ? ['flatpak-spawn', ['--host', route.appImagePath, '--no-sandbox', url]]
+    : [route.appImagePath, ['--no-sandbox', url]]
+  spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref()
   new Notice(`Opening in ${route.name} …`)
 }
 
