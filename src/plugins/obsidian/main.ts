@@ -47,11 +47,17 @@ function loadRouting(): Routing {
 
 // Returns all XDG data directories in priority order.
 // Returns all XDG data directories in priority order.
-// Inside a Flatpak, XDG_DATA_DIRS already contains useful host-mapped paths like
-// /run/host/user-share and /run/host/share — no special casing needed.
+// Explicitly adds Flatpak export paths: XDG_DATA_DIRS inside the Flatpak sandbox
+// contains /run/host/* for host dirs, but NOT /var/lib/flatpak/exports/share where
+// system-installed Flatpak apps (e.g. Brave) put their desktop files and icons.
 function getXdgDataDirs(): string[] {
   const fromEnv = (process.env.XDG_DATA_DIRS ?? '/usr/local/share:/usr/share').split(':').filter(Boolean)
-  return [join(homedir(), '.local', 'share'), ...fromEnv]
+  return [
+    join(homedir(), '.local', 'share'),
+    join(homedir(), '.local', 'share', 'flatpak', 'exports', 'share'),
+    '/var/lib/flatpak/exports/share',
+    ...fromEnv,
+  ]
 }
 
 // Looks up a PNG icon file by name in standard hicolor theme locations.
@@ -236,12 +242,10 @@ function openInWrapweb(route: ResolvedRoute, url: string): void {
 
   const child = spawn(route.appImagePath, [...extraArgs, '--no-sandbox', url], {
     detached: true,
-    stdio:    'pipe',
+    stdio:    'ignore',
     env:      { ...process.env, ...extraEnv },
   })
-  child.stderr?.on('data', d => console.log('[wrapweb] stderr:', d.toString().trimEnd()))
-  child.on('error',  e    => console.log('[wrapweb] spawn error:', e.message))
-  child.on('close',  code => { if (code) console.log('[wrapweb] exit code:', code) })
+  child.on('error', e => console.log('[wrapweb] spawn error:', e.message))
   child.unref()
   new Notice(`Opening in ${route.name} …`)
 }
