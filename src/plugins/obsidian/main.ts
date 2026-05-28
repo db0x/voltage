@@ -13,14 +13,6 @@ const CONFIG_HOME  = IS_FLATPAK
   : (process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'))
 const ROUTING_FILE = join(CONFIG_HOME, 'wrapweb', 'plugins', 'routing', 'routing.json')
 
-console.log('[wrapweb] IS_FLATPAK:', IS_FLATPAK,
-  '| FLATPAK_ID:', process.env.FLATPAK_ID ?? '(unset)',
-  '| /.flatpak-info:', existsSync('/.flatpak-info'))
-console.log('[wrapweb] CONFIG_HOME:', CONFIG_HOME)
-console.log('[wrapweb] ROUTING_FILE:', ROUTING_FILE, '| exists:', existsSync(ROUTING_FILE))
-console.log('[wrapweb] XDG_CONFIG_HOME env:', process.env.XDG_CONFIG_HOME ?? '(unset)')
-console.log('[wrapweb] XDG_DATA_DIRS env:', process.env.XDG_DATA_DIRS ?? '(unset)')
-console.log('[wrapweb] HOME:', process.env.HOME ?? '(unset)', '| homedir():', homedir())
 
 interface RouteTarget {
   path: string
@@ -54,18 +46,10 @@ function loadRouting(): Routing {
 // --- Icon resolution (mirrors window.js logic) ---
 
 // Returns all XDG data directories in priority order.
-// Inside a Flatpak sandbox, XDG_DATA_DIRS is sandboxed too, so we use the real host
-// paths directly — including both user-level and system-level Flatpak export dirs.
+// Returns all XDG data directories in priority order.
+// Inside a Flatpak, XDG_DATA_DIRS already contains useful host-mapped paths like
+// /run/host/user-share and /run/host/share — no special casing needed.
 function getXdgDataDirs(): string[] {
-  if (IS_FLATPAK) {
-    return [
-      join(homedir(), '.local', 'share'),
-      join(homedir(), '.local', 'share', 'flatpak', 'exports', 'share'),
-      '/var/lib/flatpak/exports/share',
-      '/usr/local/share',
-      '/usr/share',
-    ]
-  }
   const fromEnv = (process.env.XDG_DATA_DIRS ?? '/usr/local/share:/usr/share').split(':').filter(Boolean)
   return [join(homedir(), '.local', 'share'), ...fromEnv]
 }
@@ -105,39 +89,55 @@ function pathToDataUrl(p: string): string | null {
 // Reads the default desktop handler for a MIME/scheme type from mimeapps.list files.
 // Avoids spawning xdg-mime which is unreliable inside a Flatpak sandbox (may lack D-Bus access).
 function resolveDefaultDesktop(mimeType: string): string | null {
-  const home = homedir()
-  // Priority order per XDG spec: user config → user apps dir → system
+  // Per XDG spec: user config first, then each XDG data dir, then system config.
   const listPaths = [
-    join(home, '.config', 'mimeapps.list'),
-    join(home, '.local', 'share', 'applications', 'mimeapps.list'),
+    join(homedir(), '.config', 'mimeapps.list'),
+    ...getXdgDataDirs().map(d => join(d, 'applications', 'mimeapps.list')),
     '/etc/xdg/mimeapps.list',
   ]
-  console.log('[wrapweb] resolveDefaultDesktop for:', mimeType)
+
+  // Two-pass: [Default Applications] wins over [Added Associations].
+  let addedAssoc: string | null = null
   for (const listPath of listPaths) {
-    const exists = existsSync(listPath)
-    console.log('[wrapweb]  mimeapps:', listPath, '->', exists ? 'found' : 'missing')
-    if (!exists) continue
+    if (!existsSync(listPath)) continue
     try {
       const lines = readFileSync(listPath, 'utf8').split('\n')
-      let inDefault = false
+      let section = ''
       for (const line of lines) {
         const trimmed = line.trim()
-        if (trimmed.startsWith('[')) {
-          inDefault = trimmed === '[Default Applications]'
-        } else if (inDefault) {
-          const eq = trimmed.indexOf('=')
-          if (eq !== -1 && trimmed.slice(0, eq) === mimeType) {
-            const first = trimmed.slice(eq + 1).split(';')[0].trim()
-            console.log('[wrapweb]  -> desktop:', first)
-            if (first) return first
-          }
+        if (trimmed.startsWith('[')) { section = trimmed; continue }
+        if (section !== '[Default Applications]' && section !== '[Added Associations]') continue
+        const eq = trimmed.indexOf('=')
+        if (eq === -1 || trimmed.slice(0, eq) !== mimeType) continue
+        const first = trimmed.slice(eq + 1).split(';')[0].trim()
+        if (!first) continue
+        if (section === '[Default Applications]') return first
+        if (!addedAssoc) addedAssoc = first  // keep first [Added Associations] hit as fallback
+      }
+    } catch {}
+  }
+  if (addedAssoc) return addedAssoc
+
+  // Last resort: mimeinfo.cache (compiled system MIME database).
+  for (const dir of getXdgDataDirs()) {
+    const cachePath = join(dir, 'applications', 'mimeinfo.cache')
+    if (!existsSync(cachePath)) continue
+    try {
+      const lines = readFileSync(cachePath, 'utf8').split('\n')
+      let inCache = false
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed === '[MIME Cache]') { inCache = true; continue }
+        if (trimmed.startsWith('[')) { inCache = false; continue }
+        if (!inCache) continue
+        const eq = trimmed.indexOf('=')
+        if (eq !== -1 && trimmed.slice(0, eq) === mimeType) {
+          const first = trimmed.slice(eq + 1).split(';')[0].trim()
+          if (first) return first
         }
       }
-    } catch (e) {
-      console.log('[wrapweb]  read error:', e)
-    }
+    } catch {}
   }
-  console.log('[wrapweb]  -> no desktop found')
   return null
 }
 
@@ -227,17 +227,26 @@ function resolveRoute(url: string): ResolvedRoute | null {
 }
 
 function openInWrapweb(route: ResolvedRoute, url: string): void {
-  // Run the AppImage directly — no flatpak-spawn needed.
-  // APPIMAGE_EXTRACT_AND_RUN=1 avoids FUSE mounting (which may be blocked inside a Flatpak sandbox).
-  console.log('[wrapweb] spawn:', route.appImagePath, '--no-sandbox', url)
-  const child = spawn(route.appImagePath, ['--no-sandbox', url], {
-    detached: true,
-    stdio:    'pipe',
-    env:      { ...process.env, APPIMAGE_EXTRACT_AND_RUN: '1' },
-  })
-  child.stderr?.on('data', d => console.log('[wrapweb] spawn stderr:', d.toString()))
+  // Inside Flatpak, escape the sandbox via flatpak-spawn --host so the AppImage can
+  // access D-Bus, Wayland/X11 sockets and other host resources.
+  // Requires: flatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian
+  const [cmd, args] = IS_FLATPAK
+    ? ['flatpak-spawn', ['--host', route.appImagePath, '--no-sandbox', url]]
+    : [route.appImagePath, ['--no-sandbox', url]]
+
+  const child = spawn(cmd, args, { detached: true, stdio: 'pipe' })
+  let stderrBuf = ''
+  child.stderr?.on('data', d => { stderrBuf += d.toString() })
   child.on('error', e => console.log('[wrapweb] spawn error:', e.message))
-  child.on('close', code => { if (code !== 0 && code !== null) console.log('[wrapweb] spawn exit code:', code) })
+  child.on('close', code => {
+    if (code && stderrBuf.includes('org.freedesktop.Flatpak')) {
+      new Notice(
+        'wrapweb: Run this once to allow opening apps from Obsidian Flatpak:\n' +
+        'flatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian',
+        12000
+      )
+    }
+  })
   child.unref()
   new Notice(`Opening in ${route.name} …`)
 }

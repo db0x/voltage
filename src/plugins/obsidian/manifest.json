@@ -1,7 +1,7 @@
 {
   "id": "wrapweb",
   "name": "wrapweb",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "minAppVersion": "1.12.7",
   "description": "Opens links in wrapweb AppImages based on the wrapweb routing configuration.",
   "author": "wrapweb",
