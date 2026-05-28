@@ -60,6 +60,16 @@ body {
   display: flex;
   flex-direction: column;
   transition: background 0.2s, color 0.2s;
+  /* Kept hidden until manager.js finishes wiring up the UI, then revealed by
+     toggling body.ready. Prevents users from seeing the layout assemble piece
+     by piece on cold start (cards inserting, dialogs registering, scrollbars
+     initializing). The BrowserWindow backgroundColor in src/manager/window.js
+     mirrors --bg so the pre-reveal frame is a uniform theme-colored surface
+     instead of a flash of white. */
+  visibility: hidden;
+}
+body.ready {
+  visibility: visible;
 }
 
 header {

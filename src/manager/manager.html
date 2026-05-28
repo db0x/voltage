@@ -4,6 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>wrapweb Manager</title>
+  <!-- Theme-pre-paint: both pieces below MUST execute before the external
+       stylesheet links. Together they kill the sub-second white flash that
+       cold-start cold-paths show in dark mode:
+         1. The inline <style> gives <html> a non-transparent background from the
+            very first frame, so the brief gap between HTML parse and manager.css
+            load shows the right color (instead of falling through to whatever
+            Electron's compositor paints — observed as white on some Wayland
+            setups even with BrowserWindow.backgroundColor set).
+         2. The inline <script> reads localStorage synchronously and tags <html>
+            with `dark` so the rule above resolves before manager.js ever runs. -->
+  <style>
+    html          { background: #f0f0f0; }
+    html.dark     { background: #1e1e1e; }
+  </style>
+  <script>
+    if (localStorage.getItem('dark') === '1') document.documentElement.classList.add('dark')
+  </script>
   <link rel="stylesheet" href="../../node_modules/overlayscrollbars/styles/overlayscrollbars.css">
   <link rel="stylesheet" href="manager.css">
 </head>

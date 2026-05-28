@@ -37,4 +37,7 @@ contextBridge.exposeInMainWorld('managerAPI', {
   saveSafeBrowsingConfig:    (config) => ipcRenderer.invoke('manager:safe-browsing-save-config', config),
   copyToPrivate: (configLabel) => ipcRenderer.invoke('manager:copy-to-private', configLabel),
   getTemplates:  ()            => ipcRenderer.invoke('manager:templates'),
+  // Persisted in manager-state.json so the next cold start paints the window
+  // with the correct backgroundColor before the renderer attaches.
+  setDark:       (dark)        => ipcRenderer.invoke('manager:set-dark', dark),
 })

@@ -44,7 +44,11 @@ export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, ma
 
   document.getElementById('menu-darkmode').addEventListener('click', () => {
     document.body.classList.toggle('dark')
-    localStorage.setItem('dark', document.body.classList.contains('dark') ? '1' : '0')
+    const isDark = document.body.classList.contains('dark')
+    localStorage.setItem('dark', isDark ? '1' : '0')
+    // Mirror the choice into manager-state.json so main can paint the next
+    // cold-start frame with a matching backgroundColor — prevents a theme-mismatched flash.
+    window.managerAPI?.setDark?.(isDark)
     applyDarkmodeMenuItem()
   })
 

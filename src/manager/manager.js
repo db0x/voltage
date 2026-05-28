@@ -28,6 +28,11 @@ function toDisplayName(profile) {
 
 const dark = localStorage.getItem('dark') === '1'
 if (dark) document.body.classList.add('dark')
+// Mirror localStorage into manager-state.json so the next cold start can paint
+// the correct backgroundColor before the renderer attaches. This is also the
+// migration path for existing dark-mode users — first launch after the upgrade
+// seeds the persisted flag without requiring an explicit toggle.
+window.managerAPI.setDark(dark)
 
 const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates, globalSettings, obsidianAvailable] = await Promise.all([
   window.managerAPI.getApps(),
@@ -246,3 +251,10 @@ document.getElementById('menu-safe-browsing').addEventListener('click', () => {
 OverlayScrollbars(document.getElementById('grid-wrapper'), { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
 drawer.applyInitialFilter()
 initTooltip()
+
+// Reveal the UI now that all synchronous init is done. The browser hasn't painted
+// since the module started (everything above runs inside one microtask continuation
+// after the await), so this flips visibility before the first frame — users never
+// see a partial assembly. rAF would be cleaner but Electron throttles it while the
+// BrowserWindow is still in its pre-ready-to-show hidden state, causing test hangs.
+document.body.classList.add('ready')
