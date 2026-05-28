@@ -1,7 +1,7 @@
 import { MarkdownView, Plugin, Notice } from 'obsidian'
 import { readFileSync, existsSync } from 'fs'
 import { join, basename } from 'path'
-import { spawn, spawnSync } from 'child_process'
+import { spawn } from 'child_process'
 import { homedir } from 'os'
 
 // When Obsidian runs as a Flatpak, XDG_CONFIG_HOME and XDG_DATA_DIRS are redirected to
@@ -93,18 +93,43 @@ function pathToDataUrl(p: string): string | null {
   }
 }
 
+// Reads the default desktop handler for a MIME/scheme type from mimeapps.list files.
+// Avoids spawning xdg-mime which is unreliable inside a Flatpak sandbox (may lack D-Bus access).
+function resolveDefaultDesktop(mimeType: string): string | null {
+  const home = homedir()
+  // Priority order per XDG spec: user config → user apps dir → system
+  const listPaths = [
+    join(home, '.config', 'mimeapps.list'),
+    join(home, '.local', 'share', 'applications', 'mimeapps.list'),
+    '/etc/xdg/mimeapps.list',
+  ]
+  for (const listPath of listPaths) {
+    try {
+      const lines = readFileSync(listPath, 'utf8').split('\n')
+      let inDefault = false
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed.startsWith('[')) {
+          inDefault = trimmed === '[Default Applications]'
+        } else if (inDefault) {
+          const eq = trimmed.indexOf('=')
+          if (eq !== -1 && trimmed.slice(0, eq) === mimeType) {
+            const first = trimmed.slice(eq + 1).split(';')[0].trim()
+            if (first) return first
+          }
+        }
+      }
+    } catch {}
+  }
+  return null
+}
+
 // Resolves the icon for the default handler of a given MIME/scheme type.
-// Mirrors resolveHandlerIconPath() in window.js.
-// Inside a Flatpak sandbox we use flatpak-spawn --host so xdg-mime reads the host MIME DB.
+// Uses direct file reads instead of xdg-mime subprocess — works inside Flatpak too.
 function resolveHandlerIconDataUrl(mimeType: string): string | null {
   try {
-    const [cmd, args] = IS_FLATPAK
-      ? ['flatpak-spawn', ['--host', 'xdg-mime', 'query', 'default', mimeType]]
-      : ['xdg-mime', ['query', 'default', mimeType]]
-    const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 1500 })
-    if (!r.stdout) return null
-    const desktop = r.stdout.trim()
-    // Search all XDG data dirs — covers Flatpak exports (/var/lib/flatpak/exports/share, etc.)
+    const desktop = resolveDefaultDesktop(mimeType)
+    if (!desktop) return null
     const appDirs = getXdgDataDirs().map(d => join(d, 'applications'))
     let iconName = desktop.replace(/\.desktop$/, '')
     for (const dir of appDirs) {
@@ -185,10 +210,23 @@ function resolveRoute(url: string): ResolvedRoute | null {
 }
 
 function openInWrapweb(route: ResolvedRoute, url: string): void {
-  // Inside Flatpak the sandbox may block arbitrary binary execution; run on the host.
-  const [cmd, args] = IS_FLATPAK
-    ? ['flatpak-spawn', ['--host', route.appImagePath, '--no-sandbox', url]]
-    : [route.appImagePath, ['--no-sandbox', url]]
+  let cmd: string
+  let args: string[]
+  if (IS_FLATPAK) {
+    // Run outside the sandbox via flatpak-spawn --host.
+    // Forward display vars — without these, Electron apps launched on the host
+    // have no DISPLAY/WAYLAND_DISPLAY and won't show a window.
+    const envArgs: string[] = []
+    for (const v of ['DISPLAY', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR']) {
+      const val = process.env[v]
+      if (val) envArgs.push(`--env=${v}=${val}`)
+    }
+    cmd  = 'flatpak-spawn'
+    args = ['--host', ...envArgs, route.appImagePath, '--no-sandbox', url]
+  } else {
+    cmd  = route.appImagePath
+    args = ['--no-sandbox', url]
+  }
   spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref()
   new Notice(`Opening in ${route.name} …`)
 }
