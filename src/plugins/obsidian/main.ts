@@ -227,26 +227,21 @@ function resolveRoute(url: string): ResolvedRoute | null {
 }
 
 function openInWrapweb(route: ResolvedRoute, url: string): void {
-  // Inside Flatpak, escape the sandbox via flatpak-spawn --host so the AppImage can
-  // access D-Bus, Wayland/X11 sockets and other host resources.
-  // Requires: flatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian
-  const [cmd, args] = IS_FLATPAK
-    ? ['flatpak-spawn', ['--host', route.appImagePath, '--no-sandbox', url]]
-    : [route.appImagePath, ['--no-sandbox', url]]
+  // Inside Flatpak: spawn directly. The AppImage runs in the same sandbox which has
+  // X11 access (DISPLAY is set). Force X11 via --ozone-platform to prevent Electron
+  // from trying the Wayland socket (not accessible in this sandbox context).
+  // APPIMAGE_EXTRACT_AND_RUN avoids FUSE mounting which may be blocked in the sandbox.
+  const extraArgs = IS_FLATPAK ? ['--ozone-platform=x11'] : []
+  const extraEnv  = IS_FLATPAK ? { APPIMAGE_EXTRACT_AND_RUN: '1' } : {}
 
-  const child = spawn(cmd, args, { detached: true, stdio: 'pipe' })
-  let stderrBuf = ''
-  child.stderr?.on('data', d => { stderrBuf += d.toString() })
-  child.on('error', e => console.log('[wrapweb] spawn error:', e.message))
-  child.on('close', code => {
-    if (code && stderrBuf.includes('org.freedesktop.Flatpak')) {
-      new Notice(
-        'wrapweb: Run this once to allow opening apps from Obsidian Flatpak:\n' +
-        'flatpak override --user --talk-name=org.freedesktop.Flatpak md.obsidian.Obsidian',
-        12000
-      )
-    }
+  const child = spawn(route.appImagePath, [...extraArgs, '--no-sandbox', url], {
+    detached: true,
+    stdio:    'pipe',
+    env:      { ...process.env, ...extraEnv },
   })
+  child.stderr?.on('data', d => console.log('[wrapweb] stderr:', d.toString().trimEnd()))
+  child.on('error',  e    => console.log('[wrapweb] spawn error:', e.message))
+  child.on('close',  code => { if (code) console.log('[wrapweb] exit code:', code) })
   child.unref()
   new Notice(`Opening in ${route.name} …`)
 }
