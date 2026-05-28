@@ -1,7 +1,7 @@
 import { MarkdownView, Plugin, Notice } from 'obsidian'
 import { readFileSync, existsSync } from 'fs'
 import { join, basename } from 'path'
-import { spawn } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 import { homedir } from 'os'
 
 // When Obsidian runs as a Flatpak, XDG_CONFIG_HOME and XDG_DATA_DIRS are redirected to
@@ -124,7 +124,7 @@ function resolveDefaultDesktop(mimeType: string): string | null {
   }
   if (addedAssoc) return addedAssoc
 
-  // Last resort: mimeinfo.cache (compiled system MIME database).
+  // mimeinfo.cache: compiled MIME capabilities database, present when any apps are installed.
   for (const dir of getXdgDataDirs()) {
     const cachePath = join(dir, 'applications', 'mimeinfo.cache')
     if (!existsSync(cachePath)) continue
@@ -144,6 +144,17 @@ function resolveDefaultDesktop(mimeType: string): string | null {
       }
     } catch {}
   }
+
+  // xdg-settings uses GSettings/D-Bus portal and works inside Flatpak even when
+  // the system MIME database is not directly accessible via the filesystem.
+  if (mimeType === 'x-scheme-handler/https' || mimeType === 'x-scheme-handler/http') {
+    try {
+      const r = spawnSync('xdg-settings', ['get', 'default-web-browser'], { encoding: 'utf8', timeout: 1000 })
+      const val = r.stdout?.trim()
+      if (val) return val
+    } catch {}
+  }
+
   return null
 }
 
