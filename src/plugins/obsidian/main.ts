@@ -13,6 +13,15 @@ const CONFIG_HOME  = IS_FLATPAK
   : (process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'))
 const ROUTING_FILE = join(CONFIG_HOME, 'wrapweb', 'plugins', 'routing', 'routing.json')
 
+console.log('[wrapweb] IS_FLATPAK:', IS_FLATPAK,
+  '| FLATPAK_ID:', process.env.FLATPAK_ID ?? '(unset)',
+  '| /.flatpak-info:', existsSync('/.flatpak-info'))
+console.log('[wrapweb] CONFIG_HOME:', CONFIG_HOME)
+console.log('[wrapweb] ROUTING_FILE:', ROUTING_FILE, '| exists:', existsSync(ROUTING_FILE))
+console.log('[wrapweb] XDG_CONFIG_HOME env:', process.env.XDG_CONFIG_HOME ?? '(unset)')
+console.log('[wrapweb] XDG_DATA_DIRS env:', process.env.XDG_DATA_DIRS ?? '(unset)')
+console.log('[wrapweb] HOME:', process.env.HOME ?? '(unset)', '| homedir():', homedir())
+
 interface RouteTarget {
   path: string
   name?: string
@@ -103,7 +112,11 @@ function resolveDefaultDesktop(mimeType: string): string | null {
     join(home, '.local', 'share', 'applications', 'mimeapps.list'),
     '/etc/xdg/mimeapps.list',
   ]
+  console.log('[wrapweb] resolveDefaultDesktop for:', mimeType)
   for (const listPath of listPaths) {
+    const exists = existsSync(listPath)
+    console.log('[wrapweb]  mimeapps:', listPath, '->', exists ? 'found' : 'missing')
+    if (!exists) continue
     try {
       const lines = readFileSync(listPath, 'utf8').split('\n')
       let inDefault = false
@@ -115,12 +128,16 @@ function resolveDefaultDesktop(mimeType: string): string | null {
           const eq = trimmed.indexOf('=')
           if (eq !== -1 && trimmed.slice(0, eq) === mimeType) {
             const first = trimmed.slice(eq + 1).split(';')[0].trim()
+            console.log('[wrapweb]  -> desktop:', first)
             if (first) return first
           }
         }
       }
-    } catch {}
+    } catch (e) {
+      console.log('[wrapweb]  read error:', e)
+    }
   }
+  console.log('[wrapweb]  -> no desktop found')
   return null
 }
 
@@ -227,7 +244,15 @@ function openInWrapweb(route: ResolvedRoute, url: string): void {
     cmd  = route.appImagePath
     args = ['--no-sandbox', url]
   }
-  spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref()
+  console.log('[wrapweb] spawn:', cmd, args.join(' '))
+  console.log('[wrapweb] display env — DISPLAY:', process.env.DISPLAY,
+    '| WAYLAND_DISPLAY:', process.env.WAYLAND_DISPLAY,
+    '| XDG_RUNTIME_DIR:', process.env.XDG_RUNTIME_DIR)
+  const child = spawn(cmd, args, { detached: true, stdio: 'pipe' })
+  child.stderr?.on('data', d => console.log('[wrapweb] spawn stderr:', d.toString()))
+  child.on('error', e => console.log('[wrapweb] spawn error:', e.message))
+  child.on('close', code => { if (code !== 0 && code !== null) console.log('[wrapweb] spawn exit code:', code) })
+  child.unref()
   new Notice(`Opening in ${route.name} …`)
 }
 
