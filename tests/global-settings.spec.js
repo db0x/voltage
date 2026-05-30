@@ -90,6 +90,52 @@ globalSettingsTest('saving a hidden app removes its card from the grid', async (
   await expect(page.locator('.card[data-profile="test-app"]')).not.toBeAttached()
 })
 
+// ── Scrolling ──────────────────────────────────────────────────────────────────
+// Like every other dialog, global settings wraps its fields in an OverlayScrollbars
+// viewport (.gs-scroll-wrapper) so the content scrolls when the window is too short,
+// while the header and footer stay fixed.
+
+// Overflow metric of the OverlayScrollbars viewport inside the dialog. Returns -1
+// while the viewport doesn't exist yet so expect.poll keeps waiting for the lazy
+// init (the scrollbar is only set up on first open) and for the OS ResizeObserver
+// to settle after a window resize.
+const gsOverflow = (page) => page.evaluate(() => {
+  const vp = document.querySelector('.gs-scroll-wrapper [data-overlayscrollbars-viewport]')
+  return vp ? vp.scrollHeight - vp.clientHeight : -1
+})
+
+// Setup:    Manager shrunk so the settings content is taller than the dialog body.
+// Action:   Open global settings and scroll its viewport to the bottom.
+// Expected: The viewport overflows (scroll range > 0) and the last fieldset (UA
+//           presets) sits fully inside the viewport once scrolled — i.e. all content
+//           is reachable, which is the bug this fix addresses.
+test('global settings scrolls when the window is too short to fit it', async ({ electronApp, managerPage }) => {
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(560, 380))
+  await openGlobalSettings(managerPage)
+
+  await expect.poll(() => gsOverflow(managerPage)).toBeGreaterThan(0)
+
+  const uaListReachable = await managerPage.evaluate(() => {
+    const vp = document.querySelector('.gs-scroll-wrapper [data-overlayscrollbars-viewport]')
+    vp.scrollTop = vp.scrollHeight
+    const v = vp.getBoundingClientRect()
+    const u = document.getElementById('gs-ua-list').getBoundingClientRect()
+    return u.top <= v.bottom + 1 && u.top >= v.top - 1
+  })
+  expect(uaListReachable).toBe(true)
+})
+
+// Setup:    Manager sized tall enough to show the whole settings content at once.
+// Action:   Open global settings.
+// Expected: The viewport has no scroll range — the scrollbar appears only when
+//           needed, never when the content already fits.
+test('global settings does not scroll when the window is tall enough', async ({ electronApp, managerPage }) => {
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(560, 900))
+  await openGlobalSettings(managerPage)
+
+  await expect.poll(() => gsOverflow(managerPage)).toBe(0)
+})
+
 // ── UA presets — list content ─────────────────────────────────────────────────
 
 // Setup:    Global settings dialog open.

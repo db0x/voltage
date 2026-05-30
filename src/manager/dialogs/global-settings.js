@@ -28,6 +28,7 @@ export function initGlobalSettingsDialog({ i18n, icons, apps, appDefaultSrc, bui
   let customUaPresets   = []
   let dropdownOpen      = false
   let dropdownScrollbar = false
+  let scrollbarInited   = false
 
   // ── UA add sub-dialog (built once, reused) ─────────────────────
 
@@ -226,6 +227,11 @@ export function initGlobalSettingsDialog({ i18n, icons, apps, appDefaultSrc, bui
 
   async function openGlobalSettingsDialog() {
     overlay.classList.remove('hidden')
+    // Init once after the wrapper is visible so OverlayScrollbars can measure it.
+    if (!scrollbarInited) {
+      OverlayScrollbars(document.getElementById('gs-scroll-wrapper'), { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
+      scrollbarInited = true
+    }
     const saved = await window.managerAPI.loadGlobalSettings()
     hiddenProfiles  = Array.isArray(saved.hiddenProfiles)  ? [...saved.hiddenProfiles]  : []
     customUaPresets = Array.isArray(saved.customUaPresets) ? [...saved.customUaPresets] : []

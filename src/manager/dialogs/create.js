@@ -1,3 +1,4 @@
+import { OverlayScrollbars } from '../../../node_modules/overlayscrollbars/overlayscrollbars.mjs'
 import { applyTemplate } from '../template.js'
 import { initDomainList } from '../domain-list.js'
 import { initRoutingUrlList } from '../routing-url-field.js'
@@ -51,6 +52,7 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
   let profileCheckTimer = null
   let urlCheckTimer     = null
   let selectedIconName  = ''
+  let scrollbarInited   = false
 
   const profileInput = document.getElementById('create-profile')
   const profileHint  = document.getElementById('create-profile-hint')
@@ -239,6 +241,11 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     heightValid  = true
     updateSaveBtn()
     overlay.classList.remove('hidden')
+    // Init once after the wrapper is visible so OverlayScrollbars can measure it.
+    if (!scrollbarInited) {
+      OverlayScrollbars(document.getElementById('create-scroll-wrapper'), { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
+      scrollbarInited = true
+    }
     profileInput.focus()
   }
 

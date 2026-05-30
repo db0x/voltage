@@ -1274,6 +1274,25 @@ body.dark .dialog-field-toggle {
   padding-right: 14px;
 }
 
+/* ── Create dialog ── */
+/* Same field set as the edit dialog, so it needs the identical scroll treatment:
+   the body scrolls on short windows while header and footer stay fixed. */
+
+.create-dialog {
+  max-height: 90vh;
+}
+
+.create-scroll-wrapper {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(90vh - 120px);
+}
+
+/* Reserve room for the overlay scrollbar so it never overlaps the fields. */
+.create-scroll-wrapper .dialog-fields {
+  padding-right: 14px;
+}
+
 /* ── Profiles dialog ── */
 
 .profiles-dialog {
@@ -1798,6 +1817,20 @@ body.dark .btn-password-toggle img {
 
 .global-settings-dialog {
   width: 480px;
+  max-height: 90vh;
+}
+
+/* Scroll wrapper keeps the header and footer fixed while the fields scroll;
+   mirrors the edit dialog so all dialogs gain a scrollbar when content overflows. */
+.gs-scroll-wrapper {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(90vh - 120px);
+}
+
+/* Reserve room for the overlay scrollbar so it never overlaps the fieldsets. */
+.gs-scroll-wrapper .dialog-fields {
+  padding-right: 14px;
 }
 
 .global-settings-dialog .dialog-fields {

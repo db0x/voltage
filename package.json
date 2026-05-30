@@ -3,7 +3,7 @@
   "description": "PWA Wrapper",
   "keywords": [],
   "main": "./main.js",
-  "version": "0.20.1wrapw",
+  "version": "0.20.2",
   "minAppImageVersion": "0.20.0",
   "author": {
     "name": "db0x",

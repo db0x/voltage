@@ -49,6 +49,52 @@ test('create dialog: closes with Escape key', async ({ managerPage }) => {
   await expect(managerPage.locator('#create-save')).not.toBeVisible()
 })
 
+// ── Create dialog scrolling ────────────────────────────────────────────────────
+// The create dialog carries the same long field set as the edit dialog, so it
+// wraps its fields in an OverlayScrollbars viewport (.create-scroll-wrapper):
+// the body scrolls on short windows while header and footer stay fixed.
+
+// Overflow metric of the OverlayScrollbars viewport inside the dialog. Returns -1
+// while the viewport doesn't exist yet so expect.poll keeps waiting for the lazy
+// init (the scrollbar is only set up on first open) and for the OS ResizeObserver
+// to settle after a window resize.
+const createOverflow = (page) => page.evaluate(() => {
+  const vp = document.querySelector('.create-scroll-wrapper [data-overlayscrollbars-viewport]')
+  return vp ? vp.scrollHeight - vp.clientHeight : -1
+})
+
+// Setup:    Manager shrunk so the create fields are taller than the dialog body.
+// Action:   Open the create dialog and scroll its viewport to the bottom.
+// Expected: The viewport overflows (scroll range > 0) and the last field (plugin
+//           select's container, the mail-handler toggle) is reachable — i.e. the
+//           Save button no longer sits off-screen, which is the bug this fix prevents.
+test('create dialog scrolls when the window is too short to fit it', async ({ electronApp, managerPage }) => {
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(560, 380))
+  await managerPage.click('.card-add')
+
+  await expect.poll(() => createOverflow(managerPage)).toBeGreaterThan(0)
+
+  const mailToggleReachable = await managerPage.evaluate(() => {
+    const vp = document.querySelector('.create-scroll-wrapper [data-overlayscrollbars-viewport]')
+    vp.scrollTop = vp.scrollHeight
+    const v = vp.getBoundingClientRect()
+    const t = document.getElementById('create-mail-handler').getBoundingClientRect()
+    return t.bottom <= v.bottom + 1 && t.top >= v.top - 1
+  })
+  expect(mailToggleReachable).toBe(true)
+})
+
+// Setup:    Manager sized tall enough to show the whole create form at once.
+// Action:   Open the create dialog.
+// Expected: The viewport has no scroll range — the scrollbar appears only when
+//           needed, never when the form already fits.
+test('create dialog does not scroll when the window is tall enough', async ({ electronApp, managerPage }) => {
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(560, 1000))
+  await managerPage.click('.card-add')
+
+  await expect.poll(() => createOverflow(managerPage)).toBe(0)
+})
+
 // ── Edit dialog ───────────────────────────────────────────────────────────────
 
 // Setup:    Manager open; a private/user app card exists (only private cards have the edit button).

@@ -5,28 +5,30 @@
       <span class="dialog-title">{{globalSettingsTitle}}</span>
       <button class="dialog-close" id="global-settings-close">✕</button>
     </div>
-    <div class="dialog-fields">
-      <fieldset class="rclone-fieldset">
-        <legend class="rclone-fieldset-legend">
-          <img src="{{appDefaultSrc}}" width="16" height="16" alt="">
-          {{globalSettingsHideApps}}
-        </legend>
-        <div class="domain-field-wrapper">
-          <ul class="domain-list" id="gs-hidden-list"></ul>
-          <div class="domain-add-row">
-            <button type="button" class="app-select-trigger" id="gs-app-trigger">
-              <span class="app-select-hint">{{globalSettingsHideAppsHint}}</span>
-            </button>
+    <div class="gs-scroll-wrapper" id="gs-scroll-wrapper">
+      <div class="dialog-fields">
+        <fieldset class="rclone-fieldset">
+          <legend class="rclone-fieldset-legend">
+            <img src="{{appDefaultSrc}}" width="16" height="16" alt="">
+            {{globalSettingsHideApps}}
+          </legend>
+          <div class="domain-field-wrapper">
+            <ul class="domain-list" id="gs-hidden-list"></ul>
+            <div class="domain-add-row">
+              <button type="button" class="app-select-trigger" id="gs-app-trigger">
+                <span class="app-select-hint">{{globalSettingsHideAppsHint}}</span>
+              </button>
+            </div>
           </div>
-        </div>
-      </fieldset>
-      <fieldset class="rclone-fieldset">
-        <legend class="rclone-fieldset-legend">
-          <img data-icon="globe" width="16" height="16" alt="">
-          {{globalSettingsUaPresets}}
-        </legend>
-        <ul id="gs-ua-list" class="gs-ua-list"></ul>
-      </fieldset>
+        </fieldset>
+        <fieldset class="rclone-fieldset">
+          <legend class="rclone-fieldset-legend">
+            <img data-icon="globe" width="16" height="16" alt="">
+            {{globalSettingsUaPresets}}
+          </legend>
+          <ul id="gs-ua-list" class="gs-ua-list"></ul>
+        </fieldset>
+      </div>
     </div>
     <div class="confirm-actions">
       <button class="btn-cancel" id="global-settings-cancel">{{confirmCancel}}</button>
