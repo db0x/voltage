@@ -223,6 +223,14 @@ function getBrowserIconDataUrl(): string | null {
   return _browserIconDataUrl
 }
 
+// Lazily resolved once — the default mailto handler's icon is stable for the session.
+let _mailIconDataUrl: string | null | undefined = undefined
+function getMailIconDataUrl(): string | null {
+  if (_mailIconDataUrl !== undefined) return _mailIconDataUrl
+  _mailIconDataUrl = resolveHandlerIconDataUrl('x-scheme-handler/mailto')
+  return _mailIconDataUrl
+}
+
 // Per-AppImage icon data URL cache — icons don't change during a session.
 const appIconCache = new Map<string, string | null>()
 
@@ -286,19 +294,29 @@ function openInWrapweb(route: ResolvedRoute, url: string): void {
 
 // --- URL extraction from markdown ---
 
-// Extracts an http(s) URL from a raw markdown line at the given character offset.
-// Handles [text](url) links and bare URLs.
+// Extracts an http(s) or mailto: URL from a raw markdown line at the given character offset.
+// Handles [text](url) links and bare URLs. mailto: is included so the hover tooltip can show
+// it (the click itself is left to the system's default mailto handler).
 function extractUrlAt(text: string, offset: number): string | null {
-  const linkRe = /\[([^\]]*)\]\((https?:\/\/[^)]*)\)/g
+  const linkRe = /\[([^\]]*)\]\(((?:https?:\/\/|mailto:)[^)]*)\)/g
   let m: RegExpExecArray | null
   while ((m = linkRe.exec(text)) !== null) {
     if (offset >= m.index && offset <= m.index + m[0].length) return m[2]
   }
-  const urlRe = /https?:\/\/[^\s)>\]"]*/g
+  const urlRe = /(?:https?:\/\/|mailto:)[^\s)>\]"]*/g
   while ((m = urlRe.exec(text)) !== null) {
     if (offset >= m.index && offset <= m.index + m[0].length) return m[0]
   }
   return null
+}
+
+// Builds the tooltip label for a mailto: link, mirroring the wording used in the wrapweb
+// app windows ("Mail an {addr} verfassen" / "Compose mail to {addr}"). The address is the
+// part between "mailto:" and any "?query".
+function mailtoTooltipLabel(url: string): string {
+  const addr = url.slice('mailto:'.length).split('?')[0]
+  const de   = (navigator.language || '').toLowerCase().startsWith('de')
+  return de ? `Mail an ${addr} verfassen` : `Compose mail to ${addr}`
 }
 
 // --- Tooltip CSS (identical to src/tooltip.css injected into app windows) ---
@@ -333,8 +351,8 @@ export default class WrapwebPlugin extends Plugin {
     this.tipIcon.style.display = 'none'
     this.tipLabel = this.tipEl.createEl('span')
 
-    // Pre-warm browser icon so it's ready before the first hover.
-    setTimeout(() => getBrowserIconDataUrl(), 0)
+    // Pre-warm browser + mail icons so they're ready before the first hover.
+    setTimeout(() => { getBrowserIconDataUrl(); getMailIconDataUrl() }, 0)
 
     // Capture-phase listeners fire before Obsidian's bubble-phase link handlers.
     this.registerDomEvent(document, 'click',     this.onClick.bind(this),     { capture: true })
@@ -354,8 +372,9 @@ export default class WrapwebPlugin extends Plugin {
   private urlFromEvent(evt: MouseEvent): string | null {
     const target = evt.target as Element
 
-    // Reading Mode: links are real <a class="external-link"> elements.
-    const anchor = target.closest?.('a.external-link') as HTMLAnchorElement | null
+    // Reading Mode: http(s) links are real <a class="external-link">; mailto: links render
+    // as plain <a href="mailto:…"> (Obsidian does not tag them external-link), so match both.
+    const anchor = target.closest?.('a.external-link, a[href^="mailto:"]') as HTMLAnchorElement | null
     if (anchor) return anchor.href
 
     // Live Preview: links are SPAN.cm-link > SPAN.cm-underline — no <a> in DOM.
@@ -390,7 +409,14 @@ export default class WrapwebPlugin extends Plugin {
 
   private onMouseover(evt: MouseEvent): void {
     const url = this.urlFromEvent(evt)
-    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+    if (!url) { this.hideTooltip(); return }
+    // mailto: → mail-handler icon + compose label (the click is handled by the system's
+    // default mailto handler; we only provide the tooltip, matching the app windows).
+    if (url.startsWith('mailto:')) {
+      this.showTooltip(getMailIconDataUrl(), mailtoTooltipLabel(url))
+      return
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
       this.hideTooltip()
       return
     }
