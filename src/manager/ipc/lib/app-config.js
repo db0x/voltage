@@ -83,7 +83,7 @@ function buildSingleApp(configFile, defaultMailDesktop) {
     userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
     singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
     routingUrls: cfg.routingUrls || null,
-    mimeTypes: cfg.mimeTypes || null, mailtoJs: cfg.mailtoJs || null,
+    mimeTypes: cfg.mimeTypes || null, plugins: cfg.plugins || null,
     isDefaultMailHandler: defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`,
     category: cfg.category || null,
     builtVersion, builtRclone, rcloneFileHandler: cfg.rcloneFileHandler || false,
@@ -98,13 +98,13 @@ function buildSingleApp(configFile, defaultMailDesktop) {
 const FORM_MANAGED_KEYS = new Set([
   'profile', 'url', 'name', 'icon', 'geometry', 'userAgent',
   'internalDomains', 'routingUrls', 'crossOriginIsolation', 'singleInstance',
-  'mimeTypes', 'mailtoJs',
+  'mimeTypes', 'plugins',
 ])
 
 // Builds a config object from create/edit form data, omitting falsy/default fields.
 // `existing` is the config currently on disk (empty for create): its non-form-managed
 // keys are preserved, and its mimeTypes are kept (the form only toggles the mailto entry).
-function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, mailtoJs }, existing = {}) {
+function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins }, existing = {}) {
   const cfg = { profile, url }
   if (name)  cfg.name = name
   if (icon)  cfg.icon = icon
@@ -134,7 +134,12 @@ function buildAppCfg({ profile, name, url, icon, width, height, userAgent, inter
     .filter(t => t !== 'x-scheme-handler/mailto')
   const mimeTypes = mailHandler ? [...otherMimeTypes, 'x-scheme-handler/mailto'] : otherMimeTypes
   if (mimeTypes.length) cfg.mimeTypes = mimeTypes
-  if (mailHandler && mailtoJs) cfg.mailtoJs = mailtoJs
+  // Per-app main-process plugins, selected in the dialog (decoupled from the mailto toggle).
+  // Stored as webapps-relative paths; an empty selection omits the key entirely.
+  if (Array.isArray(plugins)) {
+    const list = plugins.map(p => p.trim()).filter(Boolean)
+    if (list.length) cfg.plugins = list
+  }
 
   // Carry over every field the form does not manage (category, rclone*, mime icons, …).
   for (const [k, v] of Object.entries(existing)) {

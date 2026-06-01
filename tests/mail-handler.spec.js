@@ -42,86 +42,33 @@ test('edit dialog: mail-handler toggle is inactive for non-mail-handler app', as
   await managerPage.keyboard.press('Escape')
 })
 
-// Setup:    Edit dialog opened for "Test Mail App"; mail-handler toggle is active.
-// Action:   (none — reads plugin field visibility)
-// Expected: The plugin select field is visible because mail-handler is active.
-test('edit dialog: plugin-field is visible when mail-handler toggle is active', async ({ managerPage }) => {
-  const card = managerPage.locator('.card', { hasText: 'Test Mail App' })
-  await card.hover()
-  await card.locator('[data-action="edit"]').click()
-  await expect(managerPage.locator('#edit-plugin-field')).toBeVisible()
-  await managerPage.keyboard.press('Escape')
-})
-
 // Setup:    Edit dialog opened for "Test User App"; mail-handler toggle is inactive.
-// Action:   (none — reads plugin field visibility)
-// Expected: The plugin select field is hidden because mail-handler is inactive.
-test('edit dialog: plugin-field is hidden when mail-handler toggle is inactive', async ({ managerPage }) => {
+// Action:   (none — reads plugin select visibility)
+// Expected: The plugin picker is visible regardless of the mail-handler toggle — plugin
+//           selection is decoupled from mailto handling.
+test('edit dialog: plugin picker is visible independent of the mail-handler toggle', async ({ managerPage }) => {
   const card = managerPage.locator('.card', { hasText: 'Test User App' })
   await card.hover()
   await card.locator('[data-action="edit"]').click()
-  await expect(managerPage.locator('#edit-plugin-field')).not.toBeVisible()
-  await managerPage.keyboard.press('Escape')
-})
-
-// Setup:    Edit dialog opened for "Test User App"; mail-handler toggle is inactive,
-//           plugin field is hidden.
-// Action:   Click the mail-handler toggle to activate it.
-// Expected: The plugin select field becomes visible.
-test('edit dialog: clicking mail-handler toggle shows plugin-field', async ({ managerPage }) => {
-  const card = managerPage.locator('.card', { hasText: 'Test User App' })
-  await card.hover()
-  await card.locator('[data-action="edit"]').click()
-  await expect(managerPage.locator('#edit-plugin-field')).not.toBeVisible()
+  await expect(managerPage.locator('#edit-mail-handler')).not.toHaveClass(/active/)
+  await expect(managerPage.locator('#edit-plugin-trigger')).toBeVisible()
+  // Toggling mail-handler does not change the plugin picker's visibility.
   await managerPage.click('#edit-mail-handler')
-  await expect(managerPage.locator('#edit-plugin-field')).toBeVisible()
-  await managerPage.keyboard.press('Escape')
-})
-
-// Setup:    Edit dialog opened for "Test Mail App"; mail-handler toggle is active,
-//           plugin field is visible.
-// Action:   Click the mail-handler toggle to deactivate it.
-// Expected: The plugin select field is hidden again.
-test('edit dialog: clicking mail-handler toggle again hides plugin-field', async ({ managerPage }) => {
-  const card = managerPage.locator('.card', { hasText: 'Test Mail App' })
-  await card.hover()
-  await card.locator('[data-action="edit"]').click()
-  await expect(managerPage.locator('#edit-plugin-field')).toBeVisible()
-  await managerPage.click('#edit-mail-handler')
-  await expect(managerPage.locator('#edit-plugin-field')).not.toBeVisible()
+  await expect(managerPage.locator('#edit-plugin-trigger')).toBeVisible()
   await managerPage.keyboard.press('Escape')
 })
 
 // ── Create dialog state ───────────────────────────────────────────────────────
 
 // Setup:    Create dialog just opened.
-// Action:   (none — reads plugin field visibility)
-// Expected: Plugin field is hidden by default (mail-handler toggle is off).
-test('create dialog: plugin-field is hidden by default', async ({ managerPage }) => {
+// Action:   (none — reads plugin select visibility)
+// Expected: The plugin picker is visible by default and stays visible when the mail-handler
+//           toggle is flipped — the two are independent.
+test('create dialog: plugin picker is visible independent of the mail-handler toggle', async ({ managerPage }) => {
   await managerPage.click('.card-add')
-  await expect(managerPage.locator('#create-plugin-field')).not.toBeVisible()
-  await managerPage.keyboard.press('Escape')
-})
-
-// Setup:    Create dialog open; mail-handler toggle is inactive.
-// Action:   Click the mail-handler toggle.
-// Expected: The plugin select field becomes visible.
-test('create dialog: plugin-field becomes visible when mail-handler toggle is clicked', async ({ managerPage }) => {
-  await managerPage.click('.card-add')
+  await expect(managerPage.locator('#create-plugin-trigger')).toBeVisible()
   await managerPage.click('#create-mail-handler')
-  await expect(managerPage.locator('#create-plugin-field')).toBeVisible()
-  await managerPage.keyboard.press('Escape')
-})
-
-// Setup:    Create dialog open; mail-handler toggle was activated (plugin field visible).
-// Action:   Click the mail-handler toggle a second time to deactivate it.
-// Expected: The plugin select field is hidden again.
-test('create dialog: plugin-field hides again when mail-handler toggle is clicked off', async ({ managerPage }) => {
-  await managerPage.click('.card-add')
-  await managerPage.click('#create-mail-handler')
-  await expect(managerPage.locator('#create-plugin-field')).toBeVisible()
-  await managerPage.click('#create-mail-handler')
-  await expect(managerPage.locator('#create-plugin-field')).not.toBeVisible()
+  await expect(managerPage.locator('#create-plugin-trigger')).toBeVisible()
   await managerPage.keyboard.press('Escape')
 })
 

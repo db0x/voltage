@@ -35,17 +35,13 @@ test('unknown language falls back gracefully (non-empty UI)', async ({ managerPa
 
 // ── Tooltip mechanism ─────────────────────────────────────────────────────────
 
-// Setup:    Create dialog open; the mail-handler plugin field is hidden by default.
-// Action:   Enable the mail-handler toggle to reveal the plugin field, then hover its "?" help icon.
+// Setup:    Create dialog open; the routing-URLs field and its "?" help icon are visible.
+// Action:   Hover the help icon.
 // Expected: A tooltip becomes visible and contains non-empty text.
 test('hovering a help icon shows a non-empty tooltip', async ({ managerPage }) => {
   await managerPage.click('.card-add')
 
-  const helpIcon = managerPage.locator('#create-plugin-field .field-help')
-  // plugin-field is hidden by default — toggle mail-handler first
-  await managerPage.click('#create-mail-handler')
-  await expect(managerPage.locator('#create-plugin-field')).toBeVisible()
-
+  const helpIcon = managerPage.locator('.create-dialog .field-help').first()
   await helpIcon.hover()
   const tooltip = managerPage.locator('.app-tooltip.visible')
   await expect(tooltip).toBeVisible()

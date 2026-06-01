@@ -98,13 +98,18 @@
             <span class="field-help" data-tooltip="{{tooltipMailHandler}}">?</span>
           </span>
         </button>
-        <div class="dialog-field" id="edit-plugin-field" style="display:none">
-          <label>{{createPlugin}}
-            <span class="field-help" data-tooltip="{{tooltipPlugin}}">?</span>
+        <div class="dialog-field">
+          <label>{{createPlugins}}
+            <span class="field-help" data-tooltip="{{tooltipPlugins}}">?</span>
           </label>
-          <select id="edit-plugin">
-            <option value="">{{createPluginNone}}</option>
-          </select>
+          <div class="domain-field-wrapper">
+            <ul class="domain-list" id="edit-plugin-list"></ul>
+            <div class="domain-add-row">
+              <button type="button" class="app-select-trigger" id="edit-plugin-trigger">
+                <span class="app-select-hint">{{createPluginChoose}}</span>
+              </button>
+            </div>
+          </div>
         </div>
         <hr class="dialog-section-divider">
         <div id="edit-info-section"></div>

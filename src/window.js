@@ -198,7 +198,45 @@ function routeExternalUrl(url, currentProfile) {
   return true
 }
 
-function createWindow(pkg) {
+// Loads and attaches the main-process plugins declared in pkg.plugins (paths relative to
+// webapps/, e.g. "plugins/onedrive/onedrive.js"). Plugin selection per app is configured in
+// the Manager. The code convention: a plugin module exports attachPlugin(win, api) — that
+// export is what marks a file as a main-process plugin. The api gives plugins what they need
+// without reaching into window.js internals:
+//   profile, appOrigin, internalDomains  — window identity / same-origin classification
+//   launchArg                            — the raw CLI argument the app opened with (or null)
+//   routeUrl(url) → bool                 — route a URL to another built app (true on a hit)
+//   openExternal(url)                    — hand a URL to the system browser
+//   mailto                               — { parseMailtoFields, typeMailtoFields } compose helpers
+// attachPlugin may return a handler object; a returned onLaunch(arg) is re-invoked when a
+// second instance forwards a new launch argument to this already-running window.
+function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg }) {
+  const api = {
+    profile:         pkg.profile,
+    appOrigin,
+    internalDomains,
+    launchArg:       launchArg ?? null,
+    routeUrl:        (url) => routeExternalUrl(url, pkg.profile),
+    openExternal:    (url) => shell.openExternal(url),
+    mailto:          require('./mailto'),
+  }
+  const instances = []
+  for (const rel of pkg.plugins ?? []) {
+    try {
+      const mod = require(path.join(__dirname, '..', 'webapps', rel))
+      if (typeof mod.attachPlugin !== 'function') {
+        console.error(`[plugin] ${rel} has no attachPlugin() export — skipped`)
+        continue
+      }
+      instances.push(mod.attachPlugin(mainWindow, api) || {})
+    } catch (err) {
+      console.error(`[plugin] failed to load ${rel}:`, err)
+    }
+  }
+  return instances
+}
+
+function createWindow(pkg, opts = {}) {
   const customSession = createSession(pkg.profile, { fileSystem: !!pkg.fileHandler })
 
   const saved = !pkg.geometry ? windowState.load() : null
@@ -419,7 +457,21 @@ function createWindow(pkg) {
     `)
   })
 
+  // Main-process plugins selected for this app (config-driven, no longer hardcoded). Stored
+  // on the window so app-window.js can forward a second-instance launch argument to them.
+  mainWindow._wrapwebPlugins = loadPlugins(mainWindow, pkg, {
+    appOrigin, internalDomains, launchArg: opts.launchArg,
+  })
+
   return mainWindow
 }
 
-module.exports = { createWindow }
+// Re-dispatches a new launch argument (from a second-instance activation) to a window's
+// plugins, so e.g. the strato mail plugin can act on a fresh mailto: while already running.
+function dispatchLaunchArg(win, arg) {
+  for (const inst of win._wrapwebPlugins ?? []) {
+    try { inst.onLaunch?.(arg) } catch (err) { console.error('[plugin] onLaunch failed:', err) }
+  }
+}
+
+module.exports = { createWindow, dispatchLaunchArg }

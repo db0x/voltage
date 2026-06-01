@@ -63,6 +63,7 @@ npm start
 - **Native feel** — no browser chrome, correct WM class for taskbar grouping and window management
 - **Context menu** — Cut / Copy / Paste + Save Image As; spelling suggestions via `aspell` (falls back to English); links show **Open with [App]** and **Open in browser** (with the system default browser icon) when a routing target is known
 - **Cross-app link routing** — links to URLs handled by another installed wrapweb app open directly in that app instead of the system browser; a `routing.json` plugin file (written by `install-app`, read at runtime) maps hostnames to AppImages — no rebuild required when routing changes. The file is split into `base` claims (each app's primary URL) and `routing` claims (extra URLs apps opt into via the `routingUrls` config field, with `*` wildcards, editable in the create/edit dialog); when both match a link, the `routing` claim wins
+- **Per-app plugins** — main-process modules shipped under `webapps/plugins/` that extend a single app's behaviour (e.g. routing OneDrive document opens to the Word/Excel/PowerPoint app, or driving a webmail app's compose UI for `mailto:` links). Selected per app in the create/edit dialog; a change takes effect after rebuilding the AppImage
 - **Zoom** — `Ctrl+Scroll` per window
 - **Screen sharing** — WebRTC / PipeWire capture works out of the box
 - **DevTools** — `F12` to toggle
@@ -340,7 +341,7 @@ App configs live in the `webapps/` directory. For apps you don't want to commit,
 | `rcloneFileHandler` | boolean | Enable rclone-based file handling — files are uploaded to the configured Google Drive remote (set via the Manager's rclone Integration dialog) and opened via their Google Docs/Sheets/Slides edit URL |
 | `mailtoTemplate` | string | Base URL for the compose window — `mailto:` parameters are appended as a query string |
 | `mailtoParamMap` | object | Rename `mailto:` parameters before appending (e.g. `{ "subject": "su" }` for Gmail) |
-| `mailtoJs` | string | JavaScript injected after page load to open compose — use `{to}`, `{subject}`, `{body}`, `{cc}`, `{bcc}` as placeholders; for web apps that open compose via JS API rather than URL routing (e.g. Open-Xchange / Strato) |
+| `plugins` | array | Main-process plugins shipped under `webapps/plugins/` that this app loads, each as a webapps-relative path (e.g. `"plugins/onedrive/onedrive.js"`). Selectable in the create/edit dialog. A plugin module exports `attachPlugin(win, api)` and extends the app's behaviour — e.g. routing OneDrive document opens to Word/Excel/PowerPoint, or driving a webmail app's compose UI on a `mailto:` launch. Changing the selection requires rebuilding the AppImage |
 
 ### Examples
 

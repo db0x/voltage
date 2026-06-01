@@ -7,15 +7,17 @@ const { installDesktop, installIcon } = require('./lib')
 const APP_ID_BASE = 'de.db0x.wrapweb'
 const CONFIGS_DIR = path.join(__dirname, '..', 'webapps')
 
-function resolveMailtoJs(app) {
-  if (!app.mailtoJs) return null
-  const val = app.mailtoJs.trim()
-  if (val.endsWith('.js')) {
-    const file = path.join(CONFIGS_DIR, val)
-    if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim()
-    console.warn(`  Warning: mailtoJs file not found: ${file}`)
+// Validates that each configured plugin path resolves to an existing file under webapps/.
+// The plugin files themselves ship inside the AppImage (the whole webapps/ tree is packaged),
+// so only the relative paths need to travel in extraMetadata for the loader to require them.
+function resolvePlugins(app) {
+  if (!Array.isArray(app.plugins)) return null
+  const list = app.plugins.map(p => p.trim()).filter(Boolean)
+  for (const rel of list) {
+    if (!fs.existsSync(path.join(CONFIGS_DIR, rel)))
+      console.warn(`  Warning: plugin file not found: ${rel}`)
   }
-  return val
+  return list.length ? list : null
 }
 
 // Produces the electron-builder config for one app. All app-specific settings
@@ -25,7 +27,7 @@ function resolveMailtoJs(app) {
 function expandConfig(app) {
   const appId = `${APP_ID_BASE}.${app.profile}`
   const productName = `wrapweb-${app.profile}`
-  const mailtoJs = resolveMailtoJs(app)
+  const plugins = resolvePlugins(app)
   return {
     appId,
     productName,
@@ -50,7 +52,7 @@ function expandConfig(app) {
       ...(app.mimeTypes?.length  && { mimeTypes:            app.mimeTypes }),
       ...(app.mailtoTemplate    && { mailtoTemplate:       app.mailtoTemplate }),
       ...(app.mailtoParamMap    && { mailtoParamMap:       app.mailtoParamMap }),
-      ...(mailtoJs              && { mailtoJs }),
+      ...(plugins               && { plugins }),
     },
   }
 }
