@@ -65,9 +65,9 @@ const createOverflow = (page) => page.evaluate(() => {
 
 // Setup:    Manager shrunk so the create fields are taller than the dialog body.
 // Action:   Open the create dialog and scroll its viewport to the bottom.
-// Expected: The viewport overflows (scroll range > 0) and the last field (plugin
-//           select's container, the mail-handler toggle) is reachable — i.e. the
-//           Save button no longer sits off-screen, which is the bug this fix prevents.
+// Expected: The viewport overflows (scroll range > 0) and the mail-handler toggle near the
+//           end of the form is reachable — i.e. the Save button no longer sits off-screen,
+//           which is the bug this fix prevents.
 test('create dialog scrolls when the window is too short to fit it', async ({ electronApp, managerPage }) => {
   await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(560, 380))
   await managerPage.click('.card-add')

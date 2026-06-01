@@ -42,7 +42,7 @@ module.exports = function registerAppHandlers() {
           userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
           singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
           routingUrls: cfg.routingUrls || null,
-          mimeTypes: cfg.mimeTypes || null, mailtoJs: cfg.mailtoJs || null,
+          mimeTypes: cfg.mimeTypes || null, plugins: cfg.plugins || null,
           isDefaultMailHandler: defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`,
           category: cfg.category || null,
           builtVersion, builtRclone, rcloneFileHandler: cfg.rcloneFileHandler || false,
@@ -195,7 +195,7 @@ module.exports = function registerAppHandlers() {
         internalDomains:      data.internalDomains ? cfg.internalDomains : null,
         routingUrls:          cfg.routingUrls || null,
         mimeTypes:            cfg.mimeTypes || null,
-        mailtoJs:             cfg.mailtoJs  || null,
+        plugins:              cfg.plugins   || null,
         category:             cfg.category  || null,
       },
     }
@@ -234,7 +234,7 @@ module.exports = function registerAppHandlers() {
         internalDomains:      data.internalDomains ? cfg.internalDomains : null,
         routingUrls:          cfg.routingUrls || null,
         mimeTypes:            cfg.mimeTypes || null,
-        mailtoJs:             cfg.mailtoJs  || null,
+        plugins:              cfg.plugins   || null,
         category:             cfg.category  || null,
       },
     }

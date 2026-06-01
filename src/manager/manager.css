@@ -972,7 +972,8 @@ body.dark .toolbar-btn.danger:not(:disabled):hover img {
   align-items: center;
 }
 
-.domain-add-row input {
+.domain-add-row input,
+.domain-add-row select {
   flex: 1;
   background: transparent !important;
   border: none !important;
@@ -983,6 +984,19 @@ body.dark .toolbar-btn.danger:not(:disabled):hover img {
   font-size: 13px;
   outline: none;
   color: var(--card-fg);
+}
+
+/* The closed select is transparent (sits on the field wrapper), but the native dropdown
+   popup renders its options with the UA's own palette — which stays light in dark mode and
+   makes entries unreadable. color-scheme switches the popup to a dark palette, and explicit
+   option colors guarantee contrast on both themes. */
+.domain-add-row select option {
+  background: var(--card-bg);
+  color: var(--card-fg);
+}
+
+body.dark .domain-add-row select {
+  color-scheme: dark;
 }
 
 .domain-add-btn {

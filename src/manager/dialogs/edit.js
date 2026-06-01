@@ -2,6 +2,7 @@ import { OverlayScrollbars } from '../../../node_modules/overlayscrollbars/overl
 import { applyTemplate }     from '../template.js'
 import { initDomainList }    from '../domain-list.js'
 import { initRoutingUrlList } from '../routing-url-field.js'
+import { initPluginList }    from '../plugin-list.js'
 
 export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, templates }, { iconPicker, showConfirm }) {
   const overlay = applyTemplate(templates.edit, { i18n, vars: { appDefaultSrc } })
@@ -25,22 +26,13 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, te
   // currentProfile is read live (set in openEditDialog) so the overlap check excludes this app.
   const routingList   = initRoutingUrlList('edit', () => currentProfile, { tr, onChange: () => updateSaveBtn() })
 
-  const pluginSelect = document.getElementById('edit-plugin')
-  for (const { file, label } of (plugins || []).filter(p => p.category === 'mail-handler')) {
-    const opt = document.createElement('option')
-    opt.value = file
-    opt.textContent = label
-    pluginSelect.appendChild(opt)
-  }
+  // Plugin selection is its own select-and-add list, independent of the mail-handler toggle.
+  const pluginList = initPluginList('edit-plugin-trigger', 'edit-plugin-list', plugins, appDefaultSrc, () => updateSaveBtn())
 
   document.getElementById('edit-mail-handler').addEventListener('click', e => {
     e.currentTarget.classList.toggle('active')
-    document.getElementById('edit-plugin-field').style.display =
-      e.currentTarget.classList.contains('active') ? '' : 'none'
-    if (!e.currentTarget.classList.contains('active')) pluginSelect.value = ''
     updateSaveBtn()
   })
-  pluginSelect.addEventListener('change', updateSaveBtn)
 
   let scrollbarInited  = false
   let urlValid         = true
@@ -74,7 +66,9 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, te
       crossOriginIsolation: document.getElementById('edit-coi').classList.contains('active'),
       singleInstance:       document.getElementById('edit-single-instance').classList.contains('active'),
       mailHandler:          document.getElementById('edit-mail-handler').classList.contains('active'),
-      mailtoJs:             pluginSelect.value,
+      // Sorted join so the dirty check ignores checkbox ordering and only reacts to which
+      // plugins are selected.
+      plugins:              pluginList.get().slice().sort().join(','),
     }
   }
 
@@ -284,8 +278,7 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, te
     const mhBtn = document.getElementById('edit-mail-handler')
     if (mailHandler) mhBtn.classList.add('active')
     else mhBtn.classList.remove('active')
-    document.getElementById('edit-plugin-field').style.display = mailHandler ? '' : 'none'
-    pluginSelect.value = app.mailtoJs || ''
+    pluginList.set(app.plugins || [])
 
     renderInfoSection(app)
     initialSnapshot = snapshot()
@@ -311,8 +304,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, te
   saveBtn.addEventListener('click', async () => {
     const cur = snapshot()
     saveBtn.disabled = true
-    // snapshot() stringifies routingUrls for dirty-detection; buildAppCfg wants the array.
-    const result = await window.managerAPI.updateApp({ profile: currentProfile, ...cur, routingUrls: routingList.get() })
+    // snapshot() stringifies routingUrls/plugins for dirty-detection; buildAppCfg wants arrays.
+    const result = await window.managerAPI.updateApp({ profile: currentProfile, ...cur, routingUrls: routingList.get(), plugins: pluginList.get() })
     if (!result.success) { updateSaveBtn(); return }
 
     closeEditDialog()

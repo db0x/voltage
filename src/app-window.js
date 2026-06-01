@@ -1,6 +1,7 @@
 // Entry point for app-window mode (pkg.profile is set).
-// Sets up URL resolution, mailto handling, draw.io file handling, and the single-instance lock,
-// then opens the app window once Electron is ready.
+// Sets up URL resolution, draw.io file handling, and the single-instance lock, then opens the
+// app window once Electron is ready. App-specific behaviour (mailto compose, OneDrive doc
+// routing, …) lives in main-process plugins selected per app — see src/window.js loadPlugins().
 
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('node:path')
@@ -8,24 +9,10 @@ const fs   = require('node:fs')
 const zlib = require('node:zlib')
 
 const pkg = require(app.getAppPath() + '/package.json')
-const { createWindow }              = require('./window')
+const { createWindow, dispatchLaunchArg } = require('./window')
 const { resolveRcloneFileUrl,
         buildRcloneLoadingPage }    = require('./rclone-file-handler')
-
-// Parses a mailto: URI (e.g. "mailto:a@b.com?subject=Hi") into a plain object.
-// URL() handles the parsing; the recipient is in the URL pathname, not a query param.
-function parseMailtoFields(raw) {
-  try {
-    const m = new URL(raw)
-    return {
-      to:      decodeURIComponent(m.pathname || ''),
-      subject: m.searchParams.get('subject') || '',
-      body:    m.searchParams.get('body')    || '',
-      cc:      m.searchParams.get('cc')      || '',
-      bcc:     m.searchParams.get('bcc')     || '',
-    }
-  } catch { return null }
-}
+const { parseMailtoFields }         = require('./mailto')
 
 // draw.io SVG files embed the diagram XML as HTML-escaped content= attribute value.
 function extractXmlFromDrawioSvg(content) {
@@ -85,7 +72,6 @@ function resolveUrl(raw) {
   if (!raw) return null
   if (raw.startsWith('file:') || path.isAbsolute(raw)) return null  // handled by resolveFileUrl
   if (raw.startsWith('mailto:')) {
-    if (pkg.mailtoJs) return null  // handled via JS injection; load default URL
     if (pkg.mailtoTemplate) {
       try {
         const fields = parseMailtoFields(raw)
@@ -103,52 +89,6 @@ function resolveUrl(raw) {
   return raw
 }
 
-// Builds the JS snippet to inject after page load when mailtoJs is configured.
-// The template string uses {to}, {subject}, {body} etc. as placeholders.
-function resolveMailtoJs(raw) {
-  if (!raw || !raw.startsWith('mailto:') || !pkg.mailtoJs) return null
-  const fields = parseMailtoFields(raw)
-  if (!fields) return null
-  return pkg.mailtoJs.replace(/\{(\w+)\}/g, (_, k) => fields[k] ?? '')
-}
-
-// Polls until the compose-to input field is focused (detected by CSS class "tt-input"),
-// then simulates keyboard input to fill in the recipient and subject.
-// Native sendInputEvent is used because executeJavaScript cannot trigger
-// the web app's own keydown handlers reliably for token-input widgets.
-function typeMailtoFields(win, fields) {
-  if (!fields || (!fields.to && !fields.subject)) return
-  let attempts = 0
-  function poll() {
-    if (++attempts > 40 || win.isDestroyed()) return
-    win.webContents.executeJavaScript('document.activeElement.className')
-      .then(async cls => {
-        if (typeof cls === 'string' && cls.includes('tt-input')) {
-          if (fields.to) {
-            for (const char of fields.to)
-              win.webContents.sendInputEvent({ type: 'char', keyCode: char })
-            win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
-            win.webContents.sendInputEvent({ type: 'keyUp',   keyCode: 'Return' })
-            await new Promise(r => setTimeout(r, 300))
-          }
-          if (fields.subject) {
-            const ok = await win.webContents.executeJavaScript(
-              `var s=document.querySelector('input[name="subject"]');s?(s.focus(),true):false`
-            )
-            if (ok) {
-              await new Promise(r => setTimeout(r, 100))
-              for (const char of fields.subject)
-                win.webContents.sendInputEvent({ type: 'char', keyCode: char })
-            }
-          }
-        } else {
-          setTimeout(poll, 300)
-        }
-      })
-      .catch(() => setTimeout(poll, 300))
-  }
-  setTimeout(poll, 300)
-}
 
 module.exports = function setupAppWindow() {
   // These must run synchronously before app.whenReady() — Electron reads them during startup.
@@ -157,30 +97,25 @@ module.exports = function setupAppWindow() {
   app.commandLine.appendSwitch('wm-class', `wrapweb-${pkg.profile}`)
   app.setPath('userData', path.join(app.getPath('appData'), 'wrapweb', pkg.profile))
 
-  const rawArg   = process.argv.slice(1).find(a => /^(https?:|mailto:|file:)/.test(a) ||
+  const findArg = (argv) => argv.slice(1).find(a => /^(https?:|mailto:|file:)/.test(a) ||
     ((pkg.fileHandler || pkg.rcloneFileHandler) && path.isAbsolute(a) && fs.existsSync(a)))
+  const rawArg   = findArg(process.argv)
   const urlArg   = resolveUrl(rawArg) ?? resolveFileUrl(rawArg)
-  const jsArg    = resolveMailtoJs(rawArg)
-  const jsFields = (rawArg?.startsWith('mailto:') && pkg.mailtoJs) ? parseMailtoFields(rawArg) : null
 
   // Single-instance lock: if another process already holds it, quit immediately.
-  // The second-instance handler lets the existing window handle the new URL argument.
+  // The second-instance handler forwards the new argument to the running window: a URL is
+  // loaded directly, and the raw argument is also dispatched to plugins (e.g. the mail plugin
+  // composing a fresh mailto:) so app-specific launch behaviour fires again.
   if (pkg.singleInstance) {
     const gotLock = app.requestSingleInstanceLock()
     if (!gotLock) { app.quit(); return }
     app.on('second-instance', (event, argv) => {
-      const raw2      = argv.slice(1).find(a => /^(https?:|mailto:|file:)/.test(a) ||
-        ((pkg.fileHandler || pkg.rcloneFileHandler) && path.isAbsolute(a) && fs.existsSync(a)))
-      const url       = resolveUrl(raw2) ?? resolveFileUrl(raw2)
-      const js        = resolveMailtoJs(raw2)
-      const js2Fields = (raw2?.startsWith('mailto:') && pkg.mailtoJs) ? parseMailtoFields(raw2) : null
-      const win       = BrowserWindow.getAllWindows()[0]
+      const raw2 = findArg(argv)
+      const url  = resolveUrl(raw2) ?? resolveFileUrl(raw2)
+      const win  = BrowserWindow.getAllWindows()[0]
       if (win) {
         if (url) win.webContents.loadURL(url)
-        if (js) {
-          win.webContents.executeJavaScript(js).catch(() => {})
-          if (js2Fields) typeMailtoFields(win, js2Fields)
-        }
+        dispatchLaunchArg(win, raw2 ?? null)
         if (win.isMinimized()) win.restore()
         win.focus()
       }
@@ -190,7 +125,8 @@ module.exports = function setupAppWindow() {
   app.whenReady().then(async () => {
     const useRclone  = pkg.rcloneFileHandler && rawArg && !urlArg
     const initialUrl = useRclone ? buildRcloneLoadingPage() : (urlArg ?? null)
-    const win        = createWindow(initialUrl ? { ...pkg, url: initialUrl } : pkg)
+    // Plugins receive rawArg via the api so launch-triggered behaviour (mailto compose) works.
+    const win        = createWindow(initialUrl ? { ...pkg, url: initialUrl } : pkg, { launchArg: rawArg ?? null })
 
     // rclone file handler: window shows a loading page while the upload runs,
     // then navigates to the edit URL (or falls back to the default URL on error).
@@ -202,12 +138,6 @@ module.exports = function setupAppWindow() {
       })
     }
 
-    if (jsArg) {
-      win.webContents.once('did-finish-load', () => {
-        win.webContents.executeJavaScript(jsArg).catch(() => {})
-        if (jsFields) typeMailtoFields(win, jsFields)
-      })
-    }
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(pkg)
     })
