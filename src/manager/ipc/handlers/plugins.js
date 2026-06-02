@@ -37,8 +37,14 @@ module.exports = function registerPluginHandlers() {
     const files = []
     collectPluginFiles(pluginsDir, CONFIGS_DIR, files)
     // Label from the filename without extension — e.g. "plugins/onedrive/onedrive.js" → "onedrive".
+    // A leading "private." (the gitignored-private naming convention) is dropped from the
+    // label only; the stored `file` path keeps it so the loader still resolves the real file.
     return files
-      .map(file => ({ file, label: path.basename(file).replace(/\.js$/, ''), icon: pluginIconDataUrl(file) }))
+      .map(file => ({
+        file,
+        label: path.basename(file).replace(/\.js$/, '').replace(/^private\./, ''),
+        icon:  pluginIconDataUrl(file),
+      }))
       .sort((a, b) => a.label.localeCompare(b.label))
   })
 }
