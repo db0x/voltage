@@ -55,13 +55,52 @@ test.describe('keyMatches — wildcards', () => {
 test.describe('urlToRoutingKey', () => {
   // Setup:    assorted user inputs with schemes, ports, query, hash, trailing slash.
   // Action:   normalise each into a routing key.
-  // Expected: scheme/port/query/hash/trailing-slash stripped, host lowercased, full path kept.
-  test('normalises inputs and keeps the full path', () => {
+  // Expected: scheme/port/hash/trailing-slash stripped, host lowercased, path kept — and the
+  //           query is PRESERVED (matching runs against pathname+search, so keys may use it).
+  test('normalises inputs, keeps path, and preserves the query', () => {
     expect(urlToRoutingKey('https://docs.example.com/d/123')).toBe('docs.example.com/d/123')
-    expect(urlToRoutingKey('https://Example.COM:8443/Foo/?a=1#x')).toBe('example.com/Foo')
+    // Port + scheme stripped, host lowercased, trailing slash trimmed from the path, '#x'
+    // dropped, but '?a=1' kept.
+    expect(urlToRoutingKey('https://Example.COM:8443/Foo/?a=1#x')).toBe('example.com/Foo?a=1')
     expect(urlToRoutingKey('example.com/')).toBe('example.com')
     expect(urlToRoutingKey('*.example.com/docs/*')).toBe('*.example.com/docs/*')
+    // SharePoint-style key: '.docx' lives past a '?'; the query must survive normalisation.
+    expect(urlToRoutingKey('https://*.sharepoint.com/Doc.aspx?file=*.docx*'))
+      .toBe('*.sharepoint.com/Doc.aspx?file=*.docx*')
     expect(urlToRoutingKey('   ')).toBe(null)
+  })
+})
+
+test.describe('keyMatches — query-aware (Office document routing)', () => {
+  // The matcher receives pathname+search so SharePoint's generic Doc.aspx links — which only
+  // differ by the .docx/.xlsx/.pptx filename in the query — can route to the right app.
+  const host = 'contoso-my.sharepoint.com'
+  const docAspx = (ext) => `/personal/u/_layouts/15/Doc.aspx?sourcedoc=%7Bx%7D&file=Report.${ext}&action=default`
+
+  // Setup:    a Doc.aspx link whose query carries a .docx filename.
+  // Action:   match it against each Office app's filename key.
+  // Expected: only the *.docx* key matches — the .xlsx/.pptx keys do not, so a Word document
+  //           never leaks into Excel or PowerPoint.
+  test('filename-in-query routes to exactly one app', () => {
+    expect(keyMatches('*.sharepoint.com/*.docx*', host, docAspx('docx'))).toBe(true)
+    expect(keyMatches('*.sharepoint.com/*.xlsx*', host, docAspx('docx'))).toBe(false)
+    expect(keyMatches('*.sharepoint.com/*.pptx*', host, docAspx('docx'))).toBe(false)
+
+    expect(keyMatches('*.sharepoint.com/*.xlsx*', host, docAspx('xlsx'))).toBe(true)
+    expect(keyMatches('*.sharepoint.com/*.docx*', host, docAspx('xlsx'))).toBe(false)
+
+    expect(keyMatches('*.sharepoint.com/*.pptx*', host, docAspx('pptx'))).toBe(true)
+    expect(keyMatches('*.sharepoint.com/*.docx*', host, docAspx('pptx'))).toBe(false)
+  })
+
+  // Setup:    a share-style link using the office scheme token (:w:/:x:/:p:) in the path.
+  // Action:   match against the scheme-token key.
+  // Expected: the token in the path is enough — these links carry no filename.
+  test('scheme-token share links match on the path', () => {
+    expect(keyMatches('*.sharepoint.com/:w:/*', host, '/:w:/r/personal/u/Doc.aspx?e=1')).toBe(true)
+    expect(keyMatches('*.sharepoint.com/:x:/*', host, '/:x:/r/personal/u/Doc.aspx?e=1')).toBe(true)
+    expect(keyMatches('*.sharepoint.com/:p:/*', host, '/:p:/r/personal/u/Doc.aspx?e=1')).toBe(true)
+    expect(keyMatches('*.sharepoint.com/:w:/*', host, '/:x:/r/personal/u/Doc.aspx?e=1')).toBe(false)
   })
 })
 

@@ -39,8 +39,10 @@ function keyMatches(key, hostname, pathname) {
 function getRouteInfo(url) {
   try {
     const resolved = unwrapUrl(url);
-    const { hostname, pathname } = new URL(resolved);
-    return routeEntries.find(e => keyMatches(e.key, hostname, pathname)) ?? null;
+    // Match against pathname+search so query-only discriminators (e.g. SharePoint
+    // Doc.aspx?…file=X.docx) work — must stay in sync with resolveRoute in window.js.
+    const u = new URL(resolved);
+    return routeEntries.find(e => keyMatches(e.key, u.hostname, u.pathname + u.search)) ?? null;
   } catch { return null; }
 }
 

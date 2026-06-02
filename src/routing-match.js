@@ -139,6 +139,10 @@ function findRoute(raw, hostname, pathname, accept = () => true) {
 // Converts a user-entered URL/pattern (e.g. "https://docs.example.com/d/*") into a
 // routing-table key ("docs.example.com/d/*"). new URL() rejects '*' in the host,
 // so the host/path split is done by hand. Returns null when no host is present.
+// The query string is preserved (matching runs against pathname+search) so keys can
+// discriminate by query — e.g. SharePoint's "*Doc.aspx*.docx*". Only the '#' fragment is
+// dropped (never routing-relevant), and a trailing slash is trimmed from the path part
+// only, not from inside a query.
 function urlToRoutingKey(input) {
   if (!input) return null
   let s = String(input).trim()
@@ -147,7 +151,12 @@ function urlToRoutingKey(input) {
   if (!s) return null
   const slash = s.indexOf('/')
   let host     = (slash === -1 ? s : s.slice(0, slash)).toLowerCase().replace(/:\d+$/, '')
-  let pathPart = (slash === -1 ? '' : s.slice(slash)).split('#')[0].split('?')[0].replace(/\/+$/, '')
+  let rest     = (slash === -1 ? '' : s.slice(slash)).split('#')[0]  // keep '?query', drop '#frag'
+  const qIdx   = rest.indexOf('?')
+  // Trim a trailing slash from the path portion only (before any '?'), leaving the query intact.
+  let pathPart = qIdx === -1
+    ? rest.replace(/\/+$/, '')
+    : rest.slice(0, qIdx).replace(/\/+$/, '') + rest.slice(qIdx)
   if (!host) return null
   return pathPart ? host + pathPart : host
 }

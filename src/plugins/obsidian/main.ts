@@ -249,7 +249,12 @@ function resolveRoute(url: string): ResolvedRoute | null {
   let hostname: string
   let pathname: string
   try {
-    ;({ hostname, pathname } = new URL(url))
+    // Match against pathname+search: SharePoint's generic Doc.aspx links carry the only
+    // app-distinguishing token (the .docx/.xlsx/.pptx filename) in the query string, so a
+    // routing key like "*Doc.aspx*.docx*" needs the query as part of the matched text.
+    const u = new URL(url)
+    hostname = u.hostname
+    pathname = u.pathname + u.search
   } catch {
     return null
   }

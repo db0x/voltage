@@ -175,7 +175,10 @@ function unwrapUrl(url) {
 function resolveRoute(url, currentProfile) {
   const resolved = unwrapUrl(url)
   let targetHost, targetPath
-  try { ({ hostname: targetHost, pathname: targetPath } = new URL(resolved)) } catch { return null }
+  // Match against pathname+search: SharePoint's generic Doc.aspx links carry the only
+  // app-distinguishing token (the .docx/.xlsx/.pptx filename) in the query string, so a
+  // routing key like "*Doc.aspx*.docx*" needs the query to be part of the matched text.
+  try { const u = new URL(resolved); targetHost = u.hostname; targetPath = u.pathname + u.search } catch { return null }
   // findRoute applies the routing-wins-over-base priority and skips ineligible targets
   // (this app itself, or an AppImage that isn't built) so resolution falls through.
   const match = findRoute(loadRouting(), targetHost, targetPath, (target) => {
