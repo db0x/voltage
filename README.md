@@ -64,9 +64,10 @@ npm start
 - **Context menu** — Cut / Copy / Paste + Save Image As; spelling suggestions via `aspell` (falls back to English); links show **Open with [App]** and **Open in browser** (with the system default browser icon) when a routing target is known
 - **Cross-app link routing** — links to URLs handled by another installed wrapweb app open directly in that app instead of the system browser; a `routing.json` plugin file (written by `install-app`, read at runtime) maps hostnames to AppImages — no rebuild required when routing changes. The file is split into `base` claims (each app's primary URL) and `routing` claims (extra URLs apps opt into via the `routingUrls` config field, with `*` wildcards, editable in the create/edit dialog); when both match a link, the `routing` claim wins
 - **Per-app plugins** — main-process modules shipped under `webapps/plugins/` that extend a single app's behaviour (e.g. routing OneDrive document opens to the Word/Excel/PowerPoint app, or driving a webmail app's compose UI for `mailto:` links). Selected per app in the create/edit dialog; a change takes effect after rebuilding the AppImage
+- **About panel** — `F12` toggles an in-app About overlay showing the current domain (with a Google Safe Browsing badge when active), the app, the build versions (wrapweb / Electron / Chromium), and the loaded plugins
 - **Zoom** — `Ctrl+Scroll` per window
 - **Screen sharing** — WebRTC / PipeWire capture works out of the box
-- **DevTools** — `F12` to toggle
+- **DevTools** — `Shift+F12` to toggle
 - **Single-instance enforcement** — optionally prevent a second window from opening; the existing window is focused and raised instead
 - **System-wide protocol handlers** — register any app as the system's default `mailto:` handler; clicking a mail link anywhere on the desktop opens a compose window in the configured web app (Outlook, Gmail, …) — with no external mail client required
 - **Private builds** — configs matching `webapps/build.private.*.json` are gitignored
