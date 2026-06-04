@@ -1,13 +1,13 @@
 // "About" panel for an app window, toggled with F12 (Shift+F12 stays DevTools).
 //
-// Rendered as an overlay INJECTED INTO THE PAGE (like the link tooltip), not as a separate
-// window: on Wayland a child window can't be reliably centered or shown modal over the parent,
-// whereas an in-page overlay is always centered in the window and visually "part of the app".
-// It styles itself after the rclone confirm dialog (gradient header + wrapweb badge, white
-// card, backdrop). Self-contained: the script closes the panel by removing its own DOM, so no
-// IPC/preload is involved. First iteration: read-only facts + a close button.
+// Rendered in its OWN WebContentsView laid over the app window — NOT injected into the page.
+// This is the whole point: the panel runs in a web context we control, so it is immune to the
+// host page's CSP, Trusted Types, and SPA quirks. The previous approach (executeJavaScript into
+// the page) broke per-app whenever a site shipped a stricter policy — exactly the fragility we
+// want gone. The view holds our own HTML (rclone-dialog look) with a solid dark backdrop;
+// page-level transparency is unreliable on Linux/Wayland, so the backdrop is opaque.
 
-const { app } = require('electron')
+const { WebContentsView, ipcMain, app } = require('electron')
 const path = require('node:path')
 const fs   = require('node:fs')
 const os   = require('node:os')
@@ -30,9 +30,7 @@ function appIconDataUrl() {
   return null
 }
 
-// Turns a webapps-relative plugin path into { label, icon } for display. Mirrors the manager's
-// discovery: label is the filename without ".js" and a leading "private.", icon is the
-// sibling plugin.svg (data URL) if the plugin ships one.
+// webapps-relative plugin path → { label, icon } (mirrors the manager's discovery labelling).
 function pluginDisplay(rel) {
   const label = path.basename(rel).replace(/\.js$/, '').replace(/^private\./, '')
   const icon  = svgDataUrl(path.join(APP_ROOT, 'webapps', path.dirname(rel), 'plugin.svg'))
@@ -44,13 +42,16 @@ const githubIcon = svgDataUrl(path.join(APP_ROOT, 'assets', 'github.svg'))
 const safeIcon   = svgDataUrl(path.join(APP_ROOT, 'assets', 'safe-browsing.svg'))
 const unsafeIcon = svgDataUrl(path.join(APP_ROOT, 'assets', 'security-low.svg'))
 
-// Builds the IIFE injected via executeJavaScript. It toggles a single overlay element keyed
-// by a fixed id: present → remove (F12 closes), absent → build. All values are JSON-encoded
-// into the script so page content can't break the markup.
-function buildAboutInjection(info) {
+// HTML-escape for values placed into the page markup.
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
+// Builds the complete About HTML document loaded into the overlay view. Because this runs in
+// our own context (no foreign CSP), plain innerHTML/inline styles are safe here.
+function buildAboutHtml(info) {
   const de = app.getLocale().split('-')[0].toLowerCase() === 'de'
-  // Header name: prefer the human-readable displayName baked in at build time; fall back to
-  // the profile (pkg.name is "wrapweb-<profile>", so strip that prefix for older builds).
   const displayName = pkg.displayName || (pkg.name || '').replace(/^wrapweb-/, '') || pkg.profile
   const t = de
     ? { titlePrefix: 'Über ', subtitle: 'wrapweb-AppImage', domain: 'Aktuelle Domain', appName: 'App', plugins: 'Geladene Plugins',
@@ -64,214 +65,178 @@ function buildAboutInjection(info) {
         builtWith: 'Built with wrapweb', electron: 'Electron', close: 'Close',
         sbSafe: 'Google Safe Browsing: no known threat', sbUnsafe: 'Google Safe Browsing: flagged as dangerous' }
 
-  const data = {
-    t,
-    displayName,
-    domain:   info.domain,
-    appName:  pkg.name || pkg.profile,
-    plugins:  (pkg.plugins ?? []).map(pluginDisplay),
-    // pkg.version is baked into the embedded package.json at build time — i.e. the wrapweb
-    // version this AppImage was actually built with.
-    version:  pkg.version,
-    electron: process.versions.electron,
-    chromium: process.versions.chrome,
-    appIcon:  appIconDataUrl(),
-    githubIcon,
-    safeIcon,
-    unsafeIcon,
-    fullUrl:  info.fullUrl,
-  }
+  const appIcon = appIconDataUrl()
+  const plugins = (pkg.plugins ?? []).map(pluginDisplay)
 
-  return `(() => {
-  const ID = 'wrapweb-about-overlay';
-  const existing = document.getElementById(ID);
-  if (existing) { existing.remove(); return; }   // F12 again closes it
+  const headerIcon = appIcon ? `<img src="${appIcon}" alt="">` : ''
 
-  const d = ${JSON.stringify(data)};
+  const pluginsField = plugins.length ? `
+    <div class="wa-field"><div class="wa-label">${esc(t.plugins)}</div>
+      <ul class="wa-plugins">${plugins.map(p =>
+        `<li>${p.icon ? `<img src="${p.icon}" alt="">` : ''}<span>${esc(p.label)}</span></li>`).join('')}</ul>
+    </div>` : ''
 
-  const css = \`
-    /* Card colours follow the OS light/dark preference — there is no cross-process link to
-       the manager's theme, so the system setting is the closest honest signal. The blue
-       header keeps the wrapweb brand look on both themes. */
-    #\${ID}{--wa-card-bg:#fff;--wa-card-fg:#1e1e1e;--wa-label:#888;--wa-div:#e4e4e4;
-      position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;
-      justify-content:center;background:rgba(0,0,0,0.45);font-family:'Ubuntu',system-ui,sans-serif}
+  const ver = (name, hint) =>
+    `<div class="wa-ver"><span class="wa-ver-name">${esc(name)}</span><span class="wa-ver-hint">${esc(hint)}</span></div>`
+
+  return `<!doctype html><html lang="${de ? 'de' : 'en'}"><head><meta charset="utf-8"><style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--wa-card-bg:#fff;--wa-card-fg:#1e1e1e;--wa-label:#888;--wa-div:#e4e4e4}
     @media (prefers-color-scheme: dark){
-      #\${ID}{--wa-card-bg:#2c2c2c;--wa-card-fg:#f0f0f0;--wa-label:#aaa;--wa-div:#444}
+      :root{--wa-card-bg:#2c2c2c;--wa-card-fg:#f0f0f0;--wa-label:#aaa;--wa-div:#444}
     }
-    #\${ID} *{box-sizing:border-box;margin:0;padding:0}
-    #\${ID} .wa-card{background:var(--wa-card-bg);color:var(--wa-card-fg);border-radius:12px;
-      width:440px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.35);overflow:hidden;color-scheme:light dark}
-    #\${ID} .wa-header{background:linear-gradient(135deg,#5ab4f0 0%,#1a7bc4 100%);
+    /* Transparent html/body + a semi-transparent backdrop so the app shows through, dimmed.
+       The view itself is set transparent in main; if the compositor ignores that, this still
+       degrades to a darker (but not fully opaque) overlay. */
+    html,body{height:100%;background:transparent}
+    body{display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);
+      font-family:'Ubuntu',system-ui,sans-serif;color-scheme:light dark}
+    .wa-card{background:var(--wa-card-bg);color:var(--wa-card-fg);border-radius:12px;width:440px;
+      max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.5);overflow:hidden}
+    .wa-header{background:linear-gradient(135deg,#5ab4f0 0%,#1a7bc4 100%);
       padding:12px 20px;display:flex;align-items:center;gap:12px}
-    #\${ID} .wa-icon-wrap{position:relative;width:32px;height:32px;flex-shrink:0}
-    #\${ID} .wa-icon-wrap>img{width:32px;height:32px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.25))}
-    #\${ID} .wa-htitles{display:flex;flex-direction:column;line-height:1.2}
-    #\${ID} .wa-htitle{color:#fff;font-size:15px;font-weight:600}
-    #\${ID} .wa-hsub{color:rgba(255,255,255,0.8);font-size:11px}
-    #\${ID} .wa-body{padding:18px 24px 20px;display:flex;flex-direction:column;gap:14px}
-    #\${ID} .wa-field .wa-label{font-size:11px;font-weight:600;text-transform:uppercase;
-      letter-spacing:.05em;color:var(--wa-label)}
-    #\${ID} .wa-field .wa-val{font-size:13px;margin-top:2px;word-break:break-all;padding-left:10px}
-    #\${ID} .wa-domain{display:flex;align-items:center;gap:6px}
-    #\${ID} .wa-domain img{width:15px;height:15px;flex-shrink:0}
-    #\${ID} .wa-vers{display:flex;flex-direction:column;gap:6px;margin-top:3px;padding-left:10px}
-    #\${ID} .wa-ver{display:flex;flex-direction:column;line-height:1.25}
-    #\${ID} .wa-ver-name{font-size:13px}
-    #\${ID} .wa-ver-hint{font-size:11px;color:var(--wa-label)}
-    #\${ID} .wa-plugins{list-style:none;margin:4px 0 0;padding:0 0 0 10px;display:flex;flex-direction:column;gap:5px}
-    #\${ID} .wa-plugins li{display:flex;align-items:center;gap:8px;font-size:13px}
-    #\${ID} .wa-plugins img{width:18px;height:18px;flex-shrink:0;object-fit:contain}
-    #\${ID} .wa-branding{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:4px;
+    .wa-icon-wrap{width:32px;height:32px;flex-shrink:0}
+    .wa-icon-wrap>img{width:32px;height:32px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.25))}
+    .wa-htitles{display:flex;flex-direction:column;line-height:1.2}
+    .wa-htitle{color:#fff;font-size:15px;font-weight:600}
+    .wa-hsub{color:rgba(255,255,255,0.8);font-size:11px}
+    .wa-body{padding:18px 24px 20px;display:flex;flex-direction:column;gap:14px}
+    .wa-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--wa-label)}
+    .wa-val{font-size:13px;margin-top:2px;word-break:break-all;padding-left:10px}
+    .wa-domain{display:flex;align-items:center;gap:6px}
+    .wa-domain img{width:15px;height:15px;flex-shrink:0}
+    .wa-vers{display:flex;flex-direction:column;gap:6px;margin-top:3px;padding-left:10px}
+    .wa-ver{display:flex;flex-direction:column;line-height:1.25}
+    .wa-ver-name{font-size:13px}
+    .wa-ver-hint{font-size:11px;color:var(--wa-label)}
+    .wa-plugins{list-style:none;margin:4px 0 0;padding:0 0 0 10px;display:flex;flex-direction:column;gap:5px}
+    .wa-plugins li{display:flex;align-items:center;gap:8px;font-size:13px}
+    .wa-plugins img{width:18px;height:18px;flex-shrink:0;object-fit:contain}
+    .wa-branding{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:4px;
       padding-top:12px;border-top:1px solid var(--wa-div)}
-    #\${ID} .wa-branding a{display:flex;align-items:center;gap:6px;font-size:12px;
-      color:#3584e4;text-decoration:none;cursor:pointer}
-    #\${ID} .wa-branding a:hover span{text-decoration:underline}
-    #\${ID} .wa-branding img{width:20px;height:20px;flex-shrink:0}
-    /* Some host pages append an "external link" glyph to <a> via ::after/::before — suppress
-       it inside the overlay so the Electron text link stays icon-free. */
-    #\${ID} .wa-branding a::after,#\${ID} .wa-branding a::before{content:none!important;
-      display:none!important}
-    #\${ID} .wa-actions{display:flex;justify-content:flex-end;margin-top:2px}
-    #\${ID} .wa-actions button{padding:7px 18px;border-radius:8px;border:none;cursor:pointer;
-      font-size:13px;font-weight:500;font-family:inherit;background:#1a73e8;color:#fff;transition:opacity .15s}
-    #\${ID} .wa-actions button:hover{opacity:.85}
-  \`;
-
-  // Built with the DOM API (createElement/textContent), NOT innerHTML: Microsoft 365 apps
-  // (Teams, Outlook) enforce Trusted Types (require-trusted-types-for 'script'), which makes
-  // any innerHTML assignment throw. The DOM API needs no TrustedHTML, so it works everywhere.
-  const el = (tag, cls, text) => {
-    const n = document.createElement(tag);
-    if (cls)  n.className = cls;
-    if (text != null) n.textContent = text;
-    return n;
-  };
-  const img = (src, cls) => { const n = el('img', cls); n.alt = ''; if (src) n.src = src; return n; };
-
-  // One "LABEL + content" field. contentNode is a node, or null for a plain value string.
-  const field = (label, valueText, contentNode) => {
-    const f = el('div', 'wa-field');
-    f.appendChild(el('div', 'wa-label', label));
-    if (contentNode) f.appendChild(contentNode);
-    else             f.appendChild(el('div', 'wa-val', valueText));
-    return f;
-  };
-
-  const ov = el('div');
-  ov.id = ID;
-  ov.appendChild(Object.assign(document.createElement('style'), { textContent: css }));
-
-  const card = el('div', 'wa-card');
-
-  // Header: app icon + title/subtitle.
-  const header = el('div', 'wa-header');
-  const iconWrap = el('div', 'wa-icon-wrap');
-  if (d.appIcon) iconWrap.appendChild(img(d.appIcon));
-  header.appendChild(iconWrap);
-  const titles = el('div', 'wa-htitles');
-  titles.appendChild(el('span', 'wa-htitle', d.t.titlePrefix + d.displayName));
-  titles.appendChild(el('span', 'wa-hsub', d.t.subtitle));
-  header.appendChild(titles);
-  card.appendChild(header);
-
-  const body = el('div', 'wa-body');
-
-  // Domain field with a (hidden) Safe Browsing badge before it.
-  const domWrap = el('div', 'wa-val wa-domain');
-  const sb = img(null); sb.id = 'wa-sb'; sb.hidden = true;
-  domWrap.appendChild(sb);
-  domWrap.appendChild(el('span', null, d.domain));
-  body.appendChild(field(d.t.domain, null, domWrap));
-
-  // App.
-  body.appendChild(field(d.t.appName, d.appName));
-
-  // Versions: wrapweb / Electron / Chromium, each name + hint.
-  const versWrap = el('div', 'wa-vers');
-  [['wrapweb ' + d.version, d.t.wrapwebHint],
-   ['Electron ' + d.electron, d.t.electronHint],
-   ['Chromium ' + d.chromium, d.t.chromiumHint]].forEach(([name, hint]) => {
-    const v = el('div', 'wa-ver');
-    v.appendChild(el('span', 'wa-ver-name', name));
-    v.appendChild(el('span', 'wa-ver-hint', hint));
-    versWrap.appendChild(v);
-  });
-  body.appendChild(field(d.t.versions, null, versWrap));
-
-  // Plugins — only when present.
-  if (d.plugins.length) {
-    const ul = el('ul', 'wa-plugins');
-    d.plugins.forEach(p => {
-      const li = el('li');
-      if (p.icon) li.appendChild(img(p.icon));
-      li.appendChild(el('span', null, p.label));
-      ul.appendChild(li);
-    });
-    body.appendChild(field(d.t.plugins, null, ul));
-  }
-
-  // Footer: stacked links to wrapweb's repo and the Electron site. target=_blank lets the
-  // app's setWindowOpenHandler route them to the system browser.
-  const branding = el('div', 'wa-branding');
-  const link = (href, withIcon, text) => {
-    const a = el('a'); a.href = href; a.target = '_blank'; a.rel = 'noreferrer';
-    if (withIcon && d.githubIcon) a.appendChild(img(d.githubIcon));
-    a.appendChild(el('span', null, text));
-    return a;
-  };
-  branding.appendChild(link('https://github.com/db0x/wrapweb', true, d.t.builtWith));
-  branding.appendChild(link('https://www.electronjs.org/', false, d.t.electron));
-  body.appendChild(branding);
-
-  // Close button.
-  const actions = el('div', 'wa-actions');
-  const closeBtn = el('button', null, d.t.close);
-  actions.appendChild(closeBtn);
-  body.appendChild(actions);
-
-  card.appendChild(body);
-  ov.appendChild(card);
-
-  const close = () => ov.remove();
-  closeBtn.addEventListener('click', close);
-  ov.addEventListener('click', e => { if (e.target === ov) close(); });   // backdrop click
-  // Esc closes; capture so the page's own Esc handlers don't swallow it first.
-  document.addEventListener('keydown', function onEsc(e){
-    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc, true); }
-  }, true);
-
-  document.body.appendChild(ov);
-
-  // Safe Browsing status before the domain — only shown when the check returns a definite
-  // verdict. 'unknown' (feature disabled, no API key, or app excluded) shows nothing, so the
-  // badge appears only when Safe Browsing is actually active. Reuses the same IPC bridge as
-  // the link tooltip; async, so it fills in once the overlay is already visible.
-  if (window.electronAPI && window.electronAPI.checkSafeBrowsing) {
-    // ignoreExclude=true: report the status even for apps excluded from the passive tooltip.
-    window.electronAPI.checkSafeBrowsing(d.fullUrl, true).then(r => {
-      if (r === 'safe'   && d.safeIcon)   { sb.src = d.safeIcon;   sb.title = d.t.sbSafe;   sb.hidden = false; }
-      if (r === 'unsafe' && d.unsafeIcon) { sb.src = d.unsafeIcon; sb.title = d.t.sbUnsafe; sb.hidden = false; }
-    }).catch(() => {});
-  }
-})();`
+    .wa-branding a{display:flex;align-items:center;gap:6px;font-size:12px;color:#3584e4;
+      text-decoration:none;cursor:pointer}
+    .wa-branding a:hover span{text-decoration:underline}
+    .wa-branding img{width:20px;height:20px;flex-shrink:0}
+    .wa-actions{display:flex;justify-content:flex-end;margin-top:2px}
+    .wa-actions button{padding:7px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;
+      font-weight:500;font-family:inherit;background:#1a73e8;color:#fff;transition:opacity .15s}
+    .wa-actions button:hover{opacity:.85}
+  </style></head><body>
+    <div class="wa-card">
+      <div class="wa-header"><div class="wa-icon-wrap">${headerIcon}</div>
+        <div class="wa-htitles">
+          <span class="wa-htitle">${esc(t.titlePrefix + displayName)}</span>
+          <span class="wa-hsub">${esc(t.subtitle)}</span>
+        </div></div>
+      <div class="wa-body">
+        <div class="wa-field"><div class="wa-label">${esc(t.domain)}</div>
+          <div class="wa-val wa-domain"><img id="wa-sb" alt="" hidden><span>${esc(info.domain)}</span></div></div>
+        <div class="wa-field"><div class="wa-label">${esc(t.appName)}</div><div class="wa-val">${esc(pkg.name || pkg.profile)}</div></div>
+        <div class="wa-field"><div class="wa-label">${esc(t.versions)}</div>
+          <div class="wa-vers">
+            ${ver('wrapweb ' + pkg.version, t.wrapwebHint)}
+            ${ver('Electron ' + process.versions.electron, t.electronHint)}
+            ${ver('Chromium ' + process.versions.chrome, t.chromiumHint)}
+          </div></div>
+        ${pluginsField}
+        <div class="wa-branding">
+          <a href="https://github.com/db0x/wrapweb" target="_blank" rel="noreferrer">
+            ${githubIcon ? `<img src="${githubIcon}" alt="">` : ''}<span>${esc(t.builtWith)}</span></a>
+          <a href="https://www.electronjs.org/" target="_blank" rel="noreferrer"><span>${esc(t.electron)}</span></a>
+        </div>
+        <div class="wa-actions"><button id="wa-close">${esc(t.close)}</button></div>
+      </div>
+    </div>
+    <script>
+      const close = () => window.aboutAPI.close();
+      document.getElementById('wa-close').addEventListener('click', close);
+      // Backdrop click (outside the card) closes.
+      document.body.addEventListener('click', e => { if (e.target === document.body) close(); });
+      // F12 (toggle) and Esc close from within the overlay; the main process also intercepts
+      // F12 globally, but the focused overlay needs its own handler to react.
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' || e.key === 'F12') { e.preventDefault(); close(); } });
+      // External links: hand off to the system browser via the host's default handling.
+      for (const a of document.querySelectorAll('a[target="_blank"]')) {
+        a.addEventListener('click', e => { e.preventDefault(); window.open(a.href, '_blank'); });
+      }
+      // Safe Browsing badge — async; only shown for a definite verdict.
+      const sb = document.getElementById('wa-sb');
+      const D = ${JSON.stringify({ fullUrl: info.fullUrl, safeIcon, unsafeIcon, sbSafe: t.sbSafe, sbUnsafe: t.sbUnsafe })};
+      if (window.aboutAPI && window.aboutAPI.checkSafeBrowsing) {
+        window.aboutAPI.checkSafeBrowsing(D.fullUrl).then(r => {
+          if (r === 'safe'   && D.safeIcon)   { sb.src = D.safeIcon;   sb.title = D.sbSafe;   sb.hidden = false; }
+          if (r === 'unsafe' && D.unsafeIcon) { sb.src = D.unsafeIcon; sb.title = D.sbUnsafe; sb.hidden = false; }
+        }).catch(() => {});
+      }
+    </script>
+  </body></html>`
 }
 
-// Toggles the About overlay in the given window's page. Reads the current URL live so the
-// shown domain reflects wherever the user navigated.
+// Toggles the About overlay view on a window: present → remove (F12 again closes), else create.
+// The view is sized to fill the window and kept in sync on resize while open.
 function toggleAboutWindow(win) {
-  const fullUrl = win.webContents.getURL()
-  const info = {
-    // protocol + host (e.g. "https://word.cloud.microsoft") — keeps the scheme so http vs
-    // https is visible, but drops path/query to stay short.
-    domain: (() => {
-      try { const u = new URL(fullUrl); return `${u.protocol}//${u.host}` }
-      catch { return fullUrl }
-    })(),
-    // Full URL for the Safe Browsing lookup (the handler hashes only the origin anyway).
-    fullUrl,
+  if (win._wrapwebAboutView) {
+    closeAbout(win)
+    return
   }
-  win.webContents.executeJavaScript(buildAboutInjection(info)).catch(() => {})
+
+  const fullUrl = win.webContents.getURL()
+  const domain = (() => {
+    try { const u = new URL(fullUrl); return `${u.protocol}//${u.host}` } catch { return fullUrl }
+  })()
+
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'about-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  // Make the view itself transparent so the semi-transparent CSS backdrop lets the app show
+  // through (dimmed) instead of painting an opaque grey over everything. If the compositor
+  // can't honour this, the backdrop simply looks more solid — never worse than before.
+  try { view.setBackgroundColor('#00000000') } catch {}
+
+  // Fill the whole content area, on top of the page.
+  const { width, height } = win.getContentBounds()
+  view.setBounds({ x: 0, y: 0, width, height })
+  win.contentView.addChildView(view)
+
+  // Keep the overlay matched to the window size while it's open.
+  const onResize = () => {
+    if (!win._wrapwebAboutView) return
+    const b = win.getContentBounds()
+    view.setBounds({ x: 0, y: 0, width: b.width, height: b.height })
+  }
+  win.on('resize', onResize)
+
+  win._wrapwebAboutView = view
+  win._wrapwebAboutCleanup = () => win.removeListener('resize', onResize)
+
+  view.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildAboutHtml({ domain, fullUrl })))
+  view.webContents.once('did-finish-load', () => view.webContents.focus())
 }
+
+function closeAbout(win) {
+  const view = win._wrapwebAboutView
+  if (!view) return
+  win._wrapwebAboutCleanup?.()
+  try { win.contentView.removeChildView(view) } catch {}
+  try { view.webContents.destroy() } catch {}
+  win._wrapwebAboutView = null
+  win._wrapwebAboutCleanup = null
+  win.webContents.focus()
+}
+
+// 'about:close' is sent by the overlay's preload (close button / Esc / F12 / backdrop).
+ipcMain.on('about:close', (event) => {
+  for (const win of require('electron').BrowserWindow.getAllWindows()) {
+    if (win._wrapwebAboutView && win._wrapwebAboutView.webContents.id === event.sender.id) {
+      closeAbout(win)
+      return
+    }
+  }
+})
 
 module.exports = { toggleAboutWindow }

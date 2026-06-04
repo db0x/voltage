@@ -100,7 +100,8 @@ const RCLONE_TEST_CONFIG = {
     name:             'Test Rclone App',
     url:              'https://docs.google.com',
     category:         'google',
-    rcloneFileHandler: true,
+    // rclone is a plugin now — the manager derives "rclone-capable" from this entry.
+    plugins:          ['plugins/rclone-sync/rclone-sync.js'],
     mimeTypes:        ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   },
 }

@@ -51,7 +51,7 @@ function expandConfig(app) {
       ...(app.crossOriginIsolation && { crossOriginIsolation: true }),
       ...(app.singleInstance      && { singleInstance:       true }),
       ...(app.fileHandler        && { fileHandler:          true }),
-      ...(app.rcloneFileHandler  && { rcloneFileHandler:    true }),
+      ...(app.acceptsFileArg     && { acceptsFileArg:       true }),
       ...(app.rcloneEditUrlBase && { rcloneEditUrlBase:   app.rcloneEditUrlBase }),
       ...(app.mimeTypes?.length  && { mimeTypes:            app.mimeTypes }),
       ...(app.mailtoTemplate    && { mailtoTemplate:       app.mailtoTemplate }),
@@ -75,7 +75,10 @@ async function buildOne(configFile) {
   // outdated builds and query capabilities (e.g. rclone binding) without
   // mounting or inspecting the AppImage itself.
   const { version } = require('../package.json')
-  const meta = { version, ...(app.rcloneFileHandler && { rcloneFileHandler: true }) }
+  // rcloneFileHandler in the sidecar drives the manager's rclone card badge — now derived from
+  // whether the app loads the rclone-sync plugin (rclone is a plugin, no longer a base flag).
+  const hasRclonePlugin = (app.plugins ?? []).some(p => /(^|\/)rclone-sync\//.test(p))
+  const meta = { version, ...(hasRclonePlugin && { rcloneFileHandler: true }) }
   fs.writeFileSync(path.join('dist', `wrapweb-${app.profile}.version`), JSON.stringify(meta), 'utf8')
   installIcon()
   installDesktop(app)

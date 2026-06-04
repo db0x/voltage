@@ -8,7 +8,7 @@ const os   = require('node:os')
 
 const { APP_ROOT, CONFIGS_DIR, pkg }                       = require('../lib/paths')
 const { resolveIconsByGtk }                                = require('../lib/icons')
-const { readVersionSidecar, needsRebuild, buildSingleApp, buildAppCfg } = require('../lib/app-config')
+const { readVersionSidecar, needsRebuild, buildSingleApp, buildAppCfg, usesRcloneSync } = require('../lib/app-config')
 const { getDefaultMailDesktop }                            = require('./mail')
 const { urlToRoutingKey, keyOverlaps, primaryKeyFromUrl, routingUrlKeys } = require('../../../routing-match')
 
@@ -45,7 +45,7 @@ module.exports = function registerAppHandlers() {
           mimeTypes: cfg.mimeTypes || null, plugins: cfg.plugins || null,
           isDefaultMailHandler: defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`,
           category: cfg.category || null,
-          builtVersion, builtRclone, rcloneFileHandler: cfg.rcloneFileHandler || false,
+          builtVersion, builtRclone, rcloneFileHandler: usesRcloneSync(cfg),
           needsRebuild: needsRebuild(built, builtVersion, minVer),
         }
       })

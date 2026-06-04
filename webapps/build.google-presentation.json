@@ -5,7 +5,8 @@
     "url": "https://slides.google.com",
     "routingUrls": ["https://docs.google.com/presentation"],
     "category": "google",
-    "rcloneFileHandler": true,
+    "acceptsFileArg": true,
+    "plugins": ["plugins/rclone-sync/rclone-sync.js"],
     "rcloneEditUrlBase": "https://docs.google.com/presentation/d",
     "mimeTypes": ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
     "mimeExtensions": {

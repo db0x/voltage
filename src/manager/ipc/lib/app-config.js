@@ -47,6 +47,13 @@ function needsRebuild(built, builtVersion, minVer) {
     : semverLt(builtVersion ?? '0.0.0', minVer)
 }
 
+// True when a config loads the rclone-sync plugin. rclone is a plugin now, so this replaces
+// the old standalone `rcloneFileHandler` config flag everywhere the manager needs to know an
+// app is rclone-capable (the rclone dialog's app list, the app object it returns).
+function usesRcloneSync(cfg) {
+  return (cfg.plugins ?? []).some(p => /(^|\/)rclone-sync\//.test(p))
+}
+
 // Builds a full app object for a single config file, resolving icon paths individually.
 // Used when a single restored app needs to be returned after a delete operation.
 function buildSingleApp(configFile, defaultMailDesktop) {
@@ -86,7 +93,7 @@ function buildSingleApp(configFile, defaultMailDesktop) {
     mimeTypes: cfg.mimeTypes || null, plugins: cfg.plugins || null,
     isDefaultMailHandler: defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`,
     category: cfg.category || null,
-    builtVersion, builtRclone, rcloneFileHandler: cfg.rcloneFileHandler || false,
+    builtVersion, builtRclone, rcloneFileHandler: usesRcloneSync(cfg),
     needsRebuild: needsRebuild(built, builtVersion, minVer),
   }
 }
@@ -148,4 +155,4 @@ function buildAppCfg({ profile, name, url, icon, width, height, userAgent, inter
   return cfg
 }
 
-module.exports = { semverLt, readVersionSidecar, needsRebuild, buildSingleApp, buildAppCfg }
+module.exports = { semverLt, readVersionSidecar, needsRebuild, buildSingleApp, buildAppCfg, usesRcloneSync }

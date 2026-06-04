@@ -4,7 +4,8 @@
     "icon": "google-docs",
     "url": "https://docs.google.com",
     "category": "google",
-    "rcloneFileHandler": true,
+    "acceptsFileArg": true,
+    "plugins": ["plugins/rclone-sync/rclone-sync.js"],
     "rcloneEditUrlBase": "https://docs.google.com/document/d",
     "mimeTypes": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
     "mimeExtensions": {

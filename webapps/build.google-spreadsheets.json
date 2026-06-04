@@ -5,7 +5,8 @@
     "url": "https://spreadsheets.google.com",
     "routingUrls": ["https://docs.google.com/spreadsheets"],
     "category": "google",
-    "rcloneFileHandler": true,
+    "acceptsFileArg": true,
+    "plugins": ["plugins/rclone-sync/rclone-sync.js"],
     "rcloneEditUrlBase": "https://docs.google.com/spreadsheets/d",
     "mimeTypes": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
     "mimeExtensions": {

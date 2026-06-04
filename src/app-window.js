@@ -10,8 +10,6 @@ const zlib = require('node:zlib')
 
 const pkg = require(app.getAppPath() + '/package.json')
 const { createWindow, dispatchLaunchArg } = require('./window')
-const { resolveRcloneFileUrl,
-        buildRcloneLoadingPage }    = require('./rclone-file-handler')
 const { parseMailtoFields }         = require('./mailto')
 
 // draw.io SVG files embed the diagram XML as HTML-escaped content= attribute value.
@@ -97,8 +95,11 @@ module.exports = function setupAppWindow() {
   app.commandLine.appendSwitch('wm-class', `wrapweb-${pkg.profile}`)
   app.setPath('userData', path.join(app.getPath('appData'), 'wrapweb', pkg.profile))
 
+  // acceptsFileArg lets an app receive a bare local file path as a launch argument; the file
+  // itself is handled either by the built-in draw.io fileHandler (resolveFileUrl) or by a
+  // plugin (e.g. rclone-sync, which reads launchArg). fileHandler implies it for back-compat.
   const findArg = (argv) => argv.slice(1).find(a => /^(https?:|mailto:|file:)/.test(a) ||
-    ((pkg.fileHandler || pkg.rcloneFileHandler) && path.isAbsolute(a) && fs.existsSync(a)))
+    ((pkg.fileHandler || pkg.acceptsFileArg) && path.isAbsolute(a) && fs.existsSync(a)))
   const rawArg   = findArg(process.argv)
   const urlArg   = resolveUrl(rawArg) ?? resolveFileUrl(rawArg)
 
@@ -123,20 +124,10 @@ module.exports = function setupAppWindow() {
   }
 
   app.whenReady().then(async () => {
-    const useRclone  = pkg.rcloneFileHandler && rawArg && !urlArg
-    const initialUrl = useRclone ? buildRcloneLoadingPage() : (urlArg ?? null)
-    // Plugins receive rawArg via the api so launch-triggered behaviour (mailto compose) works.
-    const win        = createWindow(initialUrl ? { ...pkg, url: initialUrl } : pkg, { launchArg: rawArg ?? null })
-
-    // rclone file handler: window shows a loading page while the upload runs,
-    // then navigates to the edit URL (or falls back to the default URL on error).
-    if (useRclone) {
-      resolveRcloneFileUrl(rawArg, win).then(editUrl => {
-        if (!win.isDestroyed()) win.webContents.loadURL(editUrl ?? pkg.url)
-      }).catch(() => {
-        if (!win.isDestroyed()) win.webContents.loadURL(pkg.url)
-      })
-    }
+    // A resolvable URL/file (draw.io) loads directly; otherwise pkg.url. A file destined for a
+    // plugin (rclone-sync) leaves urlArg null and reaches the plugin via launchArg, which takes
+    // over the initial load itself.
+    const win = createWindow(urlArg ? { ...pkg, url: urlArg } : pkg, { launchArg: rawArg ?? null })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(pkg)
