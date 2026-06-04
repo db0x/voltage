@@ -72,6 +72,7 @@ module.exports = function registerMetaHandlers() {
       github:         a('github.svg'),
       updateNotifier: a('system-software-update.svg'),
       profiles:       a('profiles.svg'),
+      folderProfiles: a('folder-profiles.svg'),
       configure:          a('configure.svg'),
       settings:           a('settings.svg'),
       mail:               a('mail.svg'),

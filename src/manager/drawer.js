@@ -37,19 +37,36 @@ export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, ma
 
   const menuDarkmodeBtn = document.getElementById('menu-darkmode')
 
-  // Initialise OverlayScrollbars on first open so it measures the drawer while
-  // it is actually on screen; its ResizeObserver then keeps the scrollbar in
-  // sync as the window is resized afterwards.
+  // Initialise OverlayScrollbars once, while the drawer is actually on screen so it can
+  // measure correctly; its ResizeObserver then keeps the scrollbar in sync afterwards.
   let scrollbarInited = false
+  function ensureScrollbar() {
+    if (scrollbarInited) return
+    OverlayScrollbars(scroll, { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
+    scrollbarInited = true
+  }
   function openDrawer() {
     drawer.classList.add('open')
     backdrop.classList.add('open')
-    if (!scrollbarInited) {
-      OverlayScrollbars(scroll, { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
-      scrollbarInited = true
-    }
+    ensureScrollbar()
   }
   function closeDrawer() { drawer.classList.remove('open'); backdrop.classList.remove('open') }
+
+  // Persistent-drawer mode: a CSS media query (min-width:875px) shows the drawer as a fixed
+  // side panel that reserves space. Two things need JS support:
+  //  - the scrollbar is normally initialised on first open, but here the drawer is visible
+  //    without ever being "opened", so init it whenever the wide layout is active;
+  //  - the drawer starts below the header, so publish the measured header height as --header-h
+  //    (kept current on resize, since the ASCII banner's height depends on window width).
+  const headerEl = document.querySelector('header')
+  const publishHeaderHeight = () => {
+    if (headerEl) document.documentElement.style.setProperty('--header-h', `${headerEl.offsetHeight}px`)
+  }
+  const wide = window.matchMedia('(min-width: 875px)')
+  const syncPersistent = () => { if (wide.matches) { ensureScrollbar(); publishHeaderHeight() } }
+  wide.addEventListener('change', syncPersistent)
+  window.addEventListener('resize', () => { if (wide.matches) publishHeaderHeight() })
+  syncPersistent()
 
   menuBtn.addEventListener('click', () =>
     drawer.classList.contains('open') ? closeDrawer() : openDrawer()

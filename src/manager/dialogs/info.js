@@ -1,6 +1,8 @@
 import { applyTemplate } from '../template.js'
 
-export function initInfoDialog({ i18n, icons, templates }) {
+export function initInfoDialog({ i18n, icons, appDefaultSrc, plugins, templates }) {
+  // Lookup from a plugin's webapps-relative file path → its catalog entry (label + icon).
+  const pluginCatalog = new Map((plugins || []).map(p => [p.file, p]))
   const overlay = applyTemplate(templates.info, { i18n, icons })
   document.body.appendChild(overlay)
 
@@ -25,6 +27,8 @@ export function initInfoDialog({ i18n, icons, templates }) {
   function openInfoDialog(app, name) {
     currentApp = app
     document.getElementById('info-title').textContent = name
+    // Header icon mirrors the app's own icon (falls back to the wrapweb default).
+    document.getElementById('info-header-icon').src = app.iconPath ? `file://${app.iconPath}` : appDefaultSrc
     const fieldsEl = document.getElementById('info-fields')
 
     const field = (label, value) => `
@@ -45,7 +49,21 @@ export function initInfoDialog({ i18n, icons, templates }) {
     const rows = []
     rows.push(field(i18n.infoUrl, app.url))
     rows.push(field(i18n.infoProfile, app.profile))
-    if (app.icon) rows.push(field(i18n.infoIcon, app.icon))
+    // Routing URLs: extra URLs other apps route here (array; one per line for readability).
+    if (Array.isArray(app.routingUrls) && app.routingUrls.length) {
+      rows.push(field(i18n.infoRoutingUrls, app.routingUrls.join('<br>')))
+    }
+    // Plugins: webapps-relative paths — show each plugin's icon + readable name. Falls back to
+    // the basename (sans .js/private.) when a plugin isn't in the catalog.
+    if (Array.isArray(app.plugins) && app.plugins.length) {
+      const items = app.plugins.map(p => {
+        const entry = pluginCatalog.get(p)
+        const label = entry?.label ?? p.split('/').pop().replace(/\.js$/, '').replace(/^private\./, '')
+        const icon  = entry?.icon ? `<img src="${entry.icon}" alt="" class="info-plugin-icon">` : ''
+        return `<span class="info-plugin">${icon}<span>${label}</span></span>`
+      })
+      rows.push(field(i18n.infoPlugins, `<div class="info-plugins">${items.join('')}</div>`))
+    }
     if (app.geometry) {
       const w = app.geometry.width  ? `${app.geometry.width} px`  : '—'
       const h = app.geometry.height ? `${app.geometry.height} px` : '—'

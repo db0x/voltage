@@ -57,7 +57,8 @@
 
   "infoUrl":        "URL",
   "infoProfile":    "Profile",
-  "infoIcon":       "Icon",
+  "infoRoutingUrls": "Routing URLs",
+  "infoPlugins":    "Plugins",
   "infoGeometry":   "Window size",
   "infoUserAgent":  "User-Agent",
   "infoDomains":    "Internal domains",
@@ -68,7 +69,7 @@
   "infoNotBuilt":   "App is not built.",
   "infoReveal":     "Open in file manager",
 
-  "editTitle":             "Edit app",
+  "editTitle":             "Edit {name}",
   "editSave":              "Save",
   "editRebuildPrompt":     "<p>Configuration of <strong>{name}</strong> saved.</p><p>Rebuild the AppImage now?</p>",
   "editRebuild":           "Rebuild",
@@ -172,6 +173,8 @@
   "drawerProfiles":         "Profiles",
   "profilesTitle":          "Profile directories",
   "profilesTotal":          "Total",
+  "profilesFree":           "Free space",
+  "profilesReveal":         "Open in file manager",
   "profilesEmpty":          "No data directory",
   "profilesDeleteConfirm":  "<p>Really delete profile data for <strong>{name}</strong>?</p><p>Cookies, login sessions and local data will be lost. The app remains installed.</p>",
 

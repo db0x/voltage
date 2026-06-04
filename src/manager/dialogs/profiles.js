@@ -4,7 +4,7 @@ import { applyTemplate }     from '../template.js'
 export function initProfilesDialog({ i18n, tr, apps, appDefaultSrc, icons, templates }, { showConfirm }) {
   const deleteSrc = icons.delete
 
-  const overlay = applyTemplate(templates.profiles, { i18n })
+  const overlay = applyTemplate(templates.profiles, { i18n, icons })
   document.body.appendChild(overlay)
 
   function closeProfilesDialog() { overlay.classList.add('hidden') }
@@ -61,9 +61,15 @@ export function initProfilesDialog({ i18n, tr, apps, appDefaultSrc, icons, templ
           <div class="profile-size-bar" style="width:${pct}%"></div>
         </div>
         <div class="profile-size-value">${fmtBytes(p.bytes)}</div>
+        <button class="btn-reveal profile-reveal-btn" data-tooltip="${i18n.profilesReveal}">…</button>
         <button class="profile-delete-btn toolbar-btn danger" data-tooltip="${i18n.btnDelete}">
           ${deleteSrc ? `<img src="${deleteSrc}" alt="${i18n.btnDelete}">` : '✕'}
         </button>`
+
+      // Open the profile's data directory in the system file manager.
+      row.querySelector('.profile-reveal-btn').addEventListener('click', () =>
+        window.managerAPI.revealPath(p.dir)
+      )
 
       row.querySelector('.profile-delete-btn').addEventListener('click', async () => {
         const { confirmed } = await showConfirm(
@@ -89,6 +95,13 @@ export function initProfilesDialog({ i18n, tr, apps, appDefaultSrc, icons, templ
     totalEl.id = 'profiles-total'
     totalEl.innerHTML = `<span>${i18n.profilesTotal}</span><span>${fmtBytes(total)}</span>`
     listEl.appendChild(totalEl)
+
+    // Free space on the filesystem holding the profile data — purely informational.
+    const { free } = await window.managerAPI.getProfileDiskFree()
+    const freeEl = document.createElement('div')
+    freeEl.className = 'profile-size-total profile-size-free'
+    freeEl.innerHTML = `<span>${i18n.profilesFree}</span><span>${fmtBytes(free)}</span>`
+    listEl.appendChild(freeEl)
   }
 
   // Recalculates bar widths and total after a profile is deleted, without

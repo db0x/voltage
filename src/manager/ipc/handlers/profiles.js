@@ -31,10 +31,22 @@ module.exports = function registerProfileHandlers() {
     const configs = [...new Map(all.map(c => [c.profile, c])).values()]
     return configs.map(({ profile, name }) => {
       const dir = path.join(app.getPath('appData'), 'wrapweb', profile)
-      if (!fs.existsSync(dir)) return { profile, name, bytes: 0, exists: false }
+      if (!fs.existsSync(dir)) return { profile, name, dir, bytes: 0, exists: false }
       const r = spawnSync('du', ['-sb', dir], { encoding: 'utf8' })
       const bytes = r.status === 0 ? parseInt((r.stdout || '').split('\t')[0]) || 0 : 0
-      return { profile, name, bytes, exists: true }
+      return { profile, name, dir, bytes, exists: true }
     })
+  })
+
+  // Free space on the filesystem holding the profile data — shown next to the total in the
+  // profiles dialog so the user can judge how much head-room is left. Returns 0 on failure.
+  ipcMain.handle('manager:profile-disk-free', () => {
+    try {
+      const base = path.join(app.getPath('appData'), 'wrapweb')
+      const stat = fs.statfsSync(fs.existsSync(base) ? base : app.getPath('appData'))
+      return { free: stat.bavail * stat.bsize }
+    } catch {
+      return { free: 0 }
+    }
   })
 }

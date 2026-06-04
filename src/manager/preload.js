@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('managerAPI', {
   getPlugins:   ()        => ipcRenderer.invoke('manager:plugins'),
   getAllIcons:     ()      => ipcRenderer.invoke('manager:all-icons'),
   getProfileSizes:      ()        => ipcRenderer.invoke('manager:profile-sizes'),
+  getProfileDiskFree:   ()        => ipcRenderer.invoke('manager:profile-disk-free'),
   deleteProfileData:    (profile) => ipcRenderer.invoke('manager:delete-profile-data', profile),
   openExternal:    (url)  => ipcRenderer.invoke('manager:open-external', url),
   checkUpdate:     ()     => ipcRenderer.invoke('manager:check-update'),

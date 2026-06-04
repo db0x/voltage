@@ -223,6 +223,25 @@ body.dark .drawer-icon-btn img {
   box-shadow: -4px 0 24px rgba(0,0,0,0.25);
 }
 
+/* Persistent drawer: once the window is wide enough for 3 card columns NEXT TO the menu
+   (3×172 + gaps + padding ≈ 584, + 290 drawer ≈ 874), the menu stays open as a fixed side
+   panel that reserves space. The header keeps full width (the title bar runs across the top)
+   and the drawer starts BELOW it — its top offset is the measured header height (--header-h,
+   set in drawer.js). Only the grid is inset on the right so it never sits under the drawer.
+   No backdrop, no slide transform, hamburger hidden. Below this width: default slide-in overlay. */
+@media (min-width: 875px) {
+  #grid-wrapper { margin-right: 290px; }
+  .drawer {
+    top: var(--header-h, 48px);
+    transform: none;
+    box-shadow: none;
+    border-left: 1px solid var(--badge-unbuilt-bg);
+    padding-top: 12px;
+  }
+  .drawer-backdrop { display: none; }
+  #menu-btn { display: none; }
+}
+
 .drawer-about-btn {
   margin-top: auto;
   justify-content: center;
@@ -740,6 +759,12 @@ body.dark .toolbar-btn.danger:not(:disabled):hover img {
   font-size: 15px;
   font-weight: 600;
   flex: 1;
+  /* Truncate overly long titles (e.g. "<app name> bearbeiten") instead of pushing the close
+     button out of the dialog. min-width:0 lets the flex item shrink below its content size. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dialog-close {
@@ -772,6 +797,25 @@ body.dark .toolbar-btn.danger:not(:disabled):hover img {
   color: var(--card-url);
   display: block;
   margin-bottom: 3px;
+}
+
+.info-plugins {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.info-plugin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-plugin-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
 .dialog-field-path {
@@ -1388,17 +1432,19 @@ body.dark .dialog-field-toggle {
 
 .profile-size-row {
   display: grid;
-  grid-template-columns: 1fr 2fr auto auto;
+  grid-template-columns: 1fr 2fr auto auto auto;
   align-items: center;
   gap: 10px;
 }
 
-.profile-delete-btn {
+.profile-delete-btn,
+.profile-reveal-btn {
   opacity: 0;
   transition: opacity 0.15s;
 }
 
-.profile-size-row:hover .profile-delete-btn {
+.profile-size-row:hover .profile-delete-btn,
+.profile-size-row:hover .profile-reveal-btn {
   opacity: 1;
 }
 
@@ -1453,6 +1499,16 @@ body.dark .dialog-field-toggle {
   border-top: 1px solid var(--badge-unbuilt-bg);
   font-size: 13px;
   font-weight: 600;
+}
+
+/* Free space sits right under the total — informational, so lighter and without the second
+   divider/top-margin that would otherwise double up against the total row. */
+.profile-size-free {
+  margin-top: 0;
+  padding-top: 4px;
+  border-top: none;
+  font-weight: 400;
+  color: var(--card-url);
 }
 
 /* ── About dialog ── */

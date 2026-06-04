@@ -57,7 +57,8 @@
 
   "infoUrl":        "URL",
   "infoProfile":    "Profil",
-  "infoIcon":       "Icon",
+  "infoRoutingUrls": "Routing-URLs",
+  "infoPlugins":    "Plugins",
   "infoGeometry":   "Fenstergröße",
   "infoUserAgent":  "User-Agent",
   "infoDomains":    "Interne Domains",
@@ -68,7 +69,7 @@
   "infoNotBuilt":   "App ist nicht erstellt.",
   "infoReveal":     "Im Dateimanager öffnen",
 
-  "editTitle":             "App bearbeiten",
+  "editTitle":             "{name} bearbeiten",
   "editSave":              "Speichern",
   "editRebuildPrompt":     "<p>Konfiguration von <strong>{name}</strong> gespeichert.</p><p>AppImage jetzt neu erstellen?</p>",
   "editRebuild":           "Neu erstellen",
@@ -172,6 +173,8 @@
   "drawerProfiles":         "Profile",
   "profilesTitle":          "Profil-Verzeichnisse",
   "profilesTotal":          "Gesamt",
+  "profilesFree":           "Freier Speicher",
+  "profilesReveal":         "Im Dateimanager öffnen",
   "profilesEmpty":          "Kein Datenverzeichnis vorhanden",
   "profilesDeleteConfirm":  "<p>Profildaten von <strong>{name}</strong> wirklich löschen?</p><p>Cookies, Login-Sessions und lokale Daten gehen verloren. Die App bleibt installiert.</p>",
 

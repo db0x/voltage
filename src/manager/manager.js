@@ -100,6 +100,7 @@ const ctx = {
     github:         s('github'),
     updateNotifier: s('updateNotifier'),
     profiles:       s('profiles'),
+    folderProfiles: s('folderProfiles'),
     globe:          s('globe'),
     plus:           s('plus'),
     minus:          s('minus'),
