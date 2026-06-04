@@ -39,6 +39,7 @@ function fillHtml(html, vars) {
 // Templates ship next to this plugin file.
 const conflictTemplate = fs.readFileSync(path.join(__dirname, 'conflict.html'), 'utf8')
 const loadingTemplate  = fs.readFileSync(path.join(__dirname, 'loading.html'),  'utf8')
+const syncBackTemplate = fs.readFileSync(path.join(__dirname, 'sync-back.html'), 'utf8')
 
 function fmtBytes(b) {
   if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB'
@@ -79,6 +80,28 @@ function buildConfirmPage(filename, existing, localStat, de) {
     localSize:  fmtBytes(localStat.size),
     remMod:     new Date(existing.ModTime).toLocaleString(),
     remSize:    fmtBytes(existing.Size),
+    filename,
+    wrapwebIconHtml: wrapwebIcon ? `<img src="${wrapwebIcon}" alt="wrapweb">` : '',
+    rcloneIconHtml:  rcloneIcon  ? `<span class="header-rclone-badge"><img src="${rcloneIcon}" alt=""></span>` : '',
+    appIconHtml:     appIconUrl  ? `<img class="file-icon" src="${appIconUrl}" alt="">` : '',
+  })
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+}
+
+// Sync-back prompt shown on close when the user opened the existing Drive version: ask whether
+// to write the (possibly edited) Drive file back over the local file. Same look as the conflict
+// page, minus the comparison table.
+function buildSyncBackPage(filename, de) {
+  const appIconUrl  = appIconDataUrl()
+  const wrapwebIcon = assetDataUrl('wrapweb.svg')
+  const rcloneIcon  = assetDataUrl('rclone.svg')
+  const html = fillHtml(syncBackTemplate, {
+    title:        de ? 'Lokale Datei aktualisieren?' : 'Update local file?',
+    message:      de
+      ? 'Die Datei wurde in der Cloud geöffnet. Soll die lokale Datei mit der Cloud-Version überschrieben werden?'
+      : 'The file was opened in the cloud. Overwrite the local file with the cloud version?',
+    btnKeep:      de ? 'Lokal behalten'  : 'Keep local',
+    btnOverwrite: de ? 'Überschreiben'   : 'Overwrite',
     filename,
     wrapwebIconHtml: wrapwebIcon ? `<img src="${wrapwebIcon}" alt="wrapweb">` : '',
     rcloneIconHtml:  rcloneIcon  ? `<span class="header-rclone-badge"><img src="${rcloneIcon}" alt=""></span>` : '',
@@ -138,19 +161,49 @@ function rcloneList(folder) {
   })
 }
 
-// On window close, download the Drive file back to the original local path before closing.
+// Copies the Drive file back over the local path; resolves when done (best-effort).
+function copyRemoteToLocal(remotePath, localPath) {
+  return new Promise(resolve => {
+    const child = spawn('rclone', ['copyto', remotePath, localPath])
+    child.on('close', () => resolve())
+    child.on('error', () => resolve())
+  })
+}
+
+// On window close, silently download the Drive file back to the local path before closing.
+// Used after an upload (overwrite path): the user already committed to the local→Drive→local
+// round-trip, so no extra prompt.
 function registerSyncBack(win, remotePath, localPath, de) {
   if (win.isDestroyed()) return
   const syncText = de ? 'Wird synchronisiert …' : 'Syncing …'
   win.once('close', async (event) => {
     event.preventDefault()
     if (!win.isDestroyed()) win.webContents.loadURL(buildLoadingPage(syncText))
-    await new Promise(resolve => {
-      const child = spawn('rclone', ['copyto', remotePath, localPath])
-      child.on('close', () => resolve())
-      child.on('error', () => resolve())
-    })
+    await copyRemoteToLocal(remotePath, localPath)
     win.destroy()
+  })
+}
+
+// On window close, ASK whether to overwrite the local file with the Drive version. Used in the
+// "open existing" path: the user chose not to push their local file up, so the local copy must
+// not be touched without consent (the previous behaviour silently left it stale). The confirm
+// page reuses the rclone IPC channel (0 = overwrite, anything else = keep local).
+function registerSyncBackPrompt(win, remotePath, localPath, filename, de) {
+  if (win.isDestroyed()) return
+  win.once('close', async (event) => {
+    event.preventDefault()
+    const choice = await new Promise(resolve => {
+      const done    = (v) => { ipcMain.removeListener('rclone-confirm', onIpc); resolve(v) }
+      const onIpc   = (_, v) => done(v)
+      ipcMain.once('rclone-confirm', onIpc)
+      if (!win.isDestroyed()) win.webContents.loadURL(buildSyncBackPage(filename, de))
+    })
+    if (choice === 0) {
+      const syncText = de ? 'Wird synchronisiert …' : 'Syncing …'
+      if (!win.isDestroyed()) win.webContents.loadURL(buildLoadingPage(syncText))
+      await copyRemoteToLocal(remotePath, localPath)
+    }
+    if (!win.isDestroyed()) win.destroy()
   })
 }
 
@@ -196,7 +249,14 @@ async function resolveEditUrl(filePath, win) {
       win.once('closed', onClose)
       win.webContents.loadURL(buildConfirmPage(filename, existing, localStat, de))
     })
-    if (choice !== 0) return `${pkg.rcloneEditUrlBase}/${existing.ID}/edit`
+    // "Open existing": don't push the local file up. The Drive copy may still get edited, so
+    // on close ask whether to pull it back over the local file (instead of silently leaving the
+    // local copy stale, the previous behaviour). Skip if the window is already gone (user closed
+    // the confirm dialog itself — onClose resolved choice=1 — so there's nothing to prompt for).
+    if (choice !== 0) {
+      if (!win.isDestroyed()) registerSyncBackPrompt(win, dest, filePath, filename, de)
+      return `${pkg.rcloneEditUrlBase}/${existing.ID}/edit`
+    }
     if (!win.isDestroyed()) win.webContents.loadURL(buildLoadingPage())
   }
 
