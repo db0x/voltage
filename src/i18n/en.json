@@ -6,6 +6,10 @@
   "noSuggestions": "No suggestions",
   "openWithApp": "Open with {name}",
   "openInBrowser": "Open in browser",
+  "widgetMove": "Move widget",
+  "widgetMoveHint": "Drag to move",
+  "widgetMoveDone": "Done",
+  "widgetQuit": "Quit {name}",
 
   "globalSettingsTitle":        "Global settings",
   "globalSettingsHideApps":     "Hide embedded apps",
@@ -45,6 +49,8 @@
   "btnInstall":           "Install",
   "btnInstallTooltip":    "Install {name} as system application",
   "btnReinstallTooltip":  "Reinstall {name}",
+  "btnBuildInstall":      "Create and install {name}",
+  "btnRebuildInstall":    "Rebuild and install {name}",
   "btnDelete":            "Delete",
 
   "confirmCancel":            "Cancel",
@@ -54,6 +60,7 @@
   "confirmDeleteProfileData": "Delete profile data (cookies, sessions, local data)",
 
   "buildingApp": "Building {name} …",
+  "buildingInstallingApp": "Building and installing {name} …",
 
   "infoUrl":        "URL",
   "infoProfile":    "Profile",
@@ -73,7 +80,6 @@
   "editSave":              "Save",
   "editRebuildPrompt":     "<p>Configuration of <strong>{name}</strong> saved.</p><p>Rebuild the AppImage now?</p>",
   "editRebuild":           "Rebuild",
-  "editInstallAfterBuild": "Install after build",
 
   "installConfirmMsg":     "<p>Install <strong>{name}</strong> as a system application?</p>",
   "installConfirmOk":      "Install",

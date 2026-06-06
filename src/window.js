@@ -221,19 +221,27 @@ function routeExternalUrl(url, currentProfile) {
 function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg }) {
   const api = {
     profile:         pkg.profile,
+    // Human-readable app name (build-time displayName, else profile) — for plugin-built UI.
+    displayName:     pkg.displayName || (pkg.name || '').replace(/^wrapweb-/, '') || pkg.profile,
     appOrigin,
     internalDomains,
     launchArg:       launchArg ?? null,
     routeUrl:        (url) => routeExternalUrl(url, pkg.profile),
     openExternal:    (url) => shell.openExternal(url),
+    quit:            () => mainWindow.close(),
+    t:               require('./i18n').t,
     mailto:          require('./mailto'),
   }
   const instances = []
   for (const rel of pkg.plugins ?? []) {
     try {
       const mod = require(path.join(__dirname, '..', 'webapps', rel))
+      // attachPlugin is optional: a plugin may only contribute windowOptions() (applied
+      // earlier in collectPluginWindowOptions), e.g. the widget plugin. Only flag a module
+      // that exports neither hook.
       if (typeof mod.attachPlugin !== 'function') {
-        console.error(`[plugin] ${rel} has no attachPlugin() export — skipped`)
+        if (typeof mod.windowOptions !== 'function')
+          console.error(`[plugin] ${rel} exports neither attachPlugin() nor windowOptions() — skipped`)
         continue
       }
       instances.push(mod.attachPlugin(mainWindow, api) || {})
@@ -242,6 +250,33 @@ function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg })
     }
   }
   return instances
+}
+
+// Collects BrowserWindow constructor options contributed by plugins (e.g. the widget plugin's
+// frame:false). A plugin may export windowOptions(pkg) → object; these must be applied BEFORE
+// the window is created, unlike attachPlugin() which runs afterwards. webPreferences is owned
+// by createWindow and is intentionally not overridable here.
+function collectPluginWindowOptions(pkg) {
+  let merged = {}
+  for (const rel of pkg.plugins ?? []) {
+    try {
+      const mod = require(path.join(__dirname, '..', 'webapps', rel))
+      if (typeof mod.windowOptions === 'function') {
+        const opts = mod.windowOptions(pkg) || {}
+        delete opts.webPreferences  // createWindow keeps full control of webPreferences
+        merged = { ...merged, ...opts }
+      }
+    } catch (err) {
+      console.error(`[plugin] windowOptions failed for ${rel}:`, err)
+    }
+  }
+  return merged
+}
+
+// True when the app loads the widget plugin (frameless window). A few behaviours key off this,
+// e.g. opening DevTools detached since a frameless window has no room for a docked panel.
+function usesWidgetPlugin(pkg) {
+  return (pkg.plugins ?? []).some(p => /(^|\/)widget\//.test(p))
 }
 
 function createWindow(pkg, opts = {}) {
@@ -254,6 +289,9 @@ function createWindow(pkg, opts = {}) {
     height: pkg.geometry?.height ?? saved?.height ?? 1024,
     x:      pkg.geometry?.x,
     y:      pkg.geometry?.y,
+    // Plugin-contributed constructor options (e.g. frame:false from the widget plugin).
+    // Spread before webPreferences so a plugin can't clobber it.
+    ...collectPluginWindowOptions(pkg),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
@@ -387,10 +425,15 @@ function createWindow(pkg, opts = {}) {
   }
 
   mainWindow.webContents.on('context-menu', (_event, params) => {
+    // Plugins may contribute extra context-menu entries via a returned contextMenuItems() —
+    // e.g. the widget plugin's "Quit" item, since a frameless widget has no window close button.
+    const pluginItems = (mainWindow._wrapwebPlugins ?? [])
+      .flatMap(inst => { try { return inst.contextMenuItems?.() ?? [] } catch { return [] } })
     showContextMenu(mainWindow, customSession, params, {
       resolveRoute: (url) => { const r = resolveRoute(url, pkg.profile); return r ? { ...r, url: unwrapUrl(url) } : null },
       openInBrowser: (url) => shell.openExternal(url),
       browserIconPath: getDefaultBrowserIconPath(),
+      extraItems: pluginItems,
     })
   })
 
@@ -399,8 +442,19 @@ function createWindow(pkg, opts = {}) {
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') {
       event.preventDefault()
-      if (input.shift) mainWindow.webContents.toggleDevTools()
-      else             toggleAboutWindow(mainWindow)
+      if (input.shift) {
+        const wc = mainWindow.webContents
+        // Widget apps are frameless and have no room for a docked DevTools panel, so they open
+        // it in a detached window. Every other app keeps the default docked toggle.
+        if (usesWidgetPlugin(pkg)) {
+          if (wc.isDevToolsOpened()) wc.closeDevTools()
+          else                       wc.openDevTools({ mode: 'detach' })
+        } else {
+          wc.toggleDevTools()
+        }
+      } else {
+        toggleAboutWindow(mainWindow)
+      }
     }
   })
 

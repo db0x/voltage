@@ -99,6 +99,13 @@ function showContextMenu(mainWindow, customSession, params, opts = {}) {
     })
   }
 
+  // Plugin-contributed entries (e.g. the widget plugin's "Quit") go last, after a separator.
+  // Each item is a plain Electron MenuItem template ({ label, click, … }).
+  if (opts.extraItems?.length) {
+    template.push({ type: 'separator' })
+    for (const item of opts.extraItems) template.push(item)
+  }
+
   Menu.buildFromTemplate(template).popup({ window: mainWindow })
 }
 

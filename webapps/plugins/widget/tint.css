@@ -1,0 +1,39 @@
+/* Widget tint + rounded corners, injected via insertCSS by widget.js. {{radius}} is replaced
+   at load time. */
+
+/* Rounded corners on a transparent window — the tint + radius live on <html>:
+   - clip-path:inset(round) rounds the corners AND clips every descendant to that shape,
+     including position:fixed/sticky elements (html is their containing block, so unlike a
+     body-level clip they don't escape it). This is why the clip must be on html, not body.
+   - border-radius is NOT used: the root element's background is propagated to the window
+     canvas where border-radius is ignored, but clip-path is honoured.
+   - the dark tint is the page's first opaque layer; the transparent window lets the desktop
+     show through outside the rounded shape.
+   Crucially html must NOT scroll: the clip-path region is fixed to html's border-box, so if
+   html scrolled, the rounded mask would slide against the content (top corners vanish on
+   scroll, bottom ones never appear) and the scrollbar would sit on html, outside the clip.
+   So html clips + overflow:hidden, and body is the scroller (overflow:auto). */
+html {
+  background: rgba(0, 0, 0, 0.65) !important;
+  clip-path: inset(0 round {{radius}}) !important;
+  overflow: hidden !important;
+}
+body {
+  height: 100vh !important;
+  overflow: auto !important;
+  background: transparent !important;
+}
+
+/* APP-SPECIFIC — the only non-generic part. The rounded/transparent window above works for any
+   page; but the tint only shows through if the app's opaque root container is made transparent,
+   and that container is named differently per app (here: Mastodon's #mastodon / .app-holder /
+   .ui, plus the common Vue #app / React #root). For a new widget app, find the element that
+   still paints an opaque background (DevTools, or elementsFromPoint(3,3)) and add its selector. */
+body > div, #app, #root, #mastodon, .app-holder, .ui {
+  background-color: transparent !important;
+}
+
+/* Hide scrollbars visually on every element but keep wheel/touchpad scrolling. width/height:0
+   removes the WebKit scrollbar entirely (unlike overflow:hidden, which would also stop
+   scrolling). Applied to * so it covers the app's inner scroll containers, not just body. */
+*::-webkit-scrollbar { width: 0 !important; height: 0 !important; }

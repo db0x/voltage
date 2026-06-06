@@ -314,21 +314,18 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, te
 
     closeEditDialog()
 
-    // After saving, offer a rebuild prompt when an AppImage already exists.
-    // The "install after build" toggle reuses the deleteConfig key from the confirm API.
+    // After saving, offer a rebuild prompt when an AppImage already exists. Rebuilding now
+    // always installs afterwards too (no separate toggle) — matching the card's combined
+    // build-and-install action; cards.js installs after the build when rebuild is confirmed.
     if (currentApp.built) {
       const appName = currentApp.name || currentApp.profile
-      const { confirmed, deleteConfig: installAfter } = await showConfirm(
+      const { confirmed } = await showConfirm(
         tr('editRebuildPrompt', { name: appName }),
-        {
-          okLabel: i18n.editRebuild,
-          okClass: 'btn-save',
-          ...(currentApp.installed && { toggle: { label: i18n.editInstallAfterBuild, defaultOn: true } }),
-        }
+        { okLabel: i18n.editRebuild, okClass: 'btn-save' }
       )
-      onUpdated?.(result.app, { rebuild: confirmed, install: confirmed && installAfter })
+      onUpdated?.(result.app, { rebuild: confirmed })
     } else {
-      onUpdated?.(result.app, { rebuild: false, install: false })
+      onUpdated?.(result.app, { rebuild: false })
     }
   })
 

@@ -11,8 +11,10 @@ export function initBuildOverlay({ tr }) {
   `
   document.body.appendChild(overlay)
 
-  function showBuildOverlay(name) {
-    document.getElementById('build-overlay-label').textContent = tr('buildingApp', { name })
+  // labelKey selects the status text: the card's combined action installs after building, so it
+  // passes 'buildingInstallingApp'; the plain rebuild (rebuild-notice) keeps the default.
+  function showBuildOverlay(name, labelKey = 'buildingApp') {
+    document.getElementById('build-overlay-label').textContent = tr(labelKey, { name })
     overlay.classList.remove('hidden')
   }
 

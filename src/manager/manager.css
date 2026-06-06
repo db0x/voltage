@@ -501,8 +501,9 @@ body.dark .rclone-badge {
 .card-toolbar {
   width: 100%;
   display: flex;
-  justify-content: center;
-  gap: 2px;
+  /* Spread the action icons evenly across the full card width instead of clustering them in
+     the middle — space-around gives even gaps including the edges. */
+  justify-content: space-around;
   padding-top: 8px;
   border-top: 1px solid var(--card-shadow);
   margin-top: auto;
