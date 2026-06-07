@@ -6,9 +6,11 @@ import { OverlayScrollbars } from '../../node_modules/overlayscrollbars/overlays
 // the chosen ones — each chip with its icon and a "−" remove button. get() returns the
 // selected plugins' webapps-relative file paths — the shape stored in a config's `plugins`.
 //
-// `plugins` is the discovered catalog [{ file, label, icon }] (icon is a data URL or null);
-// `appDefaultSrc` is the fallback icon for plugins shipping no plugin.svg.
-export function initPluginList(triggerId, listId, plugins, appDefaultSrc, onChange) {
+// `plugins` is the discovered catalog [{ file, label, icon, configurable }] (icon is a data URL
+// or null); `appDefaultSrc` is the fallback icon for plugins shipping no plugin.svg;
+// `configureIconSrc` is the gear icon shown on configurable plugins' chips; `onConfigure(file)`
+// opens that plugin's config dialog (the chip's configure button).
+export function initPluginList(triggerId, listId, plugins, appDefaultSrc, configureIconSrc, onChange, onConfigure) {
   const trigger = document.getElementById(triggerId)
   const listEl  = document.getElementById(listId)
   const catalog = plugins || []
@@ -30,20 +32,27 @@ export function initPluginList(triggerId, listId, plugins, appDefaultSrc, onChan
   let open = false
   let scrollbarInited = false
 
-  // Chips for the chosen plugins, each with icon + label + remove button.
+  // Chips for the chosen plugins, each with icon + label + (for configurable plugins) a configure
+  // button + remove button. The configure button comes BEFORE remove and only for configurable
+  // plugins; the remove button is matched by class (not the generic <button>) so the optional
+  // configure button doesn't get wired as the remover.
   function renderChips() {
     listEl.innerHTML = ''
     for (const file of selected) {
       const p  = entryFor(file)
       const li = document.createElement('li')
       li.className = 'domain-item'
-      li.innerHTML = `${IMG(iconFor(p))}<span>${p?.label || file}</span><button type="button" class="domain-remove-btn" tabindex="-1">−</button>`
-      li.querySelector('button').addEventListener('click', () => {
+      const configureBtn = p?.configurable && configureIconSrc
+        ? `<button type="button" class="domain-configure-btn" tabindex="-1">${IMG(configureIconSrc)}</button>`
+        : ''
+      li.innerHTML = `${IMG(iconFor(p))}<span>${p?.label || file}</span>${configureBtn}<button type="button" class="domain-remove-btn" tabindex="-1">−</button>`
+      li.querySelector('.domain-remove-btn').addEventListener('click', () => {
         selected = selected.filter(f => f !== file)
         renderChips()
         refreshDropdown()
         onChange()
       })
+      li.querySelector('.domain-configure-btn')?.addEventListener('click', () => onConfigure?.(file))
       listEl.appendChild(li)
     }
   }

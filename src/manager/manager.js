@@ -17,6 +17,8 @@ import { initObsidianDialog }    from './dialogs/obsidian.js'
 import { initSafeBrowsingDialog } from './dialogs/safe-browsing.js'
 import { initCards }           from './cards.js'
 import { initTooltip }         from './tooltip.js'
+import { initPluginConfig }    from './plugin-config.js'
+import { initColorPicker }     from './color-picker.js'
 
 function toDisplayName(profile) {
   return profile
@@ -28,6 +30,9 @@ function toDisplayName(profile) {
 
 const dark = localStorage.getItem('dark') === '1'
 if (dark) document.body.classList.add('dark')
+// Init the shared colour picker now so any data-coloris input (e.g. the widget config dialog)
+// is enhanced, with its theme matching the current light/dark mode.
+initColorPicker(dark)
 // Mirror localStorage into manager-state.json so the next cold start can paint
 // the correct backgroundColor before the renderer attaches. This is also the
 // migration path for existing dark-mode users — first launch after the upgrade
@@ -108,6 +113,7 @@ const ctx = {
     obsidian:       s('obsidian'),
     rclonePlugin:   s('rclonePlugin'),
     pluginBadge:    s('pluginBadge'),
+    shadow:         s('shadow'),
   },
 }
 
@@ -141,7 +147,12 @@ onRcloneFromAbout   = () => rcloneDialog.openRcloneDialog()
 const obsidianDialog    = initObsidianDialog(ctx)
 onObsidianFromAbout = () => obsidianDialog.openObsidianDialog()
 const safeBrowsingDialog = initSafeBrowsingDialog(ctx)
-const editDialog   = initEditDialog(ctx, { iconPicker, showConfirm: confirm.showConfirm })
+// Per-plugin config dialogs (the markup is shipped by each configurable plugin). Opened from the
+// configure button on a plugin chip in the create/edit dialogs.
+const pluginConfig = initPluginConfig(ctx)
+const editDialog   = initEditDialog(ctx, {
+  iconPicker, showConfirm: confirm.showConfirm, openPluginConfig: pluginConfig.openPluginConfig,
+})
 
 const cards = initCards(ctx, {
   showConfirm:      confirm.showConfirm,
@@ -185,6 +196,7 @@ const createDialog = initCreateDialog(ctx, {
   applyVisibility: drawer.applyVisibility,
   createCard:      cards.createCard,
   insertCard:      cards.insertCard,
+  openPluginConfig: pluginConfig.openPluginConfig,
 })
 
 const rebuildNotice = initRebuildNotice(ctx, {

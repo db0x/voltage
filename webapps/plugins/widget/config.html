@@ -1,0 +1,57 @@
+<!-- Config dialog shipped by the widget plugin (its own UI, part of the plugin). The manager's
+     plugin-config host renders this into the manager DOM and owns the generic open/close wiring;
+     the markup reuses the manager's standard .dialog-* classes so it matches every other dialog.
+     {{pluginIcon}} is the plugin's icon (passed as a var); {{widget*}} are i18n keys.
+
+     Controls bind to per-app config generically via data attributes (no plugin JS in the
+     renderer, which has no file access): the host reads/writes config[data-config-key], mirrors
+     live values into [data-config-value]/[data-config-swatch], and dims [data-config-enabled-by]
+     fields while their toggle is off. data-config-default seeds a control when the app has no
+     stored value. Radius range must match widget.js (MIN/MAX/DEFAULT_RADIUS). -->
+<div class="dialog-overlay plugin-config-overlay hidden">
+  <div class="dialog">
+    <div class="dialog-header">
+      <img src="{{pluginIcon}}" alt="">
+      <span class="dialog-title">{{widgetConfigTitle}}</span>
+      <button class="dialog-close" type="button">✕</button>
+    </div>
+    <div class="dialog-fields">
+      <div class="dialog-field">
+        <label for="widget-config-radius">{{widgetConfigRadius}}</label>
+        <div class="plugin-config-range">
+          <input type="range" id="widget-config-radius" min="0" max="24" step="1"
+                 data-config-key="radius" data-config-default="14">
+          <output data-config-value="radius" data-unit="px"></output>
+        </div>
+      </div>
+      <button type="button" class="dialog-field-toggle" data-config-key="resizable" data-config-default="true">
+        <span class="toggle-switch"></span>
+        <span>{{widgetConfigResizable}}</span>
+      </button>
+      <fieldset class="plugin-config-fieldset">
+        <legend class="plugin-config-fieldset-legend">
+          <img data-icon="shadow" width="16" height="16" alt="">
+          {{widgetConfigShadowSection}}
+        </legend>
+        <button type="button" class="dialog-field-toggle" data-config-key="shadow" data-config-default="true">
+          <span class="toggle-switch"></span>
+          <span>{{widgetConfigShadow}}</span>
+        </button>
+        <div class="dialog-field" data-config-enabled-by="shadow">
+          <label for="widget-config-shadow-width">{{widgetConfigShadowWidth}}</label>
+          <div class="plugin-config-range">
+            <input type="range" id="widget-config-shadow-width" min="2" max="8" step="1"
+                   data-config-key="shadowWidth" data-config-default="8">
+            <output data-config-value="shadowWidth" data-unit="px"></output>
+          </div>
+        </div>
+      </fieldset>
+    </div>
+    <!-- Apply commits the edits to the app's config (and marks the edit form dirty); Cancel/✕/
+         backdrop/Esc discard them. The host wires these by class (.plugin-config-apply/-cancel). -->
+    <div class="confirm-actions">
+      <button class="btn-cancel plugin-config-cancel" type="button">{{pluginConfigCancel}}</button>
+      <button class="btn-save plugin-config-apply" type="button">{{pluginConfigApply}}</button>
+    </div>
+  </div>
+</div>

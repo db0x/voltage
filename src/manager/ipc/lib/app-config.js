@@ -91,6 +91,7 @@ function buildSingleApp(configFile, defaultMailDesktop) {
     singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
     routingUrls: cfg.routingUrls || null,
     mimeTypes: cfg.mimeTypes || null, plugins: cfg.plugins || null,
+    pluginConfig: cfg.pluginConfig || null,
     isDefaultMailHandler: defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`,
     category: cfg.category || null,
     builtVersion, builtRclone, rcloneFileHandler: usesRcloneSync(cfg),
@@ -105,13 +106,13 @@ function buildSingleApp(configFile, defaultMailDesktop) {
 const FORM_MANAGED_KEYS = new Set([
   'profile', 'url', 'name', 'icon', 'geometry', 'userAgent',
   'internalDomains', 'routingUrls', 'crossOriginIsolation', 'singleInstance',
-  'mimeTypes', 'plugins',
+  'mimeTypes', 'plugins', 'pluginConfig',
 ])
 
 // Builds a config object from create/edit form data, omitting falsy/default fields.
 // `existing` is the config currently on disk (empty for create): its non-form-managed
 // keys are preserved, and its mimeTypes are kept (the form only toggles the mailto entry).
-function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins }, existing = {}) {
+function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig }, existing = {}) {
   const cfg = { profile, url }
   if (name)  cfg.name = name
   if (icon)  cfg.icon = icon
@@ -146,6 +147,17 @@ function buildAppCfg({ profile, name, url, icon, width, height, userAgent, inter
   if (Array.isArray(plugins)) {
     const list = plugins.map(p => p.trim()).filter(Boolean)
     if (list.length) cfg.plugins = list
+  }
+  // Per-plugin settings (e.g. the widget's corner radius), keyed by plugin file path. Pruned to
+  // the currently-selected plugins so deselecting a plugin drops its orphaned config; empty
+  // per-plugin objects are omitted so a default-only config doesn't bloat the file.
+  if (pluginConfig && typeof pluginConfig === 'object') {
+    const pruned = {}
+    for (const p of (cfg.plugins ?? [])) {
+      const c = pluginConfig[p]
+      if (c && typeof c === 'object' && Object.keys(c).length) pruned[p] = c
+    }
+    if (Object.keys(pruned).length) cfg.pluginConfig = pruned
   }
 
   // Carry over every field the form does not manage (category, rclone*, mime icons, …).

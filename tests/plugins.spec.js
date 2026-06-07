@@ -21,7 +21,232 @@ test('create dialog: shipped plugins are offered in the dropdown', async ({ mana
   await expect(items.filter({ hasText: 'strato-webmail' })).toHaveCount(1)
   // Each item carries an icon image.
   await expect(items.first().locator('img')).toBeVisible()
+  // Helper modules inside a plugin dir (e.g. widget/move-overlay.js) must NOT appear — only the
+  // <dir>/<dir>.js entry file counts as a selectable plugin.
+  await expect(items.filter({ hasText: 'move-overlay' })).toHaveCount(0)
+  await expect(items.filter({ hasText: 'widget' })).toHaveCount(1)
   await managerPage.keyboard.press('Escape')
+})
+
+// Setup:    Create dialog open; the configurable widget plugin and the non-configurable onedrive
+//           plugin are both offered.
+// Action:   Add the widget plugin to the chip list, then add onedrive.
+// Expected: Only the widget chip carries a configure button (before its remove button), proving
+//           the configure affordance appears solely for plugins that declare `configurable`.
+test('create dialog: only configurable plugins get a configure button on their chip', async ({ managerPage }) => {
+  await managerPage.click('.card-add')
+
+  await managerPage.click('#create-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.click('#create-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'onedrive' }).click()
+
+  const widgetChip   = managerPage.locator('#create-plugin-list .domain-item', { hasText: 'widget' })
+  const onedriveChip  = managerPage.locator('#create-plugin-list .domain-item', { hasText: 'onedrive' })
+  await expect(widgetChip.locator('.domain-configure-btn')).toHaveCount(1)
+  await expect(onedriveChip.locator('.domain-configure-btn')).toHaveCount(0)
+
+  // Configure button must precede the remove button within the chip.
+  const buttons = await widgetChip.locator('button').evaluateAll(
+    els => els.map(e => e.className)
+  )
+  expect(buttons).toEqual(['domain-configure-btn', 'domain-remove-btn'])
+
+  await managerPage.keyboard.press('Escape')
+})
+
+// Setup:    Edit dialog open for the private test-user-app; the configurable widget plugin added.
+// Action:   Click the configure (gear) button on the widget chip, then close the dialog via ✕.
+// Expected: The widget plugin's own config dialog (shipped as its config.html) opens and then
+//           closes — proving the configure button opens the plugin-provided dialog and the host
+//           wires its close control.
+test('edit dialog: the configure button opens the plugin config dialog, which can be closed', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+
+  const overlay = managerPage.locator('.plugin-config-overlay')
+  await expect(overlay).toHaveCount(0)  // built lazily — not present until opened
+
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+  await expect(overlay).toBeVisible()
+
+  await overlay.locator('.dialog-close').click()
+  await expect(overlay).not.toBeVisible()
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   Move the corner-radius slider to 20px, click Apply, then save the app.
+// Expected: The config persists the value under pluginConfig keyed by the plugin file path, and
+//           the live output mirrors it — proving the per-app/per-plugin setting round-trips and
+//           is scoped to the right plugin.
+test('edit dialog: the widget corner radius persists per app under pluginConfig', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  // The slider seeds from the default (14) when the app has no stored value yet.
+  const slider = managerPage.locator('#widget-config-radius')
+  await expect(slider).toHaveValue('14')
+
+  // Range inputs need an explicit input event for the host's oninput binding to fire.
+  await slider.evaluate(el => { el.value = '20'; el.dispatchEvent(new Event('input', { bubbles: true })) })
+  await expect(managerPage.locator('.plugin-config-overlay output[data-config-value="radius"]')).toHaveText('20px')
+
+  // Apply commits the change (and marks the edit form dirty); only then does Save persist it.
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await expect(managerPage.locator('#edit-save')).toBeEnabled()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { radius: 20 } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The resizable toggle defaults on; turn it off, Apply, and save.
+// Expected: The toggle starts active (default yes) and persists resizable:false when turned off —
+//           proving the boolean toggle binds and round-trips alongside the value controls.
+test('edit dialog: the widget resizable toggle defaults on and persists when turned off', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const toggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="resizable"]')
+  await expect(toggle).toHaveClass(/active/)  // default yes
+
+  await toggle.click()
+  await expect(toggle).not.toHaveClass(/active/)
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { resizable: false } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The shadow toggle defaults on; turn it off, Apply, and save.
+// Expected: The toggle starts active (default yes) and persists shadow:false when turned off.
+test('edit dialog: the widget shadow toggle defaults on and persists when turned off', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const toggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="shadow"]')
+  await expect(toggle).toHaveClass(/active/)  // default yes
+
+  await toggle.click()
+  await expect(toggle).not.toHaveClass(/active/)
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { shadow: false } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The shadow width slider defaults to 8 (gated by the shadow toggle); set it to 4, save.
+// Expected: The width persists as shadowWidth:4 and the field is gated by the shadow toggle.
+test('edit dialog: the shadow width persists per app under pluginConfig', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const slider     = managerPage.locator('#widget-config-shadow-width')
+  const widthField = managerPage.locator('.plugin-config-overlay [data-config-enabled-by="shadow"]')
+  await expect(slider).toHaveValue('8')                          // default = max
+  await expect(widthField).not.toHaveClass(/config-disabled/)   // enabled while shadow is on (default)
+
+  await slider.evaluate(el => { el.value = '4'; el.dispatchEvent(new Event('input', { bubbles: true })) })
+  await expect(managerPage.locator('.plugin-config-overlay output[data-config-value="shadowWidth"]')).toHaveText('4px')
+
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { shadowWidth: 4 } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   Move the radius slider, but dismiss the dialog with Cancel instead of Apply.
+// Expected: The form stays clean (Save disabled) and re-opening shows the default again —
+//           proving Cancel discards the working copy without touching the app's config.
+test('edit dialog: cancelling the config dialog discards the radius change', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  await managerPage.locator('#widget-config-radius')
+    .evaluate(el => { el.value = '20'; el.dispatchEvent(new Event('input', { bubbles: true })) })
+  await managerPage.locator('.plugin-config-overlay .plugin-config-cancel').click()
+
+  // Adding the plugin already made the form dirty, so isolate the radius edit: the discarded
+  // change must not survive into the dialog on re-open (default 14, not 20).
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+  await expect(managerPage.locator('#widget-config-radius')).toHaveValue('14')
+})
+
+// Setup:    test-user-app with the widget plugin added and radius applied to 20 within this test.
+// Action:   Save, then re-open the edit dialog and the widget config dialog.
+// Expected: The slider loads the stored 20px rather than the default — proving load-from-config.
+test('edit dialog: a stored widget radius loads back into the config dialog', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+
+  // First open: add widget, set radius to 20, apply, save (establishes the stored value).
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+  await managerPage.locator('#widget-config-radius')
+    .evaluate(el => { el.value = '20'; el.dispatchEvent(new Event('input', { bubbles: true })) })
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  // Second open: the dialog should reflect the stored value, not the default.
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+  await expect(managerPage.locator('#widget-config-radius')).toHaveValue('20')
 })
 
 // Setup:    Edit dialog open for the private test-user-app (not built → no rebuild prompt).

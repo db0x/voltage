@@ -57,6 +57,10 @@ function expandConfig(app) {
       ...(app.mailtoTemplate    && { mailtoTemplate:       app.mailtoTemplate }),
       ...(app.mailtoParamMap    && { mailtoParamMap:       app.mailtoParamMap }),
       ...(plugins               && { plugins }),
+      // Per-plugin settings (e.g. widget radius) must travel into the AppImage's package.json so
+      // the runtime loader can hand each plugin its config via api.config — without this, every
+      // plugin always falls back to its defaults regardless of what the Manager saved.
+      ...(app.pluginConfig      && { pluginConfig: app.pluginConfig }),
     },
   }
 }

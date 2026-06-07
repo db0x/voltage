@@ -501,8 +501,9 @@ body.dark .rclone-badge {
 .card-toolbar {
   width: 100%;
   display: flex;
-  justify-content: center;
-  gap: 2px;
+  /* Spread the action icons evenly across the full card width instead of clustering them in
+     the middle — space-around gives even gaps including the edges. */
+  justify-content: space-around;
   padding-top: 8px;
   border-top: 1px solid var(--card-shadow);
   margin-top: auto;
@@ -1010,6 +1011,119 @@ body.dark .toolbar-btn.danger:not(:disabled):hover img {
   color: #e05555;
 }
 
+/* Configure button on configurable plugin chips — sits before the remove button. Shares the
+   remove button's quiet look but reveals on hover without the destructive red tint. */
+.domain-configure-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  opacity: 0.6;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  transition: opacity 0.15s;
+}
+
+.domain-configure-btn:hover {
+  opacity: 1;
+}
+
+/* The gear is a monochrome <img> (SVG paints a dark grey), so CSS color can't reach it. Invert it
+   in dark mode to stay visible — scoped to this button so the colourful plugin icon on the same
+   chip is left untouched. */
+body.dark .domain-configure-btn img {
+  filter: invert(1);
+}
+
+/* Range control + live value in a plugin's config dialog (e.g. the widget corner radius). */
+/* A plugin config control gated off by a toggle (data-config-enabled-by): dimmed and
+   non-interactive while its toggle is off. */
+.config-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.plugin-config-range {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.plugin-config-range input[type="range"] {
+  flex: 1;
+}
+
+.plugin-config-range output {
+  min-width: 3.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--card-url);
+  font-size: 13px;
+}
+
+/* Colour control row in a plugin's config dialog: a preview swatch + the Coloris text input. */
+.plugin-config-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plugin-config-color-row input {
+  flex: 1;
+  width: auto;  /* beat .dialog-field input { width:100% } so the swatch keeps its space */
+}
+
+/* Colour preview. The chosen colour (--swatch-color, set by the host) is layered over a
+   checkerboard so a translucent tint's alpha is visible. */
+.plugin-config-swatch {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--card-border, rgba(127,127,127,0.35));
+  background:
+    linear-gradient(var(--swatch-color, transparent), var(--swatch-color, transparent)),
+    repeating-linear-gradient(45deg, #aaa 25%, transparent 25%, transparent 75%, #aaa 75%, #aaa),
+    repeating-linear-gradient(45deg, #aaa 25%, #fff 25%, #fff 75%, #aaa 75%, #aaa);
+  background-position: 0 0, 0 0, 4px 4px;
+  background-size: auto, 8px 8px, 8px 8px;
+}
+
+/* Generic grouping box for related controls in a plugin's config dialog (e.g. "Hintergrund"
+   wrapping the widget tint colour + opacity). Mirrors the manager's other fieldsets. */
+.plugin-config-fieldset {
+  border: 1.5px solid var(--card-border, rgba(0,0,0,0.12));
+  border-radius: 8px;
+  padding: 12px 14px 10px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+body.dark .plugin-config-fieldset {
+  border-color: rgba(255,255,255,0.12);
+}
+
+.plugin-config-fieldset-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--card-url);
+}
+
+.plugin-config-fieldset-legend img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
 
 .domain-add-row {
   display: flex;

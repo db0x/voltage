@@ -1,4 +1,4 @@
-const { BrowserWindow, shell, ipcMain, dialog, app } = require('electron')
+const { BrowserWindow, WebContentsView, shell, ipcMain, dialog, app } = require('electron')
 const path   = require('node:path')
 const fs     = require('node:fs')
 const crypto = require('node:crypto')
@@ -216,27 +216,41 @@ function routeExternalUrl(url, currentProfile) {
 //   routeUrl(url) → bool                 — route a URL to another built app (true on a hit)
 //   openExternal(url)                    — hand a URL to the system browser
 //   mailto                               — { parseMailtoFields, typeMailtoFields } compose helpers
+//   config                               — this plugin's per-app settings (pkg.pluginConfig[rel])
+// config is per-plugin so it's added to a shallow copy of api inside the loop, not the shared api.
 // attachPlugin may return a handler object; a returned onLaunch(arg) is re-invoked when a
 // second instance forwards a new launch argument to this already-running window.
-function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg }) {
+function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg, appContents }) {
   const api = {
     profile:         pkg.profile,
+    // Human-readable app name (build-time displayName, else profile) — for plugin-built UI.
+    displayName:     pkg.displayName || (pkg.name || '').replace(/^wrapweb-/, '') || pkg.profile,
     appOrigin,
     internalDomains,
     launchArg:       launchArg ?? null,
+    // The app's webContents — equals mainWindow.webContents normally, but the inset view's in view
+    // mode. Plugins that inject CSS/JS into the app MUST use this, not mainWindow.webContents.
+    webContents:     appContents ?? mainWindow.webContents,
     routeUrl:        (url) => routeExternalUrl(url, pkg.profile),
     openExternal:    (url) => shell.openExternal(url),
+    quit:            () => mainWindow.close(),
+    t:               require('./i18n').t,
     mailto:          require('./mailto'),
   }
   const instances = []
   for (const rel of pkg.plugins ?? []) {
     try {
       const mod = require(path.join(__dirname, '..', 'webapps', rel))
+      // attachPlugin is optional: a plugin may only contribute windowOptions() (applied
+      // earlier in collectPluginWindowOptions), e.g. the widget plugin. Only flag a module
+      // that exports neither hook.
       if (typeof mod.attachPlugin !== 'function') {
-        console.error(`[plugin] ${rel} has no attachPlugin() export — skipped`)
+        if (typeof mod.windowOptions !== 'function')
+          console.error(`[plugin] ${rel} exports neither attachPlugin() nor windowOptions() — skipped`)
         continue
       }
-      instances.push(mod.attachPlugin(mainWindow, api) || {})
+      const config = pkg.pluginConfig?.[rel] || {}
+      instances.push(mod.attachPlugin(mainWindow, { ...api, config }) || {})
     } catch (err) {
       console.error(`[plugin] failed to load ${rel}:`, err)
     }
@@ -244,36 +258,128 @@ function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg })
   return instances
 }
 
+// Collects BrowserWindow constructor options contributed by plugins (e.g. the widget plugin's
+// frame:false). A plugin may export windowOptions(pkg) → object; these must be applied BEFORE
+// the window is created, unlike attachPlugin() which runs afterwards. webPreferences is owned
+// by createWindow and is intentionally not overridable here.
+function collectPluginWindowOptions(pkg) {
+  let merged = {}
+  for (const rel of pkg.plugins ?? []) {
+    try {
+      const mod = require(path.join(__dirname, '..', 'webapps', rel))
+      if (typeof mod.windowOptions === 'function') {
+        const opts = mod.windowOptions(pkg) || {}
+        delete opts.webPreferences  // createWindow keeps full control of webPreferences
+        merged = { ...merged, ...opts }
+      }
+    } catch (err) {
+      console.error(`[plugin] windowOptions failed for ${rel}:`, err)
+    }
+  }
+  return merged
+}
+
+// True when the app loads the widget plugin (frameless window). A few behaviours key off this,
+// e.g. opening DevTools detached since a frameless window has no room for a docked panel.
+function usesWidgetPlugin(pkg) {
+  return (pkg.plugins ?? []).some(p => /(^|\/)widget\//.test(p))
+}
+
+// View mode: a plugin may render the app in an inset WebContentsView so the host window can draw
+// a drop shadow + rounded corners AROUND it, leaving the app's page completely untouched (native
+// scrolling/layout — no clip-path/transform hacks). A plugin opts in by exporting viewConfig(cfg)
+// → { margin, radius } and hostHtml(cfg) → the host page's HTML (the shadow). Returns the resolved
+// { margin, radius, hostHtml } of the first such plugin, or null (normal full-window app).
+function collectPluginViewMode(pkg) {
+  for (const rel of pkg.plugins ?? []) {
+    try {
+      const mod = require(path.join(__dirname, '..', 'webapps', rel))
+      if (typeof mod.viewConfig === 'function' && typeof mod.hostHtml === 'function') {
+        const config = pkg.pluginConfig?.[rel] || {}
+        const vc = mod.viewConfig(config) || {}
+        return { margin: vc.margin ?? 0, radius: vc.radius ?? 0, hostHtml: String(mod.hostHtml(config) ?? '') }
+      }
+    } catch (err) {
+      console.error(`[plugin] viewConfig failed for ${rel}:`, err)
+    }
+  }
+  return null
+}
+
 function createWindow(pkg, opts = {}) {
   const customSession = createSession(pkg.profile, { fileSystem: !!pkg.fileHandler })
 
   const saved = !pkg.geometry ? windowState.load() : null
+
+  // The app's webPreferences — applied to the window's own webContents normally, or to the inset
+  // WebContentsView in view mode (so the app keeps its preload/session/flags either way).
+  const appWebPreferences = {
+    preload: path.join(__dirname, '..', 'preload.js'),
+    contextIsolation: true,
+    nodeIntegration: false,
+    session: customSession,
+    ...(pkg.crossOriginIsolation && { enableBlinkFeatures: 'SharedArrayBuffer' }),
+    ...(pkg.fileHandler && { additionalArguments: ['--wrapweb-file-handler'] }),
+  }
+
+  const viewMode = collectPluginViewMode(pkg)
 
   const mainWindow = new BrowserWindow({
     width:  pkg.geometry?.width  ?? saved?.width  ?? 1280,
     height: pkg.geometry?.height ?? saved?.height ?? 1024,
     x:      pkg.geometry?.x,
     y:      pkg.geometry?.y,
-    webPreferences: {
-      preload: path.join(__dirname, '..', 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      session: customSession,
-      ...(pkg.crossOriginIsolation && { enableBlinkFeatures: 'SharedArrayBuffer' }),
-      ...(pkg.fileHandler && { additionalArguments: ['--wrapweb-file-handler'] }),
-    },
+    // Plugin-contributed constructor options (e.g. frame:false from the widget plugin).
+    // Spread before webPreferences so a plugin can't clobber it.
+    ...collectPluginWindowOptions(pkg),
+    // In view mode the window only hosts the shadow page (minimal webPreferences); the app runs in
+    // the view with appWebPreferences. Otherwise the window IS the app.
+    webPreferences: viewMode
+      ? { preload: appWebPreferences.preload, contextIsolation: true, nodeIntegration: false, session: customSession }
+      : appWebPreferences,
   })
+
+  // appContents = where the app actually lives: the window's own webContents normally, or the
+  // inset view's webContents in view mode. ALL app-facing wiring below targets appContents — which
+  // is identical to mainWindow.webContents when not in view mode, so normal apps are unaffected.
+  let appContents
+  if (viewMode) {
+    const appView = new WebContentsView({ webPreferences: appWebPreferences })
+    mainWindow.contentView.addChildView(appView)
+    appContents = appView.webContents
+    // Transparent view background: without this the view paints an opaque (white) backdrop, so a
+    // semi-transparent tint blends with THAT instead of the desktop. (On some Linux/Wayland setups
+    // WebContentsView still composites opaquely — a known limitation.)
+    appView.setBackgroundColor('#00000000')
+    // Round the view's corners natively (Electron ≥30); guarded so an older runtime degrades to
+    // square corners instead of throwing.
+    if (typeof appView.setBorderRadius === 'function') appView.setBorderRadius(viewMode.radius)
+    // Keep the view inset by the shadow gutter as the window resizes.
+    const layoutView = () => {
+      const { width, height } = mainWindow.getContentBounds()
+      const m = viewMode.margin
+      appView.setBounds({ x: m, y: m, width: Math.max(0, width - 2 * m), height: Math.max(0, height - 2 * m) })
+    }
+    layoutView()
+    mainWindow.on('resize', layoutView)
+    // The host page draws the shadow in the gutter behind the view.
+    mainWindow.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(viewMode.hostHtml))
+  } else {
+    appContents = mainWindow.webContents
+  }
+  // Lets other modules (e.g. the About overlay) reach the app's webContents in view mode.
+  mainWindow._wrapwebAppContents = appContents
 
   if (!pkg.geometry) mainWindow.on('close', () => windowState.save(mainWindow))
 
   // Register profile for safe-browsing:check exclusion lookups; clean up on close.
   // webContentsId is captured now — webContents is already destroyed when 'closed' fires.
-  const webContentsId = mainWindow.webContents.id
+  const webContentsId = appContents.id
   windowProfiles.set(webContentsId, pkg.profile)
   mainWindow.on('closed', () => windowProfiles.delete(webContentsId))
 
-  if (pkg.userAgent) mainWindow.webContents.setUserAgent(pkg.userAgent)
-  mainWindow.loadURL(pkg.url)
+  if (pkg.userAgent) appContents.setUserAgent(pkg.userAgent)
+  appContents.loadURL(pkg.url)
 
   ipcMain.on('adjust-zoom', (event, delta) => {
     const wc = event.sender
@@ -289,7 +395,7 @@ function createWindow(pkg, opts = {}) {
     (Array.isArray(pkg.internalDomains) ? pkg.internalDomains : [pkg.internalDomains]) :
     []
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  appContents.setWindowOpenHandler(({ url }) => {
     try {
       const targetUrl = new URL(url)
       // Allow same-origin URLs (OAuth redirects, etc.)
@@ -357,7 +463,7 @@ function createWindow(pkg, opts = {}) {
     // (rendererReq/mainResp) instead of the browser File System Access API.
     // We mirror the draw.io-desktop protocol so Save/Save As work natively.
     const onRendererReq = async (event, args) => {
-      if (event.sender !== mainWindow.webContents) return
+      if (event.sender !== appContents) return
       try {
         let ret = null
         switch (args.action) {
@@ -386,21 +492,37 @@ function createWindow(pkg, opts = {}) {
     mainWindow.on('closed', () => ipcMain.removeListener('rendererReq', onRendererReq))
   }
 
-  mainWindow.webContents.on('context-menu', (_event, params) => {
+  appContents.on('context-menu', (_event, params) => {
+    // Plugins may contribute extra context-menu entries via a returned contextMenuItems() —
+    // e.g. the widget plugin's "Quit" item, since a frameless widget has no window close button.
+    const pluginItems = (mainWindow._wrapwebPlugins ?? [])
+      .flatMap(inst => { try { return inst.contextMenuItems?.() ?? [] } catch { return [] } })
     showContextMenu(mainWindow, customSession, params, {
       resolveRoute: (url) => { const r = resolveRoute(url, pkg.profile); return r ? { ...r, url: unwrapUrl(url) } : null },
       openInBrowser: (url) => shell.openExternal(url),
       browserIconPath: getDefaultBrowserIconPath(),
+      extraItems: pluginItems,
     })
   })
 
   // F12 toggles the About panel; Shift+F12 toggles DevTools. before-input-event fires ahead
   // of the page, and preventDefault() swallows the key so the web app never sees F12.
-  mainWindow.webContents.on('before-input-event', (event, input) => {
+  appContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') {
       event.preventDefault()
-      if (input.shift) mainWindow.webContents.toggleDevTools()
-      else             toggleAboutWindow(mainWindow)
+      if (input.shift) {
+        const wc = appContents
+        // Widget apps are frameless and have no room for a docked DevTools panel, so they open
+        // it in a detached window. Every other app keeps the default docked toggle.
+        if (usesWidgetPlugin(pkg)) {
+          if (wc.isDevToolsOpened()) wc.closeDevTools()
+          else                       wc.openDevTools({ mode: 'detach' })
+        } else {
+          wc.toggleDevTools()
+        }
+      } else {
+        toggleAboutWindow(mainWindow)
+      }
     }
   })
 
@@ -453,8 +575,8 @@ function createWindow(pkg, opts = {}) {
     return `(() => {\n${vars}\n${tooltipScript}\n})()`
   }
 
-  mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow.webContents.insertCSS(`
+  appContents.on('did-finish-load', () => {
+    appContents.insertCSS(`
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.4); border-radius: 4px; }
@@ -462,7 +584,7 @@ function createWindow(pkg, opts = {}) {
       ::-webkit-scrollbar-corner { background: transparent; }
       ${tooltipCss}
     `)
-    mainWindow.webContents.executeJavaScript(`
+    appContents.executeJavaScript(`
       window.addEventListener('wheel', (e) => {
         if (e.ctrlKey) window.electronAPI.adjustZoom(e.deltaY < 0 ? 1 : -1);
       }, { passive: true });
@@ -473,7 +595,7 @@ function createWindow(pkg, opts = {}) {
   // Main-process plugins selected for this app (config-driven, no longer hardcoded). Stored
   // on the window so app-window.js can forward a second-instance launch argument to them.
   mainWindow._wrapwebPlugins = loadPlugins(mainWindow, pkg, {
-    appOrigin, internalDomains, launchArg: opts.launchArg,
+    appOrigin, internalDomains, launchArg: opts.launchArg, appContents,
   })
 
   return mainWindow

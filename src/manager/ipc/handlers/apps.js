@@ -43,6 +43,7 @@ module.exports = function registerAppHandlers() {
           singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
           routingUrls: cfg.routingUrls || null,
           mimeTypes: cfg.mimeTypes || null, plugins: cfg.plugins || null,
+          pluginConfig: cfg.pluginConfig || null,
           isDefaultMailHandler: defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`,
           category: cfg.category || null,
           builtVersion, builtRclone, rcloneFileHandler: usesRcloneSync(cfg),
@@ -196,6 +197,7 @@ module.exports = function registerAppHandlers() {
         routingUrls:          cfg.routingUrls || null,
         mimeTypes:            cfg.mimeTypes || null,
         plugins:              cfg.plugins   || null,
+        pluginConfig:         cfg.pluginConfig || null,
         category:             cfg.category  || null,
       },
     }
@@ -235,6 +237,7 @@ module.exports = function registerAppHandlers() {
         routingUrls:          cfg.routingUrls || null,
         mimeTypes:            cfg.mimeTypes || null,
         plugins:              cfg.plugins   || null,
+        pluginConfig:         cfg.pluginConfig || null,
         category:             cfg.category  || null,
       },
     }

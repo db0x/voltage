@@ -1,0 +1,23 @@
+/* Tint injected into the widget's app VIEW by widget.js (insertCSS). {{htmlBackground}} and
+   {{appRootTransparency}} are filled from per-app config.
+
+   In view mode the rounded corners (view.setBorderRadius) and the drop shadow (the host page) are
+   handled by the host window — NOT here. The app runs in its own full-size view, so its page is
+   untouched and scrolls natively. This file only paints the optional tint and hides scrollbars.
+
+   Tint ON  → html gets the tint colour and the app's opaque root containers are cleared so it
+              shows through. Tint OFF → both placeholders are empty, the page is left exactly as-is. */
+html {
+  {{htmlBackground}}
+}
+
+/* APP-SPECIFIC (tint only) — the tint shows through only if the app's opaque root container is
+   made transparent, and that container is named differently per app (Mastodon's #mastodon /
+   .app-holder / .ui, plus the common Vue #app / React #root). For a new widget app, find the
+   element that still paints an opaque background (DevTools, or elementsFromPoint(3,3)) and add it. */
+body > div, #app, #root, #mastodon, .app-holder, .ui {
+  {{appRootTransparency}}
+}
+
+/* Hide scrollbars visually on every element but keep wheel/touchpad scrolling. */
+*::-webkit-scrollbar { width: 0 !important; height: 0 !important; }

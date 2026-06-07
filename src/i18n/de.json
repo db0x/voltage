@@ -6,6 +6,21 @@
   "noSuggestions": "Keine Vorschläge",
   "openWithApp": "Öffnen mit {name}",
   "openInBrowser": "Im Browser öffnen",
+  "widgetMove": "Widget verschieben",
+  "widgetMoveHint": "Zum Verschieben ziehen",
+  "widgetMoveDone": "Fertig",
+  "widgetQuit": "{name} beenden",
+  "widgetConfigTitle": "Widget-Konfiguration",
+  "widgetConfigRadius": "Eckenradius",
+  "widgetConfigResizable": "Größe veränderbar",
+  "widgetConfigShadowSection": "Schatten",
+  "widgetConfigShadow": "Schatten anzeigen",
+  "widgetConfigShadowWidth": "Breite",
+  "widgetConfigBackground": "Hintergrund",
+  "widgetConfigTintBackground": "Hintergrund einfärben",
+  "widgetConfigTintColor": "Farbe",
+  "pluginConfigApply": "Übernehmen",
+  "pluginConfigCancel": "Abbrechen",
 
   "globalSettingsTitle":        "Globale Einstellungen",
   "globalSettingsHideApps":     "Embedded Apps ausblenden",
@@ -45,6 +60,8 @@
   "btnInstall":           "Installieren",
   "btnInstallTooltip":    "{name} als Applikation im System installieren",
   "btnReinstallTooltip":  "{name} neu installieren",
+  "btnBuildInstall":      "{name} erstellen und installieren",
+  "btnRebuildInstall":    "{name} neu erstellen und installieren",
   "btnDelete":            "Löschen",
 
   "confirmCancel":            "Abbrechen",
@@ -54,6 +71,7 @@
   "confirmDeleteProfileData": "Profil-Daten löschen (Cookies, Sessions, lokale Daten)",
 
   "buildingApp": "Erstellt {name} …",
+  "buildingInstallingApp": "{name} wird erstellt und installiert …",
 
   "infoUrl":        "URL",
   "infoProfile":    "Profil",
@@ -73,7 +91,6 @@
   "editSave":              "Speichern",
   "editRebuildPrompt":     "<p>Konfiguration von <strong>{name}</strong> gespeichert.</p><p>AppImage jetzt neu erstellen?</p>",
   "editRebuild":           "Neu erstellen",
-  "editInstallAfterBuild": "Nach dem Erstellen installieren",
 
   "installConfirmMsg":     "<p><strong>{name}</strong> als Applikation im System installieren?</p>",
   "installConfirmOk":      "Installieren",

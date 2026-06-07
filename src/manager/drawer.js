@@ -4,6 +4,7 @@ import { applyTemplate } from './template.js'
 // Gives the drawer the same custom scrollbar as the dialogs so every menu item
 // stays reachable when the window is too short to show the whole menu at once.
 import { OverlayScrollbars } from '../../node_modules/overlayscrollbars/overlayscrollbars.mjs'
+import { setColorPickerTheme } from './color-picker.js'
 
 export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, mailHandlerAvailable, templates }) {
   const { sun: sunSrc, moon: moonSrc, menu: menuSrc } = icons
@@ -89,6 +90,8 @@ export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, ma
     document.body.classList.toggle('dark')
     const isDark = document.body.classList.contains('dark')
     localStorage.setItem('dark', isDark ? '1' : '0')
+    // Keep the Coloris picker's theme in sync with the manager (it doesn't follow body.dark).
+    setColorPickerTheme(isDark)
     // Mirror the choice into manager-state.json so main can paint the next
     // cold-start frame with a matching backgroundColor — prevents a theme-mismatched flash.
     window.managerAPI?.setDark?.(isDark)

@@ -1,7 +1,9 @@
 // Returns the innerHTML for a single app card. The outer <div class="card"> is
 // managed by createCard() in cards.js, which also sets data attributes on it.
 export function renderCard({ name, hostname, iconSrc, app, i18n, tr, icons }) {
-  const { build: buildSrc, install: installSrc, delete: deleteSrc,
+  // install icon is used for the combined build-and-install button (the standalone build icon
+  // is no longer needed since build and install are one action now).
+  const { install: installSrc, delete: deleteSrc,
           info: infoSrc, edit: editSrc, rclone: rcloneSrc } = icons
   return `
     <div class="card-icon-wrap ${app.built && app.installed ? 'launchable' : 'unavailable'}">
@@ -34,13 +36,8 @@ export function renderCard({ name, hostname, iconSrc, app, i18n, tr, icons }) {
              ${editSrc ? `<img src="${editSrc}" alt="${i18n.btnEdit}">` : ''}
            </button>`
         : ''}
-      <button class="toolbar-btn" data-action="build"
-              data-tooltip="${app.built ? i18n.btnRebuild : i18n.btnBuild}">
-        ${buildSrc ? `<img src="${buildSrc}" alt="Build">` : ''}
-      </button>
-      <button class="toolbar-btn" data-action="install"
-              data-tooltip="${app.installed ? tr('btnReinstallTooltip', { name }) : tr('btnInstallTooltip', { name })}"
-              ${app.built ? '' : 'disabled'}>
+      <button class="toolbar-btn" data-action="build-install"
+              data-tooltip="${app.built ? tr('btnRebuildInstall', { name }) : tr('btnBuildInstall', { name })}">
         ${installSrc ? `<img src="${installSrc}" alt="${i18n.btnInstall}">` : ''}
       </button>
       <button class="toolbar-btn danger" data-action="delete" data-tooltip="${i18n.btnDelete}"

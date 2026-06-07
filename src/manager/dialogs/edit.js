@@ -4,7 +4,7 @@ import { initDomainList }    from '../domain-list.js'
 import { initRoutingUrlList } from '../routing-url-field.js'
 import { initPluginList }    from '../plugin-list.js'
 
-export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, templates }, { iconPicker, showConfirm }) {
+export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, icons, templates }, { iconPicker, showConfirm, openPluginConfig }) {
   const overlay = applyTemplate(templates.edit, { i18n, vars: { appDefaultSrc } })
   document.body.appendChild(overlay)
 
@@ -26,8 +26,18 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, te
   // currentProfile is read live (set in openEditDialog) so the overlap check excludes this app.
   const routingList   = initRoutingUrlList('edit', () => currentProfile, { tr, onChange: () => updateSaveBtn() })
 
+  // Per-app, per-plugin settings (e.g. widget radius), keyed by plugin file path. Reset per
+  // open from the app; the configure dialog reads/writes the entry for the clicked plugin.
+  let pluginConfig = {}
+
   // Plugin selection is its own select-and-add list, independent of the mail-handler toggle.
-  const pluginList = initPluginList('edit-plugin-trigger', 'edit-plugin-list', plugins, appDefaultSrc, () => updateSaveBtn())
+  // The configure button opens the plugin's own dialog, scoped to this app's config for it.
+  const pluginList = initPluginList('edit-plugin-trigger', 'edit-plugin-list', plugins, appDefaultSrc, icons?.configure,
+    () => updateSaveBtn(),
+    file => openPluginConfig(file, {
+      get: () => pluginConfig[file] || {},
+      set: cfg => { pluginConfig[file] = cfg; updateSaveBtn() },
+    }))
 
   document.getElementById('edit-mail-handler').addEventListener('click', e => {
     e.currentTarget.classList.toggle('active')
@@ -69,6 +79,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, te
       // Sorted join so the dirty check ignores checkbox ordering and only reacts to which
       // plugins are selected.
       plugins:              pluginList.get().slice().sort().join(','),
+      // Serialized so editing a plugin's settings (e.g. widget radius) marks the form dirty.
+      pluginConfig:         JSON.stringify(pluginConfig),
     }
   }
 
@@ -283,6 +295,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, te
     if (mailHandler) mhBtn.classList.add('active')
     else mhBtn.classList.remove('active')
     pluginList.set(app.plugins || [])
+    // Deep copy so editing in the config dialog doesn't mutate the app object until save.
+    pluginConfig = app.pluginConfig ? JSON.parse(JSON.stringify(app.pluginConfig)) : {}
 
     renderInfoSection(app)
     initialSnapshot = snapshot()
@@ -308,27 +322,25 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, te
   saveBtn.addEventListener('click', async () => {
     const cur = snapshot()
     saveBtn.disabled = true
-    // snapshot() stringifies routingUrls/plugins for dirty-detection; buildAppCfg wants arrays.
-    const result = await window.managerAPI.updateApp({ profile: currentProfile, ...cur, routingUrls: routingList.get(), plugins: pluginList.get() })
+    // snapshot() stringifies routingUrls/plugins/pluginConfig for dirty-detection; buildAppCfg
+    // wants the real arrays/object.
+    const result = await window.managerAPI.updateApp({ profile: currentProfile, ...cur, routingUrls: routingList.get(), plugins: pluginList.get(), pluginConfig })
     if (!result.success) { updateSaveBtn(); return }
 
     closeEditDialog()
 
-    // After saving, offer a rebuild prompt when an AppImage already exists.
-    // The "install after build" toggle reuses the deleteConfig key from the confirm API.
+    // After saving, offer a rebuild prompt when an AppImage already exists. Rebuilding now
+    // always installs afterwards too (no separate toggle) — matching the card's combined
+    // build-and-install action; cards.js installs after the build when rebuild is confirmed.
     if (currentApp.built) {
       const appName = currentApp.name || currentApp.profile
-      const { confirmed, deleteConfig: installAfter } = await showConfirm(
+      const { confirmed } = await showConfirm(
         tr('editRebuildPrompt', { name: appName }),
-        {
-          okLabel: i18n.editRebuild,
-          okClass: 'btn-save',
-          ...(currentApp.installed && { toggle: { label: i18n.editInstallAfterBuild, defaultOn: true } }),
-        }
+        { okLabel: i18n.editRebuild, okClass: 'btn-save' }
       )
-      onUpdated?.(result.app, { rebuild: confirmed, install: confirmed && installAfter })
+      onUpdated?.(result.app, { rebuild: confirmed })
     } else {
-      onUpdated?.(result.app, { rebuild: false, install: false })
+      onUpdated?.(result.app, { rebuild: false })
     }
   })
 

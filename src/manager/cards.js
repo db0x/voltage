@@ -1,7 +1,9 @@
 import { renderCard } from './cards.tpl.js'
 
 export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons, hiddenProfiles }, { showConfirm, openInfoDialog, showBuildOverlay, hideBuildOverlay, openEditDialog }) {
-  const { info: infoSrc, build: buildSrc, install: installSrc, delete: deleteSrc, edit: editSrc, rclone: rcloneSrc } = icons
+  // Card icons are consumed by cards.tpl.js via the icons object; cards.js itself only needs
+  // the rclone icon for the dynamically-added rclone overlay badge after a build.
+  const { rclone: rcloneSrc } = icons
 
   const grid = document.getElementById('grid')
 
@@ -67,9 +69,11 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
         iconEl.src = app.iconPath ? `file://${app.iconPath}` : appDefaultSrc
         iconWrap.className = `card-icon-wrap ${app.built && app.installed ? 'launchable' : 'unavailable'}`
         refreshMailHandlerBadge(app, card)
+        // Rebuild now always installs afterwards too — the edit confirm no longer asks
+        // separately, matching the combined build-and-install card button.
         if (rebuild) {
-          const built = await doBuild()
-          if (built && install) await doInstall()
+          const built = await doBuild(true)
+          if (built) await doInstall()
         }
       })
     })
@@ -104,8 +108,7 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
           card.dataset.installed = 'false'
           card.querySelector('[data-role="build-badge"]').textContent = i18n.badgeNotBuilt
           card.querySelector('[data-role="build-badge"]').classList.replace('built', 'not-built')
-          card.querySelector('[data-action="build"]').dataset.tooltip = i18n.btnBuild
-          card.querySelector('[data-action="install"]')?.setAttribute('disabled', '')
+          card.querySelector('[data-action="build-install"]').dataset.tooltip = tr('btnBuildInstall', { name })
           card.querySelector('[data-role="install-badge"]')?.remove()
           iconWrap.classList.replace('launchable', 'unavailable')
         }
@@ -114,14 +117,21 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
       }
     })
 
-    card.querySelector('[data-action="install"]')?.addEventListener('click', () => doInstall())
+    // Combined action: build then install in one click — long-term you always do both, so the
+    // card offers a single "(re)build and install" button instead of two separate steps.
+    card.querySelector('[data-action="build-install"]')?.addEventListener('click', async () => {
+      const built = await doBuild(true)
+      if (built) await doInstall()
+    })
 
-    async function doBuild() {
+    // installing=true → the overlay text says "building and installing" (the combined card
+    // action and the edit-rebuild flow both install afterwards).
+    async function doBuild(installing = false) {
       if (isBuildRunning) return false
       isBuildRunning = true
       const currentName = app.name || toDisplayName(app.profile)
-      showBuildOverlay(currentName)
-      const btn   = card.querySelector('[data-action="build"]')
+      showBuildOverlay(currentName, installing ? 'buildingInstallingApp' : 'buildingApp')
+      const btn   = card.querySelector('[data-action="build-install"]')
       const badge = card.querySelector('[data-role="build-badge"]')
       btn.disabled = true
       btn.classList.add('loading')
@@ -135,8 +145,7 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
         app.needsRebuild = false
         badge.textContent = i18n.badgeBuilt
         badge.classList.replace('not-built', 'built')
-        btn.dataset.tooltip = i18n.btnRebuild
-        card.querySelector('[data-action="install"]')?.removeAttribute('disabled')
+        btn.dataset.tooltip = tr('btnRebuildInstall', { name })
         card.querySelector('[data-action="delete"]')?.removeAttribute('disabled')
         card.querySelector('[data-role="outdated-badge"]')?.remove()
         // Sync rclone overlay badge with the freshly written .version file
@@ -156,8 +165,8 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
     }
 
     async function doInstall() {
-      const btn = card.querySelector('[data-action="install"]')
-      if (!btn || btn.disabled) return false
+      const btn = card.querySelector('[data-action="build-install"]')
+      if (!btn) return false
 
       let setAsMailHandler = false
       if (app.mimeTypes?.includes('x-scheme-handler/mailto')) {
@@ -181,7 +190,6 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
       if (result.success) {
         app.installed = true
         card.dataset.installed = 'true'
-        btn.dataset.tooltip = tr('btnReinstallTooltip', { name })
         iconWrap.classList.replace('unavailable', 'launchable')
         const buildBadge = card.querySelector('[data-role="build-badge"]')
         if (!card.querySelector('[data-role="install-badge"]')) {
@@ -202,8 +210,6 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
       }
       return result.success
     }
-
-    card.querySelector('[data-action="build"]')?.addEventListener('click', () => doBuild())
 
     return card
   }

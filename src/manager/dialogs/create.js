@@ -4,7 +4,7 @@ import { initDomainList } from '../domain-list.js'
 import { initRoutingUrlList } from '../routing-url-field.js'
 import { initPluginList } from '../plugin-list.js'
 
-export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, templates }, { iconPicker, applyVisibility, createCard, insertCard }) {
+export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, icons, templates }, { iconPicker, applyVisibility, createCard, insertCard, openPluginConfig }) {
   const overlay = applyTemplate(templates.create, { i18n, vars: { appDefaultSrc } })
   document.body.appendChild(overlay)
 
@@ -31,8 +31,18 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     { tr, onChange: () => {} }
   )
 
+  // Per-app, per-plugin settings (e.g. widget radius), keyed by plugin file path. Cleared on
+  // each open; the configure dialog reads/writes the entry for the clicked plugin.
+  let pluginConfig = {}
+
   // Plugin selection is its own select-and-add list, independent of the mail-handler toggle.
-  const pluginList = initPluginList('create-plugin-trigger', 'create-plugin-list', plugins, appDefaultSrc, () => {})
+  // The configure button opens the plugin's own dialog, scoped to this app's config for it.
+  const pluginList = initPluginList('create-plugin-trigger', 'create-plugin-list', plugins, appDefaultSrc, icons?.configure,
+    () => {},
+    file => openPluginConfig(file, {
+      get: () => pluginConfig[file] || {},
+      set: cfg => { pluginConfig[file] = cfg },
+    }))
 
   document.getElementById('create-mail-handler').addEventListener('click', e => {
     e.currentTarget.classList.toggle('active')
@@ -227,6 +237,7 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     document.getElementById('create-single-instance').classList.remove('active')
     document.getElementById('create-mail-handler').classList.remove('active')
     pluginList.reset()
+    pluginConfig = {}
     profileValid = false
     urlValid     = false
     widthValid   = true
@@ -271,7 +282,7 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     const mailHandler          = document.getElementById('create-mail-handler').classList.contains('active')
     const plugins              = pluginList.get()
     saveBtn.disabled = true
-    const result = await window.managerAPI.createApp({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins })
+    const result = await window.managerAPI.createApp({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig })
     if (result.success) {
       closeCreateDialog()
       insertCard(createCard(result.app))

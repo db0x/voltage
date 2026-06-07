@@ -63,7 +63,7 @@ npm start
 - **Native feel** — no browser chrome, correct WM class for taskbar grouping and window management
 - **Context menu** — Cut / Copy / Paste + Save Image As; spelling suggestions via `aspell` (falls back to English); links show **Open with [App]** and **Open in browser** (with the system default browser icon) when a routing target is known
 - **Cross-app link routing** — links to URLs handled by another installed wrapweb app open directly in that app instead of the system browser; a `routing.json` plugin file (written by `install-app`, read at runtime) maps hostnames to AppImages — no rebuild required when routing changes. The file is split into `base` claims (each app's primary URL) and `routing` claims (extra URLs apps opt into via the `routingUrls` config field, with `*` wildcards, editable in the create/edit dialog); when both match a link, the `routing` claim wins
-- **Per-app plugins** — main-process modules shipped under `webapps/plugins/` that extend a single app's behaviour (e.g. routing OneDrive document opens to the Word/Excel/PowerPoint app, or driving a webmail app's compose UI for `mailto:` links). Selected per app in the create/edit dialog; a change takes effect after rebuilding the AppImage
+- **Per-app plugins** — main-process modules shipped under `webapps/plugins/` that extend a single app's behaviour (e.g. routing OneDrive document opens to the Word/Excel/PowerPoint app, or driving a webmail app's compose UI for `mailto:` links). Selected per app in the create/edit dialog; a change takes effect after rebuilding the AppImage. A plugin can be **configurable** — it ships its own settings dialog (`config.html`) opened from a gear button on its chip, and its values are stored per app in `pluginConfig` (e.g. the widget plugin's window corner radius)
 - **About panel** — `F12` toggles an in-app About overlay showing the current domain (with a Google Safe Browsing badge when active), the app, the build versions (wrapweb / Electron / Chromium), and the loaded plugins
 - **Zoom** — `Ctrl+Scroll` per window
 - **Screen sharing** — WebRTC / PipeWire capture works out of the box
@@ -297,6 +297,7 @@ The plugin works in both **Reading Mode** and **Live Preview** (CodeMirror 6). R
 | [Electron](https://www.electronjs.org/) | App shell, renderer, IPC |
 | [electron-builder](https://www.electron.build/) | AppImage packaging |
 | [OverlayScrollbars](https://github.com/KingSora/OverlayScrollbars) | Native-style overlay scrollbars in the Manager |
+| [Coloris](https://github.com/mdbassit/Coloris) | Colour picker (with alpha) for plugin settings, e.g. the widget tint — via the [@melloware/coloris](https://github.com/melloware/coloris-npm) npm build |
 | [Papirus Icon Theme](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme) | Some icons in the Manager. |
 
 ## Building AppImages via CLI
@@ -344,6 +345,7 @@ App configs live in the `webapps/` directory. For apps you don't want to commit,
 | `mailtoTemplate` | string | Base URL for the compose window — `mailto:` parameters are appended as a query string |
 | `mailtoParamMap` | object | Rename `mailto:` parameters before appending (e.g. `{ "subject": "su" }` for Gmail) |
 | `plugins` | array | Main-process plugins shipped under `webapps/plugins/` that this app loads, each as a webapps-relative path (e.g. `"plugins/onedrive/onedrive.js"`). Selectable in the create/edit dialog. A plugin module exports `attachPlugin(win, api)` and extends the app's behaviour — e.g. routing OneDrive document opens to Word/Excel/PowerPoint, or driving a webmail app's compose UI on a `mailto:` launch. Changing the selection requires rebuilding the AppImage |
+| `pluginConfig` | object | Per-plugin settings for this app, keyed by the plugin's webapps-relative path (e.g. `{ "plugins/widget/widget.js": { "radius": 20 } }`). A plugin that exports `configurable: true` and ships a `config.html` next to its entry file gets a gear button on its chip in the create/edit dialog; the values are passed to the plugin at runtime as `api.config`. The widget plugin uses it for the window corner radius (`radius`, 0–24, default 14), a drop shadow (`shadow`, default true; `shadowWidth` 2–8, default 8), whether the window is resizable (`resizable`, default true), and the background tint: `tintBackground` (default true) is the master switch — off leaves the page untouched, on applies `tint` (a `#RRGGBB`/`#RRGGBBAA` hex colour picked with the Coloris picker, default `#000000a6` — black at ~0.65 alpha; the alpha is capped just below fully opaque so the rounded corners survive). The widget renders the app in an inset child view so the host window can draw the shadow + rounded corners while the page scrolls natively. Changing a value requires rebuilding the AppImage |
 
 ### Advanced routing patterns
 

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<!-- Host page for the widget in view mode. Loaded into the (transparent, frameless) host window;
+     the app itself runs in an inset WebContentsView ON TOP of this. This page's only job is to
+     draw the drop shadow in the gutter behind the view: a transparent, rounded rectangle the same
+     size/position as the view, with a box-shadow. {{margin}}, {{radius}} and {{shadow}} are filled
+     by widget.js hostHtml() from per-app config. Shadow off → margin 0 and box-shadow none. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  /* Matches the view's bounds (inset by the gutter) and corner radius; the box-shadow spills into
+     the surrounding transparent gutter. The view is drawn over this, so only the shadow shows. */
+  .card {
+    position: fixed;
+    inset: {{margin}};
+    border-radius: {{radius}};
+    box-shadow: {{shadow}};
+  }
+</style>
+</head>
+<body>
+  <div class="card"></div>
+</body>
+</html>
