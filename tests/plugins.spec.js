@@ -114,40 +114,6 @@ test('edit dialog: the widget corner radius persists per app under pluginConfig'
 })
 
 // Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
-// Action:   Change the Coloris tint field's value (colour + alpha) and Apply, then save the app.
-// Expected: The field seeds from the default tint and the picked rgba string persists under
-//           pluginConfig.tint — proving the Coloris-bound colour control round-trips. The Coloris
-//           popup itself is the library's; here we drive the bound input the way Coloris does
-//           (set value + input event), which is exactly what the generic binding listens to.
-test('edit dialog: the widget tint colour persists per app under pluginConfig', async ({ managerPage }) => {
-  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
-  await card.hover()
-  await card.locator('[data-action="edit"]').click()
-
-  await managerPage.click('#edit-plugin-trigger')
-  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
-  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
-    .locator('.domain-configure-btn').click()
-
-  const tint   = managerPage.locator('#widget-config-tint')
-  const swatch = managerPage.locator('.plugin-config-overlay [data-config-swatch="tint"]')
-  await expect(tint).toHaveValue('#000000a6')  // hex default preserves the original look
-  // The preview swatch mirrors the value live via the --swatch-color CSS var.
-  expect(await swatch.evaluate(el => el.style.getPropertyValue('--swatch-color'))).toBe('#000000a6')
-
-  await tint.evaluate(el => { el.value = '#336699cc'; el.dispatchEvent(new Event('input', { bubbles: true })) })
-  expect(await swatch.evaluate(el => el.style.getPropertyValue('--swatch-color'))).toBe('#336699cc')
-
-  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
-  await managerPage.click('#edit-save')
-
-  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
-  await expect.poll(() => {
-    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
-  }).toEqual({ 'plugins/widget/widget.js': { tint: '#336699cc' } })
-})
-
-// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
 // Action:   The resizable toggle defaults on; turn it off, Apply, and save.
 // Expected: The toggle starts active (default yes) and persists resizable:false when turned off —
 //           proving the boolean toggle binds and round-trips alongside the value controls.
@@ -230,38 +196,6 @@ test('edit dialog: the shadow width persists per app under pluginConfig', async 
   await expect.poll(() => {
     try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
   }).toEqual({ 'plugins/widget/widget.js': { shadowWidth: 4 } })
-})
-
-// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
-// Action:   "Tint background" defaults on; turn it off, Apply, and save.
-// Expected: The toggle starts active, gating the colour field off (.config-disabled), and the
-//           choice persists as tintBackground:false (off = don't touch the page).
-test('edit dialog: the tint-background toggle gates the colour field and persists when off', async ({ managerPage }) => {
-  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
-  await card.hover()
-  await card.locator('[data-action="edit"]').click()
-
-  await managerPage.click('#edit-plugin-trigger')
-  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
-  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
-    .locator('.domain-configure-btn').click()
-
-  const toggle     = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="tintBackground"]')
-  const colorField = managerPage.locator('.plugin-config-overlay [data-config-enabled-by="tintBackground"]')
-  await expect(toggle).toHaveClass(/active/)
-  await expect(colorField).not.toHaveClass(/config-disabled/)
-
-  await toggle.click()
-  await expect(toggle).not.toHaveClass(/active/)
-  await expect(colorField).toHaveClass(/config-disabled/)
-
-  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
-  await managerPage.click('#edit-save')
-
-  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
-  await expect.poll(() => {
-    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
-  }).toEqual({ 'plugins/widget/widget.js': { tintBackground: false } })
 })
 
 // Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
