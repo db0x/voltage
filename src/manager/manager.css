@@ -1038,6 +1038,13 @@ body.dark .domain-configure-btn img {
 }
 
 /* Range control + live value in a plugin's config dialog (e.g. the widget corner radius). */
+/* A plugin config control gated off by a toggle (data-config-enabled-by): dimmed and
+   non-interactive while its toggle is off. */
+.config-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .plugin-config-range {
   display: flex;
   align-items: center;

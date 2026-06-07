@@ -14,6 +14,7 @@ import { applyTemplate } from './template.js'
 //   [data-config-value]                   — a live mirror of a key's value, suffixed by data-unit
 //   [data-config-swatch]                   — a colour-preview element; gets the value as the CSS
 //                                            var --swatch-color (style the element to use it)
+//   [data-config-enabled-by="<toggleKey>"] — dimmed + disabled while that toggle is off
 export function initPluginConfig({ i18n, icons, plugins }) {
   const catalog  = plugins || []
   const overlays = new Map()  // plugin file path -> overlay element
@@ -76,10 +77,24 @@ export function initPluginConfig({ i18n, icons, plugins }) {
       toggle.onclick = () => {
         toggle.classList.toggle('active')
         cfg[key] = toggle.classList.contains('active')
+        applyGating(overlay)
       }
     }
 
+    applyGating(overlay)
     overlay._commit = () => access.set({ ...cfg })
+  }
+
+  // Greys out and disables controls gated by a toggle: an element with
+  // [data-config-enabled-by="<toggleKey>"] is dimmed (and its inputs disabled) while that toggle
+  // is off. Reads the toggle's live .active state so it works on open and on every toggle change.
+  function applyGating(overlay) {
+    for (const el of overlay.querySelectorAll('[data-config-enabled-by]')) {
+      const gate = overlay.querySelector(`.dialog-field-toggle[data-config-key="${el.dataset.configEnabledBy}"]`)
+      const enabled = gate ? gate.classList.contains('active') : true
+      el.classList.toggle('config-disabled', !enabled)
+      el.querySelectorAll('input, button, select').forEach(c => { c.disabled = !enabled })
+    }
   }
 
   // Opens the plugin's config dialog. `access` reads/writes this plugin's per-app config object

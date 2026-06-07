@@ -1,16 +1,20 @@
-// widget plugin (main-process module). Turns the app window into a frameless, transparent,
-// rounded "widget": no titlebar/border/buttons, a dark translucent tint, hidden scrollbars, a
-// context-menu "Move" mode and "Quit" entry.
+// widget plugin (main-process module). Turns the app into a frameless, transparent, rounded
+// "widget" with an optional drop shadow and a configurable tint, hidden scrollbars, a context-menu
+// "Move" mode and "Quit" entry.
 //
-// Building blocks live as real files, not inline strings:
-//   tint.css         — the page tint/rounding, injected via insertCSS (a frameless window can't
-//                      load an external stylesheet under strict app CSPs).
-//   move-overlay.js  — the move-mode overlay, run in the page via executeJavaScript.
+// Rendering model — VIEW MODE (see src/window.js collectPluginViewMode): the app does NOT run in
+// the window itself. The window is a transparent, frameless HOST that draws the drop shadow
+// (host.html), and the app runs in an inset WebContentsView with rounded corners (the host insets
+// the view by the shadow gutter and calls view.setBorderRadius). This keeps the app's page
+// completely untouched → native scrolling/layout (no clip-path/transform tricks, which broke the
+// page's own scroll containers). The plugin only injects a tint + hides scrollbars into the view.
 //
-// Why windowOptions() and not attachPlugin(): frame/transparent are BrowserWindow CONSTRUCTOR
-// options and can't change after the window exists. attachPlugin() runs after creation, so it's
-// too late. window.js collects each plugin's optional windowOptions(pkg) BEFORE creating the
-// window and merges the result (webPreferences stays owned by window.js).
+// Plugin hooks used:
+//   windowOptions()  — host BrowserWindow constructor options (frame:false, transparent).
+//   viewConfig(cfg)  — { margin, radius } so window.js insets + rounds the app view.
+//   hostHtml(cfg)    — the host page (the shadow), filled from host.html.
+//   attachPlugin()   — injects the tint into the VIEW (api.webContents), sets resizable on the
+//                      host window, and contributes context-menu items.
 
 const fs   = require('node:fs')
 const path = require('node:path')
@@ -22,32 +26,39 @@ const MAX_RADIUS = 24
 
 // Tint = a single CSS colour chosen via the Coloris picker in config.html, stored as a hex
 // string (#RRGGBB / #RRGGBBAA). Default #000000a6 = black at ~0.65 alpha, the original look.
-const DEFAULT_TINT = '#000000a6'
-// Guaranteed-valid CSS the widget falls back to if a stored value can't be parsed.
+const DEFAULT_TINT  = '#000000a6'
 const FALLBACK_TINT = 'rgba(0, 0, 0, 0.65)'
-
-// Never let the tint reach a fully opaque alpha: a fully opaque root background is promoted by the
-// compositor to a solid, rectangular window canvas that ignores the clip-path (same as
-// border-radius), squaring off the rounded corners. 0.99 is visually indistinguishable from 1.0
-// over the desktop but keeps the layer compositing path — and thus the rounding — alive.
 const MAX_TINT_ALPHA = 0.99
 
-// Read the building-block files once at load. tint.css keeps its {{radius}}/{{tint}} placeholders
-// unfilled here — both come from per-app config (api.config), known only when attachPlugin runs.
+// Drop shadow (default on). Width (the blur) is configurable; offset + colour are fixed. The host
+// insets the app view by a gutter so the shadow has room; the gutter is derived from the width.
+// Width range matches the slider in config.html.
+const SHADOW_OFFSET = 3
+const SHADOW_COLOR  = 'rgba(0, 0, 0, 0.5)'
+const MIN_SHADOW_WIDTH = 2
+const MAX_SHADOW_WIDTH = 8
+const DEFAULT_SHADOW_WIDTH = 8
+
+// Building-block files, read once. Placeholders are filled per-app at attach/host time.
 const TINT_CSS_TEMPLATE = fs.readFileSync(path.join(__dirname, 'tint.css'), 'utf8')
+const HOST_TEMPLATE     = fs.readFileSync(path.join(__dirname, 'host.html'), 'utf8')
 const MOVE_SCRIPT       = fs.readFileSync(path.join(__dirname, 'move-overlay.js'), 'utf8')
 
-// Clamp the configured radius to the supported range; fall back to the default for missing or
-// non-numeric values (e.g. an AppImage built before the setting existed → no pluginConfig).
+// move.svg as a data URL — handed to the page overlay so no file:// path is needed in the page.
+const MOVE_ICON = (() => {
+  try { return `data:image/svg+xml;base64,${fs.readFileSync(path.join(__dirname, 'move.svg')).toString('base64')}` }
+  catch { return null }
+})()
+
+// Clamp the configured radius to the supported range; fall back to the default for missing/invalid.
 function resolveRadius(config) {
   const r = Number(config?.radius)
   if (!Number.isFinite(r)) return DEFAULT_RADIUS
   return Math.min(MAX_RADIUS, Math.max(MIN_RADIUS, Math.round(r)))
 }
 
-// Parse a colour string into { r, g, b, a }. Accepts hex (#rgb / #rgba / #rrggbb / #rrggbbaa —
-// the Coloris output) and rgb()/rgba() (kept so configs saved before the hex switch still work).
-// Returns null when nothing matches.
+// Parse a colour string into { r, g, b, a }. Accepts hex (#rgb/#rgba/#rrggbb/#rrggbbaa — the
+// Coloris output) and rgb()/rgba() (for configs saved before the hex switch). null if no match.
 function parseColor(raw) {
   const s = String(raw).trim()
   let m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(s)
@@ -55,7 +66,7 @@ function parseColor(raw) {
   m = /^#([0-9a-f]{3,8})$/i.exec(s)
   if (m) {
     let h = m[1]
-    if (h.length === 3 || h.length === 4) h = h.split('').map(c => c + c).join('')  // expand shorthand
+    if (h.length === 3 || h.length === 4) h = h.split('').map(c => c + c).join('')
     if (h.length === 6 || h.length === 8) {
       return {
         r: parseInt(h.slice(0, 2), 16),
@@ -68,9 +79,8 @@ function parseColor(raw) {
   return null
 }
 
-// Normalise the configured tint into an rgba() string with the alpha capped below fully opaque
-// (see MAX_TINT_ALPHA). Falls back to FALLBACK_TINT for missing/malformed values. Capping here —
-// not in the stored value — keeps the user's real choice.
+// Normalise the configured tint into an rgba() string, alpha capped just below opaque so a fully
+// opaque tint can't square off the rounded view corners. Falls back for missing/malformed values.
 function resolveTint(config) {
   const c = parseColor(config?.tint ?? DEFAULT_TINT)
   if (!c) return FALLBACK_TINT
@@ -80,48 +90,68 @@ function resolveTint(config) {
   return `rgba(${r}, ${g}, ${b}, ${a.toFixed(2)})`
 }
 
-// Whether the widget window can be resized. Default yes — only an explicit false locks the size,
-// so older AppImages (no pluginConfig) keep the original resizable behaviour.
+// Whether the window can be resized. Default yes — only an explicit false locks the size.
 function resolveResizable(config) {
   return config?.resizable !== false
 }
 
-// move.svg as a data URL — loaded here (FS access) and handed to the page overlay, so no
-// file:// path is needed from the page context. null if missing.
-const MOVE_ICON = (() => {
-  try { return `data:image/svg+xml;base64,${fs.readFileSync(path.join(__dirname, 'move.svg')).toString('base64')}` }
-  catch { return null }
-})()
+// Whether to paint our tint over the page (and clear the app's root backgrounds so it shows).
+// Default yes. Off → the plugin doesn't touch the page background: the app shows as-is, natively.
+function tintEnabled(config) {
+  return config?.tintBackground !== false
+}
 
-// frame:false → no titlebar/border/buttons; transparent + transparent backgroundColor → no
-// native window background so the page (and the desktop, where transparent) shows through.
-// (Window transparency is Wayland-compositor dependent.) resizable is NOT set here — it's a
-// per-app config and applied in attachPlugin via setResizable (defaults to Electron's true).
+function shadowEnabled(config) { return config?.shadow !== false }
+function resolveShadowWidth(config) {
+  const w = Number(config?.shadowWidth)
+  if (!Number.isFinite(w)) return DEFAULT_SHADOW_WIDTH
+  return Math.min(MAX_SHADOW_WIDTH, Math.max(MIN_SHADOW_WIDTH, Math.round(w)))
+}
+
+// frame:false → no titlebar/border; transparent → the rounded view's corners + the shadow gutter
+// show the desktop. These apply to the HOST window (the app runs in the inset view).
 function windowOptions() {
   return { frame: false, transparent: true, backgroundColor: '#00000000' }
 }
 
+// View geometry for window.js: how far to inset the app view (the shadow gutter) and its corner
+// radius. Shadow off → margin 0 (the view fills the window, still rounded).
+function viewConfig(config) {
+  const margin = shadowEnabled(config) ? SHADOW_OFFSET + resolveShadowWidth(config) + 1 : 0
+  return { margin, radius: resolveRadius(config) }
+}
+
+// The host page: a transparent rounded rectangle the size/position of the app view, carrying the
+// box-shadow (so the shadow sits in the gutter behind the view). Shadow off → no shadow.
+function hostHtml(config) {
+  const on = shadowEnabled(config)
+  const margin = on ? SHADOW_OFFSET + resolveShadowWidth(config) + 1 : 0
+  const shadow = on ? `0 ${SHADOW_OFFSET}px ${resolveShadowWidth(config)}px ${SHADOW_COLOR}` : 'none'
+  return HOST_TEMPLATE
+    .replace(/\{\{margin\}\}/g, `${margin}px`)
+    .replace(/\{\{radius\}\}/g, `${resolveRadius(config)}px`)
+    .replace(/\{\{shadow\}\}/g, shadow)
+}
+
 // Enters move mode: hands the overlay its parameters via window.__wrapwebWidgetMove, then runs
-// move-overlay.js in the page. Two executeJavaScript calls keep the params out of the script
-// file; the param assignment is a plain JSON literal, the script file is verbatim.
-function enterMoveMode(win, t) {
+// move-overlay.js in the page. `wc` is the app view's webContents.
+function enterMoveMode(wc, t) {
   const params = { icon: MOVE_ICON, hintText: t.widgetMoveHint, doneText: t.widgetMoveDone }
-  win.webContents
-    .executeJavaScript(`window.__wrapwebWidgetMove = ${JSON.stringify(params)};`)
-    .then(() => win.webContents.executeJavaScript(MOVE_SCRIPT))
+  wc.executeJavaScript(`window.__wrapwebWidgetMove = ${JSON.stringify(params)};`)
+    .then(() => wc.executeJavaScript(MOVE_SCRIPT))
     .catch(() => {})
 }
 
-// Inject the tint on every load: insertCSS before the first load is lost, and SPA full
-// navigations replace the document. did-finish-load covers both initial and later navigations.
-// Returns context menu entries (window.js appends them): "Move widget" (enters drag mode, since
-// a frameless window can't be dragged by a titlebar) and "Quit" (no window close button exists).
+// Injects the tint into the app VIEW (api.webContents — NOT the host window). did-finish-load
+// covers initial + SPA full navigations. Tint off → inject nothing (page untouched). Sets the
+// host window resizable from config and contributes "Move"/"Quit" context-menu items.
 function attachPlugin(win, api) {
-  // Bake the per-app radius + tint colour into the CSS once; values can't change without a rebuild.
+  const wc = api.webContents
+  const tintOn = tintEnabled(api.config)
   const css = TINT_CSS_TEMPLATE
-    .replace(/\{\{radius\}\}/g, `${resolveRadius(api.config)}px`)
-    .replace(/\{\{tint\}\}/g, resolveTint(api.config))
-  win.webContents.on('did-finish-load', () => win.webContents.insertCSS(css).catch(() => {}))
+    .replace(/\{\{htmlBackground\}\}/g, tintOn ? `background: ${resolveTint(api.config)} !important;` : '')
+    .replace(/\{\{appRootTransparency\}\}/g, tintOn ? 'background-color: transparent !important;' : '')
+  wc.on('did-finish-load', () => wc.insertCSS(css).catch(() => {}))
 
   win.setResizable(resolveResizable(api.config))
 
@@ -129,14 +159,13 @@ function attachPlugin(win, api) {
     contextMenuItems: () => {
       const t = api.t()
       return [
-        { label: t.widgetMove, click: () => enterMoveMode(win, t) },
+        { label: t.widgetMove, click: () => enterMoveMode(wc, t) },
         { label: t.widgetQuit.replace('{name}', api.displayName), click: () => api.quit() },
       ]
     },
   }
 }
 
-// configurable: declares the plugin has user-facing settings, so the dialog's plugin chip shows
-// a configure button. The widget's look (radius, tint, always-on-top, …) will become editable;
-// most plugins need no config and simply omit this flag (defaulting to false).
-module.exports = { windowOptions, attachPlugin, configurable: true }
+// configurable: the dialog's plugin chip shows a configure button (dialog = config.html). The
+// widget exposes radius, tint, shadow and resizable; most plugins omit this (default false).
+module.exports = { windowOptions, viewConfig, hostHtml, attachPlugin, configurable: true }

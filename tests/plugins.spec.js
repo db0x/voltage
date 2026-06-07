@@ -176,6 +176,95 @@ test('edit dialog: the widget resizable toggle defaults on and persists when tur
 })
 
 // Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The shadow toggle defaults on; turn it off, Apply, and save.
+// Expected: The toggle starts active (default yes) and persists shadow:false when turned off.
+test('edit dialog: the widget shadow toggle defaults on and persists when turned off', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const toggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="shadow"]')
+  await expect(toggle).toHaveClass(/active/)  // default yes
+
+  await toggle.click()
+  await expect(toggle).not.toHaveClass(/active/)
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { shadow: false } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The shadow width slider defaults to 8 (gated by the shadow toggle); set it to 4, save.
+// Expected: The width persists as shadowWidth:4 and the field is gated by the shadow toggle.
+test('edit dialog: the shadow width persists per app under pluginConfig', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const slider     = managerPage.locator('#widget-config-shadow-width')
+  const widthField = managerPage.locator('.plugin-config-overlay [data-config-enabled-by="shadow"]')
+  await expect(slider).toHaveValue('8')                          // default = max
+  await expect(widthField).not.toHaveClass(/config-disabled/)   // enabled while shadow is on (default)
+
+  await slider.evaluate(el => { el.value = '4'; el.dispatchEvent(new Event('input', { bubbles: true })) })
+  await expect(managerPage.locator('.plugin-config-overlay output[data-config-value="shadowWidth"]')).toHaveText('4px')
+
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { shadowWidth: 4 } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   "Tint background" defaults on; turn it off, Apply, and save.
+// Expected: The toggle starts active, gating the colour field off (.config-disabled), and the
+//           choice persists as tintBackground:false (off = don't touch the page).
+test('edit dialog: the tint-background toggle gates the colour field and persists when off', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const toggle     = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="tintBackground"]')
+  const colorField = managerPage.locator('.plugin-config-overlay [data-config-enabled-by="tintBackground"]')
+  await expect(toggle).toHaveClass(/active/)
+  await expect(colorField).not.toHaveClass(/config-disabled/)
+
+  await toggle.click()
+  await expect(toggle).not.toHaveClass(/active/)
+  await expect(colorField).toHaveClass(/config-disabled/)
+
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { tintBackground: false } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
 // Action:   Move the radius slider, but dismiss the dialog with Cancel instead of Apply.
 // Expected: The form stays clean (Save disabled) and re-opening shows the default again —
 //           proving Cancel discards the working copy without touching the app's config.

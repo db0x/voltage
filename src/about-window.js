@@ -181,7 +181,9 @@ function toggleAboutWindow(win) {
     return
   }
 
-  const fullUrl = win.webContents.getURL()
+  // In view mode the app lives in an inset WebContentsView, not the window's own webContents.
+  const appContents = win._wrapwebAppContents || win.webContents
+  const fullUrl = appContents.getURL()
   const domain = (() => {
     try { const u = new URL(fullUrl); return `${u.protocol}//${u.host}` } catch { return fullUrl }
   })()
