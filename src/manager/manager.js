@@ -113,6 +113,7 @@ const ctx = {
     obsidian:       s('obsidian'),
     rclonePlugin:   s('rclonePlugin'),
     pluginBadge:    s('pluginBadge'),
+    shadow:         s('shadow'),
   },
 }
 

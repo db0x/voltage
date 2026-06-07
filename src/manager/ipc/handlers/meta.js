@@ -89,6 +89,7 @@ module.exports = function registerMetaHandlers() {
       obsidian:           a('plugins/obsidian.svg'),
       rclonePlugin:       a('plugins/rclone.svg'),
       pluginBadge:        a('plugins/plugin.svg'),
+      shadow:             a('shadow.svg'),
     }
 
     // In tests, WRAPWEB_TEST_FILTER_ICONS replaces the category filter icons with a

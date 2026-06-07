@@ -29,7 +29,10 @@
         <span>{{widgetConfigResizable}}</span>
       </button>
       <fieldset class="plugin-config-fieldset">
-        <legend class="plugin-config-fieldset-legend">{{widgetConfigShadowSection}}</legend>
+        <legend class="plugin-config-fieldset-legend">
+          <img data-icon="shadow" width="16" height="16" alt="">
+          {{widgetConfigShadowSection}}
+        </legend>
         <button type="button" class="dialog-field-toggle" data-config-key="shadow" data-config-default="true">
           <span class="toggle-switch"></span>
           <span>{{widgetConfigShadow}}</span>
@@ -40,29 +43,6 @@
             <input type="range" id="widget-config-shadow-width" min="2" max="8" step="1"
                    data-config-key="shadowWidth" data-config-default="8">
             <output data-config-value="shadowWidth" data-unit="px"></output>
-          </div>
-        </div>
-      </fieldset>
-      <fieldset class="plugin-config-fieldset">
-        <legend class="plugin-config-fieldset-legend">{{widgetConfigBackground}}</legend>
-        <!-- Master switch for the whole background theming. Off → the plugin doesn't touch the
-             page (no tint, no forced container transparency): the app shows as-is. The colour
-             field below is gated on this. -->
-        <button type="button" class="dialog-field-toggle" data-config-key="tintBackground" data-config-default="true">
-          <span class="toggle-switch"></span>
-          <span>{{widgetConfigTintBackground}}</span>
-        </button>
-        <div class="dialog-field" data-config-enabled-by="tintBackground">
-          <label for="widget-config-tint">{{widgetConfigTintColor}}</label>
-          <!-- Coloris colour picker (colour + alpha in one). data-coloris is enhanced by the
-               manager's shared picker; the input value (a #RRGGBB / #RRGGBBAA hex string) binds
-               via data-config-key and is parsed by the widget plugin. The swatch previews the
-               chosen colour (checkerboard behind, so alpha shows) — fed via --swatch-color.
-               #000000a6 = black at ~0.65 alpha, the original tint. -->
-          <div class="plugin-config-color-row">
-            <span class="plugin-config-swatch" data-config-swatch="tint" aria-hidden="true"></span>
-            <input type="text" id="widget-config-tint" data-coloris spellcheck="false"
-                   data-config-key="tint" data-config-default="#000000a6">
           </div>
         </div>
       </fieldset>

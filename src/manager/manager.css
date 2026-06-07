@@ -1108,6 +1108,9 @@ body.dark .plugin-config-fieldset {
 }
 
 .plugin-config-fieldset-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 4px;
   font-size: 11px;
   font-weight: 600;
@@ -1116,7 +1119,11 @@ body.dark .plugin-config-fieldset {
   color: var(--card-url);
 }
 
-
+.plugin-config-fieldset-legend img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
 
 .domain-add-row {
   display: flex;
