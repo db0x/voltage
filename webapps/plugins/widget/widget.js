@@ -1,5 +1,5 @@
 // widget plugin (main-process module). Turns the app into a frameless, transparent, rounded
-// "widget" with an optional drop shadow and a configurable tint, hidden scrollbars, a context-menu
+// "widget" with an optional drop shadow and a configurable tint, optionally hidden scrollbars, a context-menu
 // "Move" mode and "Quit" entry.
 //
 // Rendering model — VIEW MODE (see src/window.js collectPluginViewMode): the app does NOT run in
@@ -34,7 +34,7 @@ const MAX_TINT_ALPHA = 0.99
 // insets the app view by a gutter so the shadow has room; the gutter is derived from the width.
 // Width range matches the slider in config.html.
 const SHADOW_OFFSET = 3
-const SHADOW_COLOR  = 'rgba(0, 0, 0, 0.5)'
+const SHADOW_COLOR  = 'rgba(0, 0, 0, 0.85)'
 const MIN_SHADOW_WIDTH = 2
 const MAX_SHADOW_WIDTH = 8
 const DEFAULT_SHADOW_WIDTH = 8
@@ -101,6 +101,16 @@ function tintEnabled(config) {
   return config?.tintBackground !== false
 }
 
+// Whether to hide the app's scrollbars (keeping wheel/touchpad scrolling). Default yes — only an
+// explicit false leaves the native scrollbars visible.
+function scrollbarsHidden(config) { return config?.hideScrollbars !== false }
+
+// The CSS that hides scrollbars; injected only when the toggle is on (see tint.css for why both
+// the standard scrollbar-width and the -webkit pseudo are needed).
+const HIDE_SCROLLBARS_CSS =
+  '* { scrollbar-width: none !important; }\n' +
+  '*::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }'
+
 function shadowEnabled(config) { return config?.shadow !== false }
 function resolveShadowWidth(config) {
   const w = Number(config?.shadowWidth)
@@ -151,6 +161,7 @@ function attachPlugin(win, api) {
   const css = TINT_CSS_TEMPLATE
     .replace(/\{\{htmlBackground\}\}/g, tintOn ? `background: ${resolveTint(api.config)} !important;` : '')
     .replace(/\{\{appRootTransparency\}\}/g, tintOn ? 'background-color: transparent !important;' : '')
+    .replace(/\{\{hideScrollbars\}\}/g, scrollbarsHidden(api.config) ? HIDE_SCROLLBARS_CSS : '')
   wc.on('did-finish-load', () => wc.insertCSS(css).catch(() => {}))
 
   win.setResizable(resolveResizable(api.config))

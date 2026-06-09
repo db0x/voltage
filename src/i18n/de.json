@@ -13,6 +13,7 @@
   "widgetConfigTitle": "Widget-Konfiguration",
   "widgetConfigRadius": "Eckenradius",
   "widgetConfigResizable": "Größe veränderbar",
+  "widgetConfigHideScrollbars": "Scrollbalken ausblenden",
   "widgetConfigShadowSection": "Schatten",
   "widgetConfigShadow": "Schatten anzeigen",
   "widgetConfigShadowWidth": "Breite",

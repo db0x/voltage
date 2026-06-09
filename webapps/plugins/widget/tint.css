@@ -19,5 +19,13 @@ body > div, #app, #root, #mastodon, .app-holder, .ui {
   {{appRootTransparency}}
 }
 
-/* Hide scrollbars visually on every element but keep wheel/touchpad scrolling. */
-*::-webkit-scrollbar { width: 0 !important; height: 0 !important; }
+/* Hide scrollbars visually on every element but keep wheel/touchpad scrolling. Filled from the
+   per-app `hideScrollbars` config (default on); empty when the toggle is off → native scrollbars.
+
+   scrollbar-width (the STANDARD property) is the load-bearing rule, not the -webkit pseudo:
+   once a page sets scrollbar-width/scrollbar-color on an element (Mastodon does this globally
+   for thin themed scrollbars), Chromium switches that element to standard scrollbar rendering
+   and ignores ::-webkit-scrollbar entirely — so the old webkit-only rule silently stopped
+   working. We override the standard property to win regardless of what the app sets, and keep
+   the webkit rule as a fallback for any element the app left on legacy scrollbars. */
+{{hideScrollbars}}

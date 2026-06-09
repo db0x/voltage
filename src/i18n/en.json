@@ -13,6 +13,7 @@
   "widgetConfigTitle": "Widget configuration",
   "widgetConfigRadius": "Corner radius",
   "widgetConfigResizable": "Resizable",
+  "widgetConfigHideScrollbars": "Hide scrollbars",
   "widgetConfigShadowSection": "Shadow",
   "widgetConfigShadow": "Show shadow",
   "widgetConfigShadowWidth": "Width",
