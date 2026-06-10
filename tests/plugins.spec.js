@@ -11,13 +11,13 @@ const WEBAPPS_DIR = path.join(__dirname, '..', 'webapps')
 
 // Setup:    Create dialog open; plugins are discovered from the real webapps/plugins tree.
 // Action:   Open the plugin dropdown via its trigger button.
-// Expected: The dropdown lists the shipped plugins (onedrive, strato-webmail) with their
+// Expected: The dropdown lists the shipped plugins (ms-office, strato-webmail) with their
 //           icon + name, proving discovery reaches nested plugin files and renders them.
 test('create dialog: shipped plugins are offered in the dropdown', async ({ managerPage }) => {
   await managerPage.click('.card-add')
   await managerPage.click('#create-plugin-trigger')
   const items = managerPage.locator('.app-select-list .app-select-item')
-  await expect(items.filter({ hasText: 'onedrive' })).toHaveCount(1)
+  await expect(items.filter({ hasText: 'ms-office' })).toHaveCount(1)
   await expect(items.filter({ hasText: 'strato-webmail' })).toHaveCount(1)
   // Each item carries an icon image.
   await expect(items.first().locator('img')).toBeVisible()
@@ -28,9 +28,9 @@ test('create dialog: shipped plugins are offered in the dropdown', async ({ mana
   await managerPage.keyboard.press('Escape')
 })
 
-// Setup:    Create dialog open; the configurable widget plugin and the non-configurable onedrive
+// Setup:    Create dialog open; the configurable widget plugin and the non-configurable ms-office
 //           plugin are both offered.
-// Action:   Add the widget plugin to the chip list, then add onedrive.
+// Action:   Add the widget plugin to the chip list, then add ms-office.
 // Expected: Only the widget chip carries a configure button (before its remove button), proving
 //           the configure affordance appears solely for plugins that declare `configurable`.
 test('create dialog: only configurable plugins get a configure button on their chip', async ({ managerPage }) => {
@@ -39,12 +39,12 @@ test('create dialog: only configurable plugins get a configure button on their c
   await managerPage.click('#create-plugin-trigger')
   await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
   await managerPage.click('#create-plugin-trigger')
-  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'onedrive' }).click()
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'ms-office' }).click()
 
-  const widgetChip   = managerPage.locator('#create-plugin-list .domain-item', { hasText: 'widget' })
-  const onedriveChip  = managerPage.locator('#create-plugin-list .domain-item', { hasText: 'onedrive' })
+  const widgetChip    = managerPage.locator('#create-plugin-list .domain-item', { hasText: 'widget' })
+  const msOfficeChip  = managerPage.locator('#create-plugin-list .domain-item', { hasText: 'ms-office' })
   await expect(widgetChip.locator('.domain-configure-btn')).toHaveCount(1)
-  await expect(onedriveChip.locator('.domain-configure-btn')).toHaveCount(0)
+  await expect(msOfficeChip.locator('.domain-configure-btn')).toHaveCount(0)
 
   // Configure button must precede the remove button within the chip.
   const buttons = await widgetChip.locator('button').evaluateAll(
@@ -259,7 +259,7 @@ test('edit dialog: a selected plugin persists to the private config', async ({ m
   await card.locator('[data-action="edit"]').click()
 
   await managerPage.click('#edit-plugin-trigger')
-  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'onedrive' }).click()
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'ms-office' }).click()
   // The chip appears in the list and the form is now dirty.
   await expect(managerPage.locator('#edit-plugin-list .domain-item')).toHaveCount(1)
   await expect(managerPage.locator('#edit-save')).toBeEnabled()
@@ -268,7 +268,7 @@ test('edit dialog: a selected plugin persists to the private config', async ({ m
   const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
   await expect.poll(() => {
     try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).plugins ?? [] } catch { return [] }
-  }).toContain('plugins/onedrive/onedrive.js')
+  }).toContain('plugins/ms-office/ms-office.js')
 })
 
 // Setup:    Edit dialog open for the private test-user-app, no field changed yet.
