@@ -890,6 +890,17 @@ body.dark .toolbar-btn.danger:not(:disabled):hover img {
   border-color: #3584e4;
 }
 
+/* When a <select> and a text input share a row in a plugin config dialog (e.g. the robot plugin's
+   target + identifier), they must line up exactly. A native select and a text input compute their
+   intrinsic height differently (line-height is honoured inconsistently between the two), so pin
+   both to the same explicit height + border-box box model — that is the only way to get a
+   pixel-identical height. Scoped to plugin dialogs so create/edit are untouched. */
+.plugin-config-overlay .dialog-field select,
+.plugin-config-overlay .dialog-field input {
+  box-sizing: border-box;
+  height: 32px;
+}
+
 .dialog-field input[type="number"]::-webkit-inner-spin-button,
 .dialog-field input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;

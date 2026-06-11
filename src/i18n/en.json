@@ -20,6 +20,12 @@
   "widgetConfigBackground": "Background",
   "widgetConfigTintBackground": "Tint background",
   "widgetConfigTintColor": "Colour",
+  "robotConfigTitle": "Auto-click configuration",
+  "robotConfigTarget": "Element type",
+  "robotConfigTargetButton": "Button",
+  "robotConfigTargetLink": "Link",
+  "robotConfigAriaLabel": "Element aria-label",
+  "robotConfigAriaLabelHint": "Substring of the aria-label attribute used to identify the element (case-insensitive).",
   "pluginConfigApply": "Apply",
   "pluginConfigCancel": "Cancel",
 

@@ -285,3 +285,38 @@ test('edit dialog: adding a plugin marks the form dirty', async ({ managerPage }
   await managerPage.locator('.app-select-list .app-select-item', { hasText: 'strato-webmail' }).click()
   await expect(managerPage.locator('#edit-save')).toBeEnabled()
 })
+
+// Setup:    Edit dialog for test-user-app with the robot plugin (a <select> target + a text input)
+//           added and its config dialog opened. The robot plugin is the only shipped plugin whose
+//           config uses a dropdown, so this is what guards the host's select binding.
+// Action:   Change the target dropdown (button → link) and type an aria-label, then Apply + Save.
+// Expected: The dropdown seeds from its default ("button"), and both the select value and the text
+//           input round-trip into pluginConfig — proving select[data-config-key] binds (value +
+//           onchange) exactly like the text input next to it.
+test('edit dialog: the robot target dropdown + identifier persist per app under pluginConfig', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'robot' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'robot' })
+    .locator('.domain-configure-btn').click()
+
+  // The dropdown seeds from data-config-default ("button") when the app has no stored value yet.
+  const target = managerPage.locator('#robot-config-target')
+  await expect(target).toHaveValue('button')
+
+  await target.selectOption('link')
+  await managerPage.fill('#robot-config-aria-label', 'Anmelden')
+
+  // Apply commits the change (and marks the edit form dirty); only then does Save persist it.
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await expect(managerPage.locator('#edit-save')).toBeEnabled()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/robot/robot.js': { target: 'link', ariaLabel: 'Anmelden' } })
+})

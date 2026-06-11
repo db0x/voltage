@@ -9,6 +9,7 @@ import { applyTemplate } from './template.js'
 // Controls bind declaratively so the host stays plugin-agnostic and no plugin JS runs in the
 // renderer (which has no file access):
 //   input[data-config-key]                — an input whose value is config[key]
+//   select[data-config-key]               — a dropdown whose selected value is config[key]
 //   .dialog-field-toggle[data-config-key] — a toggle button whose .active state is config[key]
 //   data-config-default                   — seeds the control when unset ("true" = toggle on)
 //   [data-config-value]                   — a live mirror of a key's value, suffixed by data-unit
@@ -53,18 +54,20 @@ export function initPluginConfig({ i18n, icons, plugins }) {
   function bindControls(overlay, access) {
     const cfg = { ...access.get() }
 
-    // Value inputs (range/number/text/color): config[key] <-> input.value.
-    for (const input of overlay.querySelectorAll('input[data-config-key]')) {
-      const key       = input.dataset.configKey
-      const hasNumber = input.type === 'range' || input.type === 'number'
-      const fallback  = 'configDefault' in input.dataset
-        ? (hasNumber ? Number(input.dataset.configDefault) : input.dataset.configDefault)
+    // Value controls (input range/number/text/color, or a select dropdown): config[key] <-> value.
+    // A <select> is treated like a text input (string value); only range/number coerce to Number.
+    // Both oninput and onchange are bound so selects (which fire change) round-trip like inputs.
+    for (const el of overlay.querySelectorAll('input[data-config-key], select[data-config-key]')) {
+      const key       = el.dataset.configKey
+      const hasNumber = el.type === 'range' || el.type === 'number'
+      const fallback  = 'configDefault' in el.dataset
+        ? (hasNumber ? Number(el.dataset.configDefault) : el.dataset.configDefault)
         : ''
-      input.value = cfg[key] ?? fallback
-      reflectValue(overlay, key, input.value)
-      input.oninput = () => {
-        cfg[key] = hasNumber ? Number(input.value) : input.value
-        reflectValue(overlay, key, input.value)
+      el.value = cfg[key] ?? fallback
+      reflectValue(overlay, key, el.value)
+      el.oninput = el.onchange = () => {
+        cfg[key] = hasNumber ? Number(el.value) : el.value
+        reflectValue(overlay, key, el.value)
       }
     }
 

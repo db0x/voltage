@@ -1,0 +1,42 @@
+<!-- Config dialog shipped by the robot plugin (part of the plugin). The manager's plugin-config
+     host (src/manager/plugin-config.js) renders this into the manager DOM and owns the generic
+     open/close + Apply/Cancel wiring; the markup reuses the manager's .dialog-* classes so it
+     matches every other dialog. {{pluginIcon}} is the plugin's icon (a var); {{robot*}} are i18n
+     keys.
+
+     Both controls bind generically: the host reads/writes config[data-config-key] and seeds each
+     field from data-config-default when the app has no stored value. The two fields share one
+     .dialog-field-row so they sit side by side, each with its label above it. -->
+<div class="dialog-overlay plugin-config-overlay hidden">
+  <div class="dialog">
+    <div class="dialog-header">
+      <img src="{{pluginIcon}}" alt="">
+      <span class="dialog-title">{{robotConfigTitle}}</span>
+      <button class="dialog-close" type="button">✕</button>
+    </div>
+    <div class="dialog-fields">
+      <!-- 1:3 split — the target dropdown is short (button/link), the identifier needs the room. -->
+      <div class="dialog-field-row" style="grid-template-columns: 1fr 3fr;">
+        <div class="dialog-field">
+          <label for="robot-config-target">{{robotConfigTarget}}</label>
+          <select id="robot-config-target" data-config-key="target" data-config-default="button">
+            <option value="button">{{robotConfigTargetButton}}</option>
+            <option value="link">{{robotConfigTargetLink}}</option>
+          </select>
+        </div>
+        <div class="dialog-field">
+          <label for="robot-config-aria-label">{{robotConfigAriaLabel}}</label>
+          <input type="text" id="robot-config-aria-label" autocomplete="off"
+                 data-config-key="ariaLabel" data-config-default="" placeholder="">
+        </div>
+      </div>
+      <span class="field-hint">{{robotConfigAriaLabelHint}}</span>
+    </div>
+    <!-- Apply commits the edit to the app's config; Cancel/✕/backdrop/Esc discard. The host wires
+         these by class (.plugin-config-apply / .plugin-config-cancel). -->
+    <div class="confirm-actions">
+      <button class="btn-cancel plugin-config-cancel" type="button">{{pluginConfigCancel}}</button>
+      <button class="btn-save plugin-config-apply" type="button">{{pluginConfigApply}}</button>
+    </div>
+  </div>
+</div>

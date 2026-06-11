@@ -20,6 +20,12 @@
   "widgetConfigBackground": "Hintergrund",
   "widgetConfigTintBackground": "Hintergrund einfärben",
   "widgetConfigTintColor": "Farbe",
+  "robotConfigTitle": "Auto-Klick-Konfiguration",
+  "robotConfigTarget": "Element-Typ",
+  "robotConfigTargetButton": "Button",
+  "robotConfigTargetLink": "Link",
+  "robotConfigAriaLabel": "aria-label des Elements",
+  "robotConfigAriaLabelHint": "Teiltext des aria-label-Attributs, über den das Element erkannt wird (Groß-/Kleinschreibung egal).",
   "pluginConfigApply": "Übernehmen",
   "pluginConfigCancel": "Abbrechen",
 
