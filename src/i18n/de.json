@@ -14,6 +14,8 @@
   "widgetConfigRadius": "Eckenradius",
   "widgetConfigResizable": "Größe veränderbar",
   "widgetConfigHideScrollbars": "Scrollbalken ausblenden",
+  "widgetConfigSuppressTitlebar": "App-Titelleiste unterdrücken",
+  "widgetConfigSuppressTitlebarHint": "Verhindert, dass Apps wie Teams eine eigene Titelleiste/Drag-Zone oben einblenden (zum Verschieben das Kontextmenü nutzen). Kann das Layout mancher Apps beeinflussen.",
   "widgetConfigShadowSection": "Schatten",
   "widgetConfigShadow": "Schatten anzeigen",
   "widgetConfigShadowWidth": "Breite",

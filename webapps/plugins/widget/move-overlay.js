@@ -27,9 +27,11 @@
 
   const ov = document.createElement('div')
   ov.id = ID
+  // -webkit-app-region:drag is !important so it survives the widget's global no-drag rule (injected
+  // by the suppressAppTitlebar option); an inline !important beats an author-stylesheet !important.
   ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
     'align-items:center;justify-content:center;background:rgba(0,0,0,0.45);' +
-    "-webkit-app-region:drag;font-family:'Ubuntu',system-ui,sans-serif"
+    "-webkit-app-region:drag!important;font-family:'Ubuntu',system-ui,sans-serif"
 
   // Visual hint panel — also draggable (inherits from the overlay).
   const card = document.createElement('div')
@@ -56,7 +58,7 @@
   // The only no-drag island, so the button stays clickable instead of starting a window move.
   const btn = document.createElement('button')
   btn.textContent = doneText || ''
-  btn.style.cssText = '-webkit-app-region:no-drag;cursor:pointer;border:none;border-radius:8px;' +
+  btn.style.cssText = '-webkit-app-region:no-drag!important;cursor:pointer;border:none;border-radius:8px;' +
     'padding:7px 18px;font:inherit;font-size:13px;font-weight:500;background:#1a73e8;color:#fff'
 
   card.appendChild(hint)

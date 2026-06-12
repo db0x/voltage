@@ -40,6 +40,13 @@
         <span class="toggle-switch"></span>
         <span>{{widgetConfigTintBackground}}<span class="field-help" data-tooltip="{{widgetConfigTintBackgroundHint}}">?</span></span>
       </button>
+      <!-- OFF by default (see widget.js suppressTitlebar): it makes the app believe it runs in a
+           normal browser tab so it won't draw its own titlebar/drag-zone. Opt-in like the tint
+           because it changes how the page sees its environment. -->
+      <button type="button" class="dialog-field-toggle" data-config-key="suppressAppTitlebar" data-config-default="false">
+        <span class="toggle-switch"></span>
+        <span>{{widgetConfigSuppressTitlebar}}<span class="field-help" data-tooltip="{{widgetConfigSuppressTitlebarHint}}">?</span></span>
+      </button>
       <fieldset class="plugin-config-fieldset">
         <legend class="plugin-config-fieldset-legend">
           <img data-icon="shadow" width="16" height="16" alt="">

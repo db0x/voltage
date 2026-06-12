@@ -14,6 +14,8 @@
   "widgetConfigRadius": "Corner radius",
   "widgetConfigResizable": "Resizable",
   "widgetConfigHideScrollbars": "Hide scrollbars",
+  "widgetConfigSuppressTitlebar": "Suppress app title bar",
+  "widgetConfigSuppressTitlebarHint": "Stops apps like Teams from drawing their own title bar / drag-zone at the top (use the context menu to move). May affect the layout of some apps.",
   "widgetConfigShadowSection": "Shadow",
   "widgetConfigShadow": "Show shadow",
   "widgetConfigShadowWidth": "Width",

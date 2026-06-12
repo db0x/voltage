@@ -41,9 +41,10 @@ const MAX_SHADOW_WIDTH = 8
 const DEFAULT_SHADOW_WIDTH = 8
 
 // Building-block files, read once. Placeholders are filled per-app at attach/host time.
-const TINT_CSS_TEMPLATE = fs.readFileSync(path.join(__dirname, 'tint.css'), 'utf8')
-const HOST_TEMPLATE     = fs.readFileSync(path.join(__dirname, 'host.html'), 'utf8')
-const MOVE_SCRIPT       = fs.readFileSync(path.join(__dirname, 'move-overlay.js'), 'utf8')
+const TINT_CSS_TEMPLATE  = fs.readFileSync(path.join(__dirname, 'tint.css'), 'utf8')
+const HOST_TEMPLATE      = fs.readFileSync(path.join(__dirname, 'host.html'), 'utf8')
+const MOVE_SCRIPT        = fs.readFileSync(path.join(__dirname, 'move-overlay.js'), 'utf8')
+const NO_TITLEBAR_SCRIPT = fs.readFileSync(path.join(__dirname, 'no-titlebar.js'), 'utf8')
 
 // move.svg as a data URL — handed to the page overlay so no file:// path is needed in the page.
 const MOVE_ICON = (() => {
@@ -136,6 +137,19 @@ const HIDE_SCROLLBARS_CSS =
   '* { scrollbar-width: none !important; }\n' +
   '*::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }'
 
+// Whether to stop the app drawing its own titlebar / top drag-zone (see no-titlebar.js). Default
+// OFF — like the tint, it changes how the page sees its environment, so it's opt-in: apps that draw
+// such a strip when frameless (e.g. Microsoft Teams) enable it; the widget's own Move mode replaces
+// the lost drag affordance.
+function suppressTitlebar(config) { return config?.suppressAppTitlebar === true }
+
+// Neutralises every -webkit-app-region:drag region the app declares (Teams marks a top strip as one,
+// which then moves the window and even maximises on double-click). The JS spoof (no-titlebar.js) only
+// stops apps that GATE the strip on a detected display-mode; this CSS disables the drag behaviour
+// regardless of how the region got there. The move overlay re-enables drag on itself with an inline
+// !important, which beats this stylesheet rule (inline !important wins over author !important).
+const NO_DRAG_CSS = '* { -webkit-app-region: no-drag !important; }'
+
 function shadowEnabled(config) { return config?.shadow !== false }
 function resolveShadowWidth(config) {
   const w = Number(config?.shadowWidth)
@@ -185,11 +199,20 @@ function enterMoveMode(wc, t) {
 function attachPlugin(win, api) {
   const wc = api.webContents
   const tintOn = tintEnabled(api.config)
+  const suppress = suppressTitlebar(api.config)
   const css = TINT_CSS_TEMPLATE
     .replace(/\{\{htmlBackground\}\}/g, tintOn ? `background: ${resolveTint(api.config)} !important;` : '')
     .replace(/\{\{appRootTransparency\}\}/g, tintOn ? 'background-color: transparent !important;' : '')
     .replace(/\{\{hideScrollbars\}\}/g, scrollbarsHidden(api.config) ? HIDE_SCROLLBARS_CSS : '')
+    + (suppress ? NO_DRAG_CSS : '')
   wc.on('did-finish-load', () => wc.insertCSS(css).catch(() => {}))
+
+  // Suppress the app's self-drawn titlebar/drag-zone. Two prongs: the NO_DRAG_CSS above disables the
+  // drag behaviour of any region the app marks, and this JS spoof (on dom-ready, earlier than
+  // did-finish-load, so it beats the app's UI render) tries to stop the app rendering the strip at
+  // all by hiding the standalone/WCO signals. The script guards against double-injection.
+  if (suppress)
+    wc.on('dom-ready', () => wc.executeJavaScript(NO_TITLEBAR_SCRIPT).catch(() => {}))
 
   win.setResizable(resolveResizable(api.config))
 

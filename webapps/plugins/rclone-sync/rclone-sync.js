@@ -139,7 +139,7 @@ function remoteMd5(remotePath) {
 // Polls until the remote hash matches (Drive lags a few seconds after upload) or times out.
 async function waitForDriveSync(remotePath, expectedHash, win, de) {
   const processingText = de ? 'Wird verarbeitet …' : 'Processing …'
-  if (!win.isDestroyed()) win.webContents.loadURL(buildLoadingPage(processingText))
+  if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildLoadingPage(processingText))
   const deadline = Date.now() + 20000
   while (Date.now() < deadline) {
     const remoteHash = await remoteMd5(remotePath)
@@ -178,7 +178,7 @@ function registerSyncBack(win, remotePath, localPath, de) {
   const syncText = de ? 'Wird synchronisiert …' : 'Syncing …'
   win.once('close', async (event) => {
     event.preventDefault()
-    if (!win.isDestroyed()) win.webContents.loadURL(buildLoadingPage(syncText))
+    if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildLoadingPage(syncText))
     await copyRemoteToLocal(remotePath, localPath)
     win.destroy()
   })
@@ -196,11 +196,11 @@ function registerSyncBackPrompt(win, remotePath, localPath, filename, de) {
       const done    = (v) => { ipcMain.removeListener('rclone-confirm', onIpc); resolve(v) }
       const onIpc   = (_, v) => done(v)
       ipcMain.once('rclone-confirm', onIpc)
-      if (!win.isDestroyed()) win.webContents.loadURL(buildSyncBackPage(filename, de))
+      if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildSyncBackPage(filename, de))
     })
     if (choice === 0) {
       const syncText = de ? 'Wird synchronisiert …' : 'Syncing …'
-      if (!win.isDestroyed()) win.webContents.loadURL(buildLoadingPage(syncText))
+      if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildLoadingPage(syncText))
       await copyRemoteToLocal(remotePath, localPath)
     }
     if (!win.isDestroyed()) win.destroy()
@@ -247,7 +247,7 @@ async function resolveEditUrl(filePath, win) {
       const onClose = ()     => done(1)
       ipcMain.once('rclone-confirm', onIpc)
       win.once('closed', onClose)
-      win.webContents.loadURL(buildConfirmPage(filename, existing, localStat, de))
+      win._wrapwebAppContents.loadURL(buildConfirmPage(filename, existing, localStat, de))
     })
     // "Open existing": don't push the local file up. The Drive copy may still get edited, so
     // on close ask whether to pull it back over the local file (instead of silently leaving the
@@ -257,7 +257,7 @@ async function resolveEditUrl(filePath, win) {
       if (!win.isDestroyed()) registerSyncBackPrompt(win, dest, filePath, filename, de)
       return `${pkg.rcloneEditUrlBase}/${existing.ID}/edit`
     }
-    if (!win.isDestroyed()) win.webContents.loadURL(buildLoadingPage())
+    if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildLoadingPage())
   }
 
   // --no-check-dest forces the transfer even when rclone thinks the remote is up to date.
@@ -302,12 +302,17 @@ function attachPlugin(win, { launchArg }) {
   // then navigate to the editor URL once the upload finishes (fall back to pkg.url on error).
   // (In the old base flow app-window.js pre-loaded the loading page; a plugin runs after the
   // initial loadURL, so it cancels it here.)
-  win.webContents.stop()
-  win.webContents.loadURL(buildLoadingPage())
+  //
+  // All the page swaps target win._wrapwebAppContents (set by window.js), NOT win.webContents: when
+  // the app also loads the widget plugin it runs in an inset view, where win.webContents is the
+  // empty host page — loading there would leave the app view untouched. The two are identical when
+  // there's no view mode, so this is a no-op for the usual rclone apps.
+  win._wrapwebAppContents.stop()
+  win._wrapwebAppContents.loadURL(buildLoadingPage())
 
   resolveEditUrl(filePath, win)
-    .then(editUrl => { if (!win.isDestroyed()) win.webContents.loadURL(editUrl ?? pkg.url) })
-    .catch(()     => { if (!win.isDestroyed()) win.webContents.loadURL(pkg.url) })
+    .then(editUrl => { if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(editUrl ?? pkg.url) })
+    .catch(()     => { if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(pkg.url) })
 }
 
 module.exports = { attachPlugin }

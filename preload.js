@@ -33,6 +33,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkSafeBrowsing: (url, ignoreExclude) => ipcRenderer.invoke('safe-browsing:check', url, ignoreExclude),
 });
 
+// Ctrl+right-click → our context menu, the intuitive companion to the Shift+F10 / Menu-key shortcut
+// (handled in window.js). Lives in the preload so it runs in the isolated world BEFORE the page's
+// scripts: this capture-phase listener is registered first, so on Ctrl it stopImmediatePropagation
+// blocks the app's own contextmenu handler across worlds (the app can't preventDefault or show its
+// menu) — but we do NOT preventDefault, so Chromium still raises the native context-menu request and
+// window.js shows our menu in the proper native context (full hit-test params: cut/copy/paste, link
+// routing, etc.). A plain right-click is left untouched, so the app's own menus keep working.
+//
+// Works wherever a `contextmenu` event fires (most apps). Some apps (Word's canvas editor) swallow
+// the right-click on the pointer level so no contextmenu event is ever generated — there nothing
+// reaches us and the keyboard shortcut is the way in.
+window.addEventListener('contextmenu', (e) => {
+  if (e.ctrlKey) e.stopImmediatePropagation()
+}, true);
+
 window.addEventListener('DOMContentLoaded', () => {
   const replaceText = (selector, text) => {
     const element = document.getElementById(selector)
