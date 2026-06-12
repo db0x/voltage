@@ -1,5 +1,5 @@
-// OneDrive plugin (main-process module). Hardcoded into the OneDrive AppImage for now;
-// a generic per-app plugin mechanism will replace the hardcoded wiring later.
+// ms-office plugin (main-process module). Selected per app (OneDrive/Word/Excel/PowerPoint/OneNote)
+// to route Office document opens to the app that owns the file type.
 //
 // Why a main-process module and not a page-injected script like the strato mail plugin:
 // OneDrive opens an Office document by calling window.open() from a *cross-origin* iframe.
@@ -24,14 +24,21 @@ const TAG = '[ms-office-plugin]'
 // anything still unrouted after this is a genuine OneDrive popup, so we show it.
 const REVEAL_AFTER_MS = 1500
 
-// Installs OneDrive's window-open routing on `win` (the BrowserWindow from createWindow()).
-// Receives the standard plugin api from window.js loadPlugins(); it uses:
+// Installs OneDrive's window-open routing. Receives the standard plugin api from window.js
+// loadPlugins(); it uses:
+//   webContents                — the APP's webContents (see below — NOT win.webContents)
 //   appOrigin, internalDomains — classify a popup as same-origin/internal (a doc launcher)
 //   routeUrl(url)              — launch the claiming AppImage, returns true on a routing hit
 //   claimsUrl(url)             — whether THIS app owns the doc (e.g. a OneNote note from OneNote)
 //   openExternal(url)          — hand a non-routed external URL to the system browser
-function attachPlugin(win, { appOrigin, internalDomains, routeUrl, claimsUrl, openExternal }) {
-  const wc = win.webContents
+//
+// MUST use api.webContents, not win.webContents: when the app also loads the widget plugin it runs
+// in an inset WebContentsView (view mode), so win.webContents is the transparent HOST window (the
+// shadow page) while the app — and thus its window.open() calls — live in api.webContents. Binding
+// the handlers to win.webContents there silently attached them to the wrong contents: no events
+// fired and every document opened as an unrouted child window.
+function attachPlugin(win, { webContents, appOrigin, internalDomains, routeUrl, claimsUrl, openExternal }) {
+  const wc = webContents
 
   // Replace the default handler for OneDrive. Same-origin / internal popups (the document
   // launcher) are allowed but created hidden so a routed document never flashes a window;

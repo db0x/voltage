@@ -513,7 +513,9 @@ function createWindow(pkg, opts = {}) {
     mainWindow.on('closed', () => ipcMain.removeListener('rendererReq', onRendererReq))
   }
 
-  appContents.on('context-menu', (_event, params) => {
+  // Builds + pops our context menu. `params` is Electron's hit-test info for a real right-click, or
+  // {} for the Ctrl+right-click path below (no hit-test → just cut/copy/paste + the plugin items).
+  const popAppContextMenu = (params) => {
     // Plugins may contribute extra context-menu entries via a returned contextMenuItems() —
     // e.g. the widget plugin's "Quit" item, since a frameless widget has no window close button.
     // An item may carry an `order` number to position itself across plugins (lower = higher up,
@@ -530,7 +532,11 @@ function createWindow(pkg, opts = {}) {
       browserIconPath: getDefaultBrowserIconPath(),
       extraItems: pluginItems,
     })
-  })
+  }
+
+  // Normal right-click. Apps that handle `contextmenu` themselves (Word, Teams) suppress this and
+  // show their own menu — the keyboard shortcut below is the page-independent way to reach ours.
+  appContents.on('context-menu', (_event, params) => popAppContextMenu(params))
 
   // F12 toggles the About panel; Shift+F12 toggles DevTools. before-input-event fires ahead
   // of the page, and preventDefault() swallows the key so the web app never sees F12.
@@ -550,6 +556,15 @@ function createWindow(pkg, opts = {}) {
       } else {
         toggleAboutWindow(mainWindow)
       }
+    }
+
+    // Shift+F10 / the ContextMenu key → pop our context menu. before-input-event sees the key before
+    // the page, so this works even in apps that swallow the right-click on the pointer level (Word's
+    // canvas-rendered editor never fires a `contextmenu` event at all). preventDefault keeps the app
+    // from also acting on the key. params is empty (no hit-test) → cut/copy/paste + plugin items.
+    if (input.type === 'keyDown' && (input.key === 'ContextMenu' || (input.key === 'F10' && input.shift))) {
+      event.preventDefault()
+      popAppContextMenu({})
     }
   })
 

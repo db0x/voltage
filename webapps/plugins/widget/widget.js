@@ -45,7 +45,6 @@ const TINT_CSS_TEMPLATE  = fs.readFileSync(path.join(__dirname, 'tint.css'), 'ut
 const HOST_TEMPLATE      = fs.readFileSync(path.join(__dirname, 'host.html'), 'utf8')
 const MOVE_SCRIPT        = fs.readFileSync(path.join(__dirname, 'move-overlay.js'), 'utf8')
 const NO_TITLEBAR_SCRIPT = fs.readFileSync(path.join(__dirname, 'no-titlebar.js'), 'utf8')
-const FORCE_MENU_SCRIPT  = fs.readFileSync(path.join(__dirname, 'force-menu.js'), 'utf8')
 
 // move.svg as a data URL — handed to the page overlay so no file:// path is needed in the page.
 const MOVE_ICON = (() => {
@@ -207,11 +206,6 @@ function attachPlugin(win, api) {
     .replace(/\{\{hideScrollbars\}\}/g, scrollbarsHidden(api.config) ? HIDE_SCROLLBARS_CSS : '')
     + (suppress ? NO_DRAG_CSS : '')
   wc.on('did-finish-load', () => wc.insertCSS(css).catch(() => {}))
-
-  // Always restore Ctrl+right-click access to our context menu: apps that suppress `contextmenu`
-  // (Teams, Office) would otherwise leave the frameless widget with no way to reach Move/Quit. On
-  // dom-ready so the capture listener is registered before the app attaches its own handlers.
-  wc.on('dom-ready', () => wc.executeJavaScript(FORCE_MENU_SCRIPT).catch(() => {}))
 
   // Suppress the app's self-drawn titlebar/drag-zone. Two prongs: the NO_DRAG_CSS above disables the
   // drag behaviour of any region the app marks, and this JS spoof (on dom-ready, earlier than

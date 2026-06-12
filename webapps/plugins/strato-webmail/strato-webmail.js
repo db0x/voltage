@@ -22,19 +22,22 @@ const CLICK_COMPOSE = `(function () {
   }, 400);
 })();`
 
-function attachPlugin(win, { launchArg, mailto }) {
+// webContents is the APP's webContents (api.webContents), NOT win.webContents: if the app also
+// loads the widget plugin it runs in an inset view, where win.webContents is the empty host page —
+// injecting/typing there would silently do nothing.
+function attachPlugin(win, { webContents, launchArg, mailto }) {
   // Opens compose and fills in the mailto: fields. The button-click only fires for a mailto:
   // launch, so a normal app start never pops a compose window.
   const compose = (arg) => {
     if (!arg || !arg.startsWith('mailto:')) return
     const fields = mailto.parseMailtoFields(arg)
-    win.webContents.executeJavaScript(CLICK_COMPOSE).catch(() => {})
-    mailto.typeMailtoFields(win, fields)
+    webContents.executeJavaScript(CLICK_COMPOSE).catch(() => {})
+    mailto.typeMailtoFields(webContents, fields)
   }
 
   // Initial launch: wait for the first load before clicking the (not-yet-rendered) button.
   if (launchArg && launchArg.startsWith('mailto:')) {
-    win.webContents.once('did-finish-load', () => compose(launchArg))
+    webContents.once('did-finish-load', () => compose(launchArg))
   }
 
   console.log(TAG, 'attached to Strato Mail window')

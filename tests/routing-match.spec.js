@@ -113,7 +113,10 @@ test.describe('keyMatches — negative clauses (OneNote routing)', () => {
   // The real-world shapes observed: Word carries file=….docx; OneNote carries an extension-less name.
   const wordUrl = '/sites/X/_layouts/15/Doc.aspx?sourcedoc=%7B1%7D&file=Report.docx&action=default'
   const noteUrl = '/sites/X/_layouts/15/Doc.aspx?sourcedoc=%7B2%7D&file=Project%20Documentation&action=edit&wdorigin=Sharepoint'
-  const KEY     = '*.sharepoint.com/*Doc.aspx*!*.docx*!*.xlsx*!*.pptx*'
+  // A Word doc opened via the :w:/ viewer carries NO extension in the URL — only a GUID sourcedoc —
+  // so the *.docx negation can't catch it; the key must also exclude the office scheme tokens.
+  const wordViewerUrl = '/:w:/r/personal/u/_layouts/15/Doc.aspx?sourcedoc=%7B3%7D&action=default'
+  const KEY     = '*.sharepoint.com/*Doc.aspx*!*.docx*!*.xlsx*!*.pptx*!*/:w:/*!*/:x:/*!*/:p:/*'
 
   // Setup:    the OneNote key (Doc.aspx minus the three Office extensions).
   // Action:   match an extension-less Doc.aspx link and an Office one.
@@ -138,6 +141,22 @@ test.describe('keyMatches — negative clauses (OneNote routing)', () => {
     } }
     expect(findRoute(table, host, wordUrl)?.entry.name).toBe('Word')
     expect(findRoute(table, host, noteUrl)?.entry.name).toBe('OneNote')
+  })
+
+  // Setup:    a Word doc opened via the :w:/ viewer — GUID sourcedoc, no extension in the URL — in a
+  //           table where the OneNote key is LONGER than Word's (so it is tried first). This is the
+  //           bug: without the scheme-token negatives, OneNote's *Doc.aspx* swallowed such links and,
+  //           since appClaimsUrl picks the global longest-key winner, kept them in OneNote.
+  // Action:   match the OneNote key directly and resolve the URL across both apps.
+  // Expected: the OneNote key excludes it (scheme-token negative) and it resolves to Word.
+  test('a :w:/ viewer Word link (no extension) is excluded from OneNote and routes to Word', () => {
+    expect(keyMatches(KEY, host, wordViewerUrl)).toBe(false)
+    expect(keyMatches('*.sharepoint.com/:w:/*', host, wordViewerUrl)).toBe(true)
+    const table = { base: {}, routing: {
+      '*.sharepoint.com/:w:/*': { path: '/d/wrapweb-word',    name: 'Word' },
+      [KEY]:                    { path: '/d/wrapweb-onenote', name: 'OneNote' },
+    } }
+    expect(findRoute(table, host, wordViewerUrl)?.entry.name).toBe('Word')
   })
 
   // Setup:    OneNote opens one of its own notes from inside the OneNote app — the table only

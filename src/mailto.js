@@ -21,29 +21,31 @@ function parseMailtoFields(raw) {
 // then simulates keyboard input to fill in the recipient and subject.
 // Native sendInputEvent is used because executeJavaScript cannot trigger
 // the web app's own keydown handlers reliably for token-input widgets.
-function typeMailtoFields(win, fields) {
+// `wc` is the APP's webContents (the inset view's in widget/view mode, not the host window's) —
+// callers pass api.webContents so the typing lands in the actual app, not an empty host page.
+function typeMailtoFields(wc, fields) {
   if (!fields || (!fields.to && !fields.subject)) return
   let attempts = 0
   function poll() {
-    if (++attempts > 40 || win.isDestroyed()) return
-    win.webContents.executeJavaScript('document.activeElement.className')
+    if (++attempts > 40 || wc.isDestroyed()) return
+    wc.executeJavaScript('document.activeElement.className')
       .then(async cls => {
         if (typeof cls === 'string' && cls.includes('tt-input')) {
           if (fields.to) {
             for (const char of fields.to)
-              win.webContents.sendInputEvent({ type: 'char', keyCode: char })
-            win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
-            win.webContents.sendInputEvent({ type: 'keyUp',   keyCode: 'Return' })
+              wc.sendInputEvent({ type: 'char', keyCode: char })
+            wc.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+            wc.sendInputEvent({ type: 'keyUp',   keyCode: 'Return' })
             await new Promise(r => setTimeout(r, 300))
           }
           if (fields.subject) {
-            const ok = await win.webContents.executeJavaScript(
+            const ok = await wc.executeJavaScript(
               `var s=document.querySelector('input[name="subject"]');s?(s.focus(),true):false`
             )
             if (ok) {
               await new Promise(r => setTimeout(r, 100))
               for (const char of fields.subject)
-                win.webContents.sendInputEvent({ type: 'char', keyCode: char })
+                wc.sendInputEvent({ type: 'char', keyCode: char })
             }
           }
         } else {
