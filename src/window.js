@@ -253,6 +253,17 @@ function appIconDataUrl(pkg) {
   return null
 }
 
+// A mono SVG glyph as a { light, dark } pair of data URLs for built-in menu items (e.g. fullscreen).
+// The overlay picks the variant matching its theme; the glyph colour #444444 is swapped to a light
+// tone for the dark-menu variant. Same scheme the plugin glyphs use.
+function themedSvgIcon(absPath) {
+  let svg
+  try { svg = fs.readFileSync(absPath, 'utf8') } catch { return null }
+  const url = (colour) => `data:image/svg+xml;base64,${Buffer.from(svg.replace(/#444444/gi, colour)).toString('base64')}`
+  return { light: url('#444444'), dark: url('#f0f0f0') }
+}
+const FULLSCREEN_ICON = themedSvgIcon(path.join(__dirname, '..', 'webapps', 'plugins', 'widget', 'fullscreen.svg'))
+
 // ── Custom Ctrl+right-click context menu ────────────────────────────────────────────────────────
 // The single, consistent way to reach our menu in every app: the preload renders an in-page layer
 // on Ctrl+right-click and asks main for its items / runs the chosen action.
@@ -330,9 +341,16 @@ ipcMain.handle('wrapweb:menu-items', (event, { linkURL, imageURL } = {}) => {
     }
   }
 
-  // "About {name}" — a core entry (every app has the About panel; F12 toggles it). Built here, not
-  // in a plugin, and given an order so it sorts in among the plugin items just above the widget's
-  // "Quit" (order 1000). Icon = the app's own icon; click = the same toggle as F12.
+  // Core entries (built here, not in a plugin), positioned among the plugin items via `order`:
+  //   Fullscreen (F11) sits between the zoom plugin's "Zoom" (10) and "About" (990).
+  //   "About {name}" (F12) sits just above the widget's "Quit" (1000).
+  const fullscreenItem = {
+    label: i18n.fullscreen,
+    order: 500,
+    shortcut: 'F11',
+    ...(FULLSCREEN_ICON && { icon: FULLSCREEN_ICON }),
+    click: () => ctx.mainWindow.setFullScreen(!ctx.mainWindow.isFullScreen()),
+  }
   const aboutItem = {
     label: (i18n.aboutApp || 'About {name}').replace(/\{name\}/g, ctx.displayName),
     order: 990,
@@ -343,6 +361,7 @@ ipcMain.handle('wrapweb:menu-items', (event, { linkURL, imageURL } = {}) => {
   const pluginList = [
     ...(ctx.mainWindow._wrapwebPlugins ?? [])
       .flatMap(inst => { try { return inst.contextMenuItems?.() ?? [] } catch { return [] } }),
+    fullscreenItem,
     aboutItem,
   ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   const pluginTree = serializePluginMenu(pluginList, actions)
@@ -697,8 +716,8 @@ function createWindow(pkg, opts = {}) {
     catch { try { appContents.send('wrapweb:menu-show', { items, x: params.x, y: params.y }) } catch {} }
   })
 
-  // F12 toggles the About panel; Shift+F12 toggles DevTools. before-input-event fires ahead
-  // of the page, and preventDefault() swallows the key so the web app never sees F12.
+  // F12 toggles the About panel; Shift+F12 toggles DevTools; F11 toggles fullscreen. before-input-event
+  // fires ahead of the page, and preventDefault() swallows the key so the web app never sees it.
   appContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') {
       event.preventDefault()
@@ -715,6 +734,9 @@ function createWindow(pkg, opts = {}) {
       } else {
         toggleAboutWindow(mainWindow)
       }
+    } else if (input.type === 'keyDown' && input.key === 'F11') {
+      event.preventDefault()
+      mainWindow.setFullScreen(!mainWindow.isFullScreen())
     }
   })
 

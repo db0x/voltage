@@ -70,6 +70,7 @@ npm start
 - **Zoom** — `Ctrl+Scroll` zooms the page, provided per app by the configurable **zoom** plugin (step size and the min/max zoom factor are set in its config dialog); a centred on-screen panel shows the current zoom percentage while zooming and auto-hides 1s after the last change (it keeps a constant size, so it always reads at 100% regardless of the page zoom). The plugin also adds a **Zoom** submenu to the context menu (zoom in / out / reset). Add it to an app in the create/edit dialog to enable zoom for that app
 - **Screen sharing** — WebRTC / PipeWire capture works out of the box
 - **DevTools** — `Shift+F12` to toggle
+- **Fullscreen** — `F11` toggles fullscreen (and back)
 - **Single-instance enforcement** — optionally prevent a second window from opening; the existing window is focused and raised instead
 - **System-wide protocol handlers** — register any app as the system's default `mailto:` handler; clicking a mail link anywhere on the desktop opens a compose window in the configured web app (Outlook, Gmail, …) — with no external mail client required
 - **Private builds** — configs matching `webapps/build.private.*.json` are gitignored

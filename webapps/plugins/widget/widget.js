@@ -203,15 +203,24 @@ function attachPlugin(win, api) {
   if (suppress)
     wc.on('dom-ready', () => wc.executeJavaScript(NO_TITLEBAR_SCRIPT).catch(() => {}))
 
+  // F10 toggles move mode (same overlay as the "Move" menu item — move-overlay.js toggles itself).
+  // before-input-event fires ahead of the page, and preventDefault keeps F10 from reaching the app.
+  wc.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F10') {
+      event.preventDefault()
+      enterMoveMode(wc, api.t())
+    }
+  })
+
   win.setResizable(resolveResizable(api.config))
 
   return {
     contextMenuItems: () => {
       const t = api.t()
-      // order: Move sits near the top of the plugin block; Quit is pinned last (high order) so any
-      // other plugin's items (e.g. the zoom plugin's "Zoom") land between them — see window.js.
+      // order: Zoom (10) sits above Move (20); Quit is pinned last (high order) so other plugin /
+      // core items (Fullscreen, About) land between them — see window.js.
       return [
-        { label: t.widgetMove, order: 10, ...(MOVE_MENU_ICON && { icon: MOVE_MENU_ICON }), click: () => enterMoveMode(wc, t) },
+        { label: t.widgetMove, order: 20, shortcut: 'F10', ...(MOVE_MENU_ICON && { icon: MOVE_MENU_ICON }), click: () => enterMoveMode(wc, t) },
         { label: t.widgetQuit.replace('{name}', api.displayName), order: 1000, click: () => api.quit() },
       ]
     },

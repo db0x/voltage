@@ -115,8 +115,8 @@ function attachPlugin(win, api) {
       const withIcon = (icon, item) => (icon ? { ...item, icon } : item)
       return [
         withIcon(MENU_ICONS.zoom, {
-          // order: between the widget's Move (10) and Quit (1000) so it reads Move → Zoom → Quit.
-          order: 20,
+          // order: Zoom (10) above the widget's Move (20) → reads Zoom → Move → … → Quit.
+          order: 10,
           label: t.zoomMenu,
           submenu: [
             withIcon(MENU_ICONS.plus,  { label: t.zoomMenuIn,  click: () => applyZoom(1)  }),

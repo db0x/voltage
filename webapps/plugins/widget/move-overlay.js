@@ -15,7 +15,8 @@
 // are not subject to style-src, so this works everywhere.
 (() => {
   const ID = 'wrapweb-widget-move'
-  if (document.getElementById(ID)) return                 // already in move mode
+  // Running again while active toggles move mode OFF (so the menu item and F10 both toggle).
+  if (window.__wrapwebWidgetMoveClose) { window.__wrapwebWidgetMoveClose(); return }
 
   const { icon, hintText, doneText, zoom } = window.__wrapwebWidgetMove || {}
   const dark = matchMedia('(prefers-color-scheme: dark)').matches
@@ -65,9 +66,11 @@
   card.appendChild(btn)
   ov.appendChild(card)
 
-  const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true) }
+  // Exposed so a second run (menu/F10) or Esc/button closes the SAME instance with proper cleanup.
+  const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); window.__wrapwebWidgetMoveClose = null }
   const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close() } }
   btn.addEventListener('click', close)
   document.addEventListener('keydown', onKey, true)
+  window.__wrapwebWidgetMoveClose = close
   document.body.appendChild(ov)
 })();
