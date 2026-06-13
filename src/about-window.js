@@ -20,13 +20,19 @@ function svgDataUrl(absPath) {
   try { return `data:image/svg+xml;base64,${fs.readFileSync(absPath).toString('base64')}` } catch { return null }
 }
 
-// The installed per-app icon (svg preferred, png fallback) — same lookup the rclone dialog uses.
+// The installed per-app icon. resolveIconToHicolor places it under scalable/apps as .svg OR .png
+// (a private app's icon copied from a system theme is often a .png there), so check both before the
+// 48x48 fallback — otherwise such icons (e.g. mastodon) come up empty.
 function appIconDataUrl() {
   const hicolor = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
-  const svg = path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.svg`)
-  const png = path.join(hicolor, '48x48',    'apps', `wrapweb-${pkg.profile}.png`)
-  if (fs.existsSync(svg)) return `data:image/svg+xml;base64,${fs.readFileSync(svg).toString('base64')}`
-  if (fs.existsSync(png)) return `data:image/png;base64,${fs.readFileSync(png).toString('base64')}`
+  const candidates = [
+    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.svg`), 'image/svg+xml'],
+    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
+    [path.join(hicolor, '48x48',    'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
+  ]
+  for (const [p, mime] of candidates) {
+    if (fs.existsSync(p)) return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`
+  }
   return null
 }
 

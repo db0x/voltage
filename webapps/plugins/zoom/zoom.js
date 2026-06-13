@@ -11,7 +11,7 @@
 // The plugin also contributes a "Zoom" context-menu submenu (zoom in / out / reset) via the
 // contextMenuItems() hook — the same path the widget plugin uses for its entries.
 
-const { ipcMain, nativeImage, nativeTheme } = require('electron')
+const { ipcMain } = require('electron')
 const fs   = require('node:fs')
 const path = require('node:path')
 
@@ -26,26 +26,22 @@ const ZOOM_ICON = (() => {
   catch { return null }
 })()
 
-// Context-menu icons. nativeImage can't rasterise SVG, so the menu needs PNGs — we ship the
-// rasterised zoom/plus/minus glyphs (the SVGs in zoom.svg + assets/{plus,minus}.svg). Each glyph is
-// mono and can't follow the menu's text colour on its own (setTemplateImage is macOS-only), so two
-// variants are shipped per glyph and picked per theme at menu-open time. createFromPath auto-loads
-// the @2x HiDPI sibling. null if an asset is missing/unreadable → that item just shows no icon.
-//   <name>.png      — dark glyph, for a light menu
-//   <name>-dark.png — light glyph, for a dark menu
-function loadMenuIcon(file) {
-  try {
-    const img = nativeImage.createFromPath(path.join(__dirname, file))
-    return img.isEmpty() ? null : img
-  } catch { return null }
+// Context-menu icons as { light, dark } pairs of SVG data URLs — the custom menu overlay renders SVG
+// directly (no nativeImage/PNG needed) and picks the variant matching its theme. The mono glyph is
+// #444444; we swap it to a light tone for the dark-menu variant. Sources: zoom.svg (plugin dir) +
+// assets/{plus,minus}.svg. null per glyph if its source is missing.
+//   light → dark glyph (for a light menu) · dark → light glyph (for a dark menu)
+function themedSvgIcon(absPath) {
+  let svg
+  try { svg = fs.readFileSync(absPath, 'utf8') } catch { return null }
+  const url = (colour) => `data:image/svg+xml;base64,${Buffer.from(svg.replace(/#444444/gi, colour)).toString('base64')}`
+  return { light: url('#444444'), dark: url('#f0f0f0') }
 }
-const MENU_ICONS_LIGHT = { zoom: loadMenuIcon('zoom.png'),      plus: loadMenuIcon('plus.png'),      minus: loadMenuIcon('minus.png') }
-const MENU_ICONS_DARK  = { zoom: loadMenuIcon('zoom-dark.png'), plus: loadMenuIcon('plus-dark.png'), minus: loadMenuIcon('minus-dark.png') }
-
-// The icon set matching the current menu theme. Read at menu-open time (contextMenuItems runs on
-// every open) so a theme switch is reflected without restart.
-function menuIcons() {
-  return nativeTheme.shouldUseDarkColors ? MENU_ICONS_DARK : MENU_ICONS_LIGHT
+const ASSETS = path.join(__dirname, '..', '..', '..', 'assets')
+const MENU_ICONS = {
+  zoom:  themedSvgIcon(path.join(__dirname, 'zoom.svg')),
+  plus:  themedSvgIcon(path.join(ASSETS, 'plus.svg')),
+  minus: themedSvgIcon(path.join(ASSETS, 'minus.svg')),
 }
 
 // Configurable knobs with their accepted ranges. The defaults reproduce the old hardcoded
@@ -112,20 +108,19 @@ function attachPlugin(win, api) {
   })
 
   // Contribute a "Zoom" submenu to the context menu (window.js collects this from every plugin).
-  // Re-run on each open so the icon set tracks the current light/dark theme.
+  // Icons are { light, dark } pairs; the overlay picks the variant for its theme.
   return {
     contextMenuItems: () => {
       const t = api.t()
-      const ic = menuIcons()
       const withIcon = (icon, item) => (icon ? { ...item, icon } : item)
       return [
-        withIcon(ic.zoom, {
-          // order: between the widget's Move (10) and Quit (1000) so it reads Move → Zoom → Quit.
-          order: 20,
+        withIcon(MENU_ICONS.zoom, {
+          // order: Zoom (10) above the widget's Move (20) → reads Zoom → Move → … → Quit.
+          order: 10,
           label: t.zoomMenu,
           submenu: [
-            withIcon(ic.plus,  { label: t.zoomMenuIn,  click: () => applyZoom(1)  }),
-            withIcon(ic.minus, { label: t.zoomMenuOut, click: () => applyZoom(-1) }),
+            withIcon(MENU_ICONS.plus,  { label: t.zoomMenuIn,  click: () => applyZoom(1)  }),
+            withIcon(MENU_ICONS.minus, { label: t.zoomMenuOut, click: () => applyZoom(-1) }),
             { type: 'separator' },
             { label: t.zoomMenuReset, click: () => applyZoom(0) },
           ],

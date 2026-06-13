@@ -127,7 +127,7 @@ module.exports = function setupAppWindow() {
     // A resolvable URL/file (draw.io) loads directly; otherwise pkg.url. A file destined for a
     // plugin (rclone-sync) leaves urlArg null and reaches the plugin via launchArg, which takes
     // over the initial load itself.
-    const win = createWindow(urlArg ? { ...pkg, url: urlArg } : pkg, { launchArg: rawArg ?? null })
+    createWindow(urlArg ? { ...pkg, url: urlArg } : pkg, { launchArg: rawArg ?? null })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(pkg)

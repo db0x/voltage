@@ -18,7 +18,6 @@
 
 const fs   = require('node:fs')
 const path = require('node:path')
-const { nativeImage, nativeTheme } = require('electron')
 
 // Corner-radius bounds. Must stay in sync with the slider in config.html (min/max/default).
 const DEFAULT_RADIUS = 14
@@ -46,33 +45,23 @@ const HOST_TEMPLATE      = fs.readFileSync(path.join(__dirname, 'host.html'), 'u
 const MOVE_SCRIPT        = fs.readFileSync(path.join(__dirname, 'move-overlay.js'), 'utf8')
 const NO_TITLEBAR_SCRIPT = fs.readFileSync(path.join(__dirname, 'no-titlebar.js'), 'utf8')
 
-// move.svg as a data URL — handed to the page overlay so no file:// path is needed in the page.
+// move.svg as a data URL — handed to the page move-overlay so no file:// path is needed in the page.
 const MOVE_ICON = (() => {
   try { return `data:image/svg+xml;base64,${fs.readFileSync(path.join(__dirname, 'move.svg')).toString('base64')}` }
   catch { return null }
 })()
 
-// move icon as a nativeImage for the "Move" context-menu item. nativeImage can't rasterise SVG, so
-// the menu needs PNGs — the SVG above is still used for the in-page overlay. The glyph is mono, so
-// it can't follow the menu's text colour on its own (setTemplateImage is macOS-only); instead we
-// ship two rasterised variants and pick per theme at menu-open time. Each base name auto-loads its
-// @2x HiDPI sibling via createFromPath. null if an asset is missing/unreadable.
-//   move.png      — dark glyph, for a light menu
-//   move-dark.png — light glyph, for a dark menu
-function loadMoveIcon(file) {
-  try {
-    const img = nativeImage.createFromPath(path.join(__dirname, file))
-    return img.isEmpty() ? null : img
-  } catch { return null }
+// "Move" context-menu icon as a { light, dark } pair of SVG data URLs — the custom menu overlay
+// renders SVG directly (no nativeImage/PNG needed) and picks the variant matching its theme. The
+// mono glyph is #444444; we swap it to a light tone for the dark-menu variant.
+//   light → dark glyph (for a light menu) · dark → light glyph (for a dark menu)
+function themedSvgIcon(absPath) {
+  let svg
+  try { svg = fs.readFileSync(absPath, 'utf8') } catch { return null }
+  const url = (colour) => `data:image/svg+xml;base64,${Buffer.from(svg.replace(/#444444/gi, colour)).toString('base64')}`
+  return { light: url('#444444'), dark: url('#f0f0f0') }
 }
-const MOVE_MENU_ICON_LIGHT = loadMoveIcon('move.png')
-const MOVE_MENU_ICON_DARK  = loadMoveIcon('move-dark.png')
-
-// The variant matching the current menu theme. Read at menu-open time (contextMenuItems runs on
-// every open) so a theme switch is reflected without restart.
-function moveMenuIcon() {
-  return nativeTheme.shouldUseDarkColors ? MOVE_MENU_ICON_DARK : MOVE_MENU_ICON_LIGHT
-}
+const MOVE_MENU_ICON = themedSvgIcon(path.join(__dirname, 'move.svg'))
 
 // Clamp the configured radius to the supported range; fall back to the default for missing/invalid.
 function resolveRadius(config) {
@@ -214,15 +203,24 @@ function attachPlugin(win, api) {
   if (suppress)
     wc.on('dom-ready', () => wc.executeJavaScript(NO_TITLEBAR_SCRIPT).catch(() => {}))
 
+  // F10 toggles move mode (same overlay as the "Move" menu item — move-overlay.js toggles itself).
+  // before-input-event fires ahead of the page, and preventDefault keeps F10 from reaching the app.
+  wc.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F10') {
+      event.preventDefault()
+      enterMoveMode(wc, api.t())
+    }
+  })
+
   win.setResizable(resolveResizable(api.config))
 
   return {
     contextMenuItems: () => {
       const t = api.t()
-      // order: Move sits near the top of the plugin block; Quit is pinned last (high order) so any
-      // other plugin's items (e.g. the zoom plugin's "Zoom") land between them — see window.js.
+      // order: Zoom (10) sits above Move (20); Quit is pinned last (high order) so other plugin /
+      // core items (Fullscreen, About) land between them — see window.js.
       return [
-        { label: t.widgetMove, order: 10, ...((icon => icon && { icon })(moveMenuIcon())), click: () => enterMoveMode(wc, t) },
+        { label: t.widgetMove, order: 20, shortcut: 'F10', ...(MOVE_MENU_ICON && { icon: MOVE_MENU_ICON }), click: () => enterMoveMode(wc, t) },
         { label: t.widgetQuit.replace('{name}', api.displayName), order: 1000, click: () => api.quit() },
       ]
     },
