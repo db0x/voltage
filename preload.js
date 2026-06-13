@@ -111,9 +111,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       row.appendChild(arrow)
     }
     if (!disabled) {
-      row.addEventListener('mouseenter', () => { row.style.background = p.hover; openSubmenu(hasSub ? item : null, row) })
+      row.addEventListener('mouseenter', () => { row.style.background = p.hover })
       row.addEventListener('mouseleave', () => { row.style.background = 'transparent' })
-      row.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); if (!hasSub) fire(item.id) })
+      // Submenu opens on CLICK (toggle), not on hover — hover-open popped the flyout instantly and
+      // overlapped the rest. Leaf rows activate on click.
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault(); e.stopPropagation()
+        if (hasSub) openSubmenu(item, row)
+        else fire(item.id)
+      })
     }
     return row
   }
@@ -134,16 +140,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     const fire = (id) => { try { ipcRenderer.send('wrapweb:menu-action', { id }) } finally { closeMenu() } }
 
-    let subBox = null
+    let subBox = null, subRow = null
     const openSubmenu = (item, parentRow) => {
-      if (subBox) { subBox.remove(); subBox = null }
-      if (!item) return
+      const reclick = subBox && subRow === parentRow   // clicking the open submenu's row toggles it shut
+      if (subBox) { subBox.remove(); subBox = null; subRow = null }
+      if (!item || reclick) return
       const sub = document.createElement('div')
       sub.style.cssText = boxStyle(p)
       for (const child of item.submenu) sub.appendChild(makeRow(child, p, fire, () => {}))
       root.appendChild(sub)
       scale(sub)
-      subBox = sub
+      subBox = sub; subRow = parentRow
       const pr = parentRow.getBoundingClientRect(); const sr = sub.getBoundingClientRect()
       let left = pr.right - 2
       if (left + sr.width > innerWidth - 4) left = Math.max(4, pr.left - sr.width + 2)
