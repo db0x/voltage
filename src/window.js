@@ -1,14 +1,16 @@
 const { BrowserWindow, WebContentsView, shell, ipcMain, dialog, app } = require('electron')
 const path   = require('node:path')
 const fs     = require('node:fs')
+const os     = require('node:os')
 const crypto = require('node:crypto')
 const https  = require('node:https')
 const { spawn, spawnSync } = require('node:child_process')
 const { createSession } = require('./session')
-const { showContextMenu } = require('./context-menu')
+const { aspellSuggestions } = require('./context-menu')
 const windowState = require('./window-state')
 const { findRoute, normalizeRouting } = require('./routing-match')
 const { toggleAboutWindow } = require('./about-window')
+const { t } = require('./i18n')
 
 const ROUTING_FILE = path.join(app.getPath('appData'), 'wrapweb', 'plugins', 'routing', 'routing.json')
 
@@ -227,6 +229,133 @@ function routeExternalUrl(url, currentProfile) {
   return true
 }
 
+// Reads a PNG icon path into a data URL for menu items. SVG isn't supported by this path.
+function iconToDataUrl(p) { try { return p ? `data:image/png;base64,${fs.readFileSync(p).toString('base64')}` : null } catch { return null } }
+
+// The app's own icon as a data URL. Prefers the installed per-app icon (what the About panel shows
+// too) — resolveIconToHicolor (scripts/lib.js) places it under scalable/apps as either .svg OR .png
+// (a private app's icon copied from a system theme is often a .png in that dir), so we check both
+// there. Falls back to the bundled assets/webapps/<icon> set for non-installed / standard apps.
+function appIconDataUrl(pkg) {
+  const hicolor = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
+  const candidates = [
+    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.svg`), 'image/svg+xml'],
+    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
+    [path.join(hicolor, '48x48',    'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
+  ]
+  if (pkg.icon) candidates.push(
+    [path.join(__dirname, '..', 'assets', 'webapps', pkg.icon + '.svg'), 'image/svg+xml'],
+    [path.join(__dirname, '..', 'assets', 'webapps', pkg.icon + '.png'), 'image/png'],
+  )
+  for (const [p, mime] of candidates) {
+    try { return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}` } catch {}
+  }
+  return null
+}
+
+// ── Custom Ctrl+right-click context menu ────────────────────────────────────────────────────────
+// The single, consistent way to reach our menu in every app: the preload renders an in-page layer
+// on Ctrl+right-click and asks main for its items / runs the chosen action.
+// Keyed by the app webContents id (the inset view's in widget/view mode). ONE pair of ipcMain
+// handlers serves all windows — ipcMain.handle allows only one handler per channel — so each window
+// registers its context here and the handlers resolve it via the sender.
+const appMenuRegistry = new Map()  // appContents.id → { appContents, mainWindow, profile, actions }
+
+// Flattens a plugin's contextMenuItems() (click fns + nativeImage icons + optional submenu) into a
+// render-safe tree, recording each leaf's click under a fresh id in `actions` (the renderer only
+// ever sends an id back). Separators pass through; submenus recurse.
+function serializePluginMenu(list, actions, seq = { n: 0 }) {
+  const out = []
+  for (const it of list) {
+    if (it.type === 'separator') { out.push({ type: 'separator' }); continue }
+    const id = 'p' + (seq.n++)
+    const entry = { id, label: it.label }
+    if (it.shortcut) entry.shortcut = it.shortcut
+    // icon may be: a plain data-URL string (used as-is), a { light, dark } pair of themed SVG glyphs
+    // (the overlay picks per its theme), or a legacy nativeImage (→ data URL).
+    if (typeof it.icon === 'string') entry.icon = it.icon
+    else if (it.icon && (it.icon.light || it.icon.dark)) entry.icon = { light: it.icon.light, dark: it.icon.dark }
+    else if (it.icon && typeof it.icon.toDataURL === 'function') {
+      try { const d = it.icon.toDataURL(); if (d && !d.endsWith('base64,')) entry.icon = d } catch {}
+    }
+    if (Array.isArray(it.submenu)) entry.submenu = serializePluginMenu(it.submenu, actions, seq)
+    else if (typeof it.click === 'function') actions[id] = it.click
+    out.push(entry)
+  }
+  return out
+}
+
+// Builds the FULL menu's items (Ctrl+right-click) and records this window's action map. Cut/copy/
+// paste act on the app's webContents; a link under the cursor adds Open-with/Open-in-browser; an
+// image adds Save-image-as; plugin entries come last.
+ipcMain.handle('wrapweb:menu-items', (event, { linkURL, imageURL } = {}) => {
+  const ctx = appMenuRegistry.get(event.sender.id)
+  if (!ctx) return { items: [] }
+  const i18n = t()
+  const ctrl = i18n.keyCtrl || 'Ctrl'
+  const wc = ctx.appContents
+  const actions = (ctx.actions = {})
+  const items = [
+    { id: 'cut',   label: i18n.cut,   shortcut: ctrl + '+X' },
+    { id: 'copy',  label: i18n.copy,  shortcut: ctrl + '+C' },
+    { id: 'paste', label: i18n.paste, shortcut: ctrl + '+V' },
+  ]
+  actions.cut = () => wc.cut(); actions.copy = () => wc.copy(); actions.paste = () => wc.paste()
+
+  if (linkURL) {
+    const linkItems = []
+    const r = resolveRoute(linkURL, ctx.profile)
+    if (r) {
+      const icon = iconToDataUrl(r.icon)
+      linkItems.push({ id: 'open-with', label: (i18n.openWithApp || 'Open with {name}').replace(/\{name\}/g, r.name), ...(icon && { icon }) })
+      actions['open-with'] = () => spawn(r.appImagePath, ['--no-sandbox', unwrapUrl(linkURL)], { detached: true, stdio: 'ignore' }).unref()
+    }
+    const bIcon = iconToDataUrl(getDefaultBrowserIconPath())
+    linkItems.push({ id: 'open-in-browser', label: i18n.openInBrowser, ...(bIcon && { icon: bIcon }) })
+    actions['open-in-browser'] = () => shell.openExternal(unwrapUrl(linkURL))
+    items.push({ type: 'separator' }, ...linkItems)
+  }
+
+  if (imageURL) {
+    items.push({ type: 'separator' }, { id: 'save-image', label: i18n.saveAs })
+    // Save the image: pick a path, intercept the download to that path, then trigger it. Mirrors the
+    // old native "Save Image As" — needs the app's customSession to catch the will-download.
+    actions['save-image'] = async () => {
+      let name = 'image.jpg'
+      try { const b = path.basename(new URL(imageURL).pathname); if (b) name = path.extname(b) ? b : b + '.jpg' } catch {}
+      const { canceled, filePath } = await dialog.showSaveDialog(ctx.mainWindow, { defaultPath: name })
+      if (canceled || !filePath) return
+      ctx.customSession.prependOnceListener('will-download', (_e, item) => item.setSavePath(filePath))
+      wc.downloadURL(imageURL)
+    }
+  }
+
+  // "About {name}" — a core entry (every app has the About panel; F12 toggles it). Built here, not
+  // in a plugin, and given an order so it sorts in among the plugin items just above the widget's
+  // "Quit" (order 1000). Icon = the app's own icon; click = the same toggle as F12.
+  const aboutItem = {
+    label: (i18n.aboutApp || 'About {name}').replace(/\{name\}/g, ctx.displayName),
+    order: 990,
+    shortcut: 'F12',
+    ...(ctx.appIcon && { icon: ctx.appIcon }),
+    click: () => toggleAboutWindow(ctx.mainWindow),
+  }
+  const pluginList = [
+    ...(ctx.mainWindow._wrapwebPlugins ?? [])
+      .flatMap(inst => { try { return inst.contextMenuItems?.() ?? [] } catch { return [] } }),
+    aboutItem,
+  ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const pluginTree = serializePluginMenu(pluginList, actions)
+  if (pluginTree.length) items.push({ type: 'separator' }, ...pluginTree)
+
+  return { items }
+})
+
+ipcMain.on('wrapweb:menu-action', (event, { id } = {}) => {
+  const ctx = appMenuRegistry.get(event.sender.id)
+  try { ctx?.actions?.[id]?.() } catch {}
+})
+
 // Loads and attaches the main-process plugins declared in pkg.plugins (paths relative to
 // webapps/, e.g. "plugins/onedrive/onedrive.js"). Plugin selection per app is configured in
 // the Manager. The code convention: a plugin module exports attachPlugin(win, api) — that
@@ -347,6 +476,12 @@ function createWindow(pkg, opts = {}) {
     preload: path.join(__dirname, '..', 'preload.js'),
     contextIsolation: true,
     nodeIntegration: false,
+    // Load the preload in EVERY frame, not just the top one. Apps like Word for the web run the
+    // actual editing surface in a cross-origin iframe (the Office/WOPI editor frame); without this
+    // our Ctrl+right-click listener never exists there, so the menu only worked on the top-frame
+    // pages (e.g. the document picker). The preload stays sandboxed (no Node) — it only needs DOM +
+    // ipcRenderer + contextBridge, which are available in sub-frames too.
+    nodeIntegrationInSubFrames: true,
     session: customSession,
     ...(pkg.crossOriginIsolation && { enableBlinkFeatures: 'SharedArrayBuffer' }),
     ...(pkg.fileHandler && { additionalArguments: ['--wrapweb-file-handler'] }),
@@ -407,6 +542,14 @@ function createWindow(pkg, opts = {}) {
   const webContentsId = appContents.id
   windowProfiles.set(webContentsId, pkg.profile)
   mainWindow.on('closed', () => windowProfiles.delete(webContentsId))
+
+  // Context for the custom context-menu's shared ipcMain handlers (see appMenuRegistry).
+  const displayName = pkg.displayName || (pkg.name || '').replace(/^wrapweb-/, '') || pkg.profile
+  appMenuRegistry.set(webContentsId, {
+    appContents, mainWindow, profile: pkg.profile, customSession, actions: {},
+    displayName, appIcon: appIconDataUrl(pkg),
+  })
+  mainWindow.on('closed', () => appMenuRegistry.delete(webContentsId))
 
   if (pkg.userAgent) appContents.setUserAgent(pkg.userAgent)
   appContents.loadURL(pkg.url)
@@ -513,30 +656,46 @@ function createWindow(pkg, opts = {}) {
     mainWindow.on('closed', () => ipcMain.removeListener('rendererReq', onRendererReq))
   }
 
-  // Builds + pops our context menu. `params` is Electron's hit-test info for a real right-click, or
-  // {} for the Ctrl+right-click path below (no hit-test → just cut/copy/paste + the plugin items).
-  const popAppContextMenu = (params) => {
-    // Plugins may contribute extra context-menu entries via a returned contextMenuItems() —
-    // e.g. the widget plugin's "Quit" item, since a frameless widget has no window close button.
-    // An item may carry an `order` number to position itself across plugins (lower = higher up,
-    // default 0); the sort is stable so same-order items keep their plugin/declaration order. The
-    // field is stripped before the template reaches Electron, which doesn't know it. This lets one
-    // plugin's item sit between another's (e.g. zoom's "Zoom" between the widget's Move and Quit).
-    const pluginItems = (mainWindow._wrapwebPlugins ?? [])
-      .flatMap(inst => { try { return inst.contextMenuItems?.() ?? [] } catch { return [] } })
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      .map(({ order, ...item }) => item)
-    showContextMenu(mainWindow, customSession, params, {
-      resolveRoute: (url) => { const r = resolveRoute(url, pkg.profile); return r ? { ...r, url: unwrapUrl(url) } : null },
-      openInBrowser: (url) => shell.openExternal(url),
-      browserIconPath: getDefaultBrowserIconPath(),
-      extraItems: pluginItems,
-    })
-  }
+  // Plain right-click → the SLIM menu, rendered with the SAME custom overlay as Ctrl+right-click
+  // (no native menu anywhere). Content: spelling suggestions + cut/copy/paste. The native
+  // `context-menu` event is used only as the DATA source (it's the only place the misspelled word +
+  // edit flags are exposed); we build the items here and push them to the originating frame to
+  // render. Apps that handle contextmenu themselves (suppress the event) still show their own menu.
+  appContents.on('context-menu', (event, params) => {
+    const ctx = appMenuRegistry.get(webContentsId)
+    if (!ctx) return
+    const i18n = t()
+    const actions = (ctx.actions = {})
+    const items = []
 
-  // Normal right-click. Apps that handle `contextmenu` themselves (Word, Teams) suppress this and
-  // show their own menu — the keyboard shortcut below is the page-independent way to reach ours.
-  appContents.on('context-menu', (_event, params) => popAppContextMenu(params))
+    if (params.misspelledWord) {
+      const sugg = (params.dictionarySuggestions && params.dictionarySuggestions.length)
+        ? params.dictionarySuggestions.slice(0, 6)
+        : aspellSuggestions(params.misspelledWord)
+      if (sugg.length) {
+        sugg.forEach((s, i) => {
+          const id = 'spell:' + i
+          items.push({ id, label: s })
+          actions[id] = () => appContents.replaceMisspelling(s)
+        })
+      } else {
+        items.push({ id: 'nospell', label: i18n.noSuggestions, enabled: false })
+      }
+      items.push({ type: 'separator' })
+    }
+
+    const ef = params.editFlags || {}
+    const ctrl = i18n.keyCtrl || 'Ctrl'
+    items.push({ id: 'cut',   label: i18n.cut,   shortcut: ctrl + '+X', enabled: !!ef.canCut })
+    items.push({ id: 'copy',  label: i18n.copy,  shortcut: ctrl + '+C', enabled: !!ef.canCopy })
+    items.push({ id: 'paste', label: i18n.paste, shortcut: ctrl + '+V', enabled: !!ef.canPaste })
+    actions.cut = () => appContents.cut(); actions.copy = () => appContents.copy(); actions.paste = () => appContents.paste()
+
+    // Render in the frame the click came from (params.x/y are that frame's coordinates), falling
+    // back to the top frame. The preload's wrapweb:menu-show handler pops the overlay.
+    try { (event.senderFrame || appContents).send('wrapweb:menu-show', { items, x: params.x, y: params.y }) }
+    catch { try { appContents.send('wrapweb:menu-show', { items, x: params.x, y: params.y }) } catch {} }
+  })
 
   // F12 toggles the About panel; Shift+F12 toggles DevTools. before-input-event fires ahead
   // of the page, and preventDefault() swallows the key so the web app never sees F12.
@@ -556,15 +715,6 @@ function createWindow(pkg, opts = {}) {
       } else {
         toggleAboutWindow(mainWindow)
       }
-    }
-
-    // Shift+F10 / the ContextMenu key → pop our context menu. before-input-event sees the key before
-    // the page, so this works even in apps that swallow the right-click on the pointer level (Word's
-    // canvas-rendered editor never fires a `contextmenu` event at all). preventDefault keeps the app
-    // from also acting on the key. params is empty (no hit-test) → cut/copy/paste + plugin items.
-    if (input.type === 'keyDown' && (input.key === 'ContextMenu' || (input.key === 'F10' && input.shift))) {
-      event.preventDefault()
-      popAppContextMenu({})
     }
   })
 
