@@ -149,7 +149,7 @@ function buildAboutHtml(info) {
           </div></div>
         ${pluginsField}
         <div class="wa-branding">
-          <a href="https://github.com/db0x/wrapweb" target="_blank" rel="noreferrer">
+          <a href="https://github.com/db0x/voltage" target="_blank" rel="noreferrer">
             ${githubIcon ? `<img src="${githubIcon}" alt="">` : ''}<span>${esc(t.builtWith)}</span></a>
           <a href="https://www.electronjs.org/" target="_blank" rel="noreferrer"><span>${esc(t.electron)}</span></a>
         </div>

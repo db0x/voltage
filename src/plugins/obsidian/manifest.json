@@ -5,6 +5,6 @@
   "minAppVersion": "1.12.7",
   "description": "Opens links in voltage AppImages based on the voltage routing configuration.",
   "author": "voltage",
-  "authorUrl": "https://github.com/db0x/wrapweb",
+  "authorUrl": "https://github.com/db0x/voltage",
   "isDesktopOnly": true
 }

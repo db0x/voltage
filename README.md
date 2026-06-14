@@ -5,10 +5,10 @@
 |___/\___/_/\__/\_,_/\_, /\__/ 🐧
                     /___/                       
 ```
-[![Platform: Linux](https://img.shields.io/badge/platform-linux-blue?logo=linux&logoColor=white)](https://github.com/db0x/wrapweb)
+[![Platform: Linux](https://img.shields.io/badge/platform-linux-blue?logo=linux&logoColor=white)](https://github.com/db0x/voltage)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/electron-42-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![UI & Integration Tests](https://github.com/db0x/wrapweb/actions/workflows/test.yml/badge.svg)](https://github.com/db0x/wrapweb/actions/workflows/test.yml)
+[![UI & Integration Tests](https://github.com/db0x/voltage/actions/workflows/test.yml/badge.svg)](https://github.com/db0x/voltage/actions/workflows/test.yml)
 
 ***Wrap any web app. Make it feel native.***
 
@@ -24,7 +24,7 @@ Built on [Electron](https://www.electronjs.org/). Each app gets an isolated brow
 The quickest way to get started is the install script:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/db0x/wrapweb/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/db0x/voltage/main/install.sh)
 ```
 
 > **curl not installed?** On Ubuntu 24.04 and newer, curl is no longer pre-installed.
@@ -51,7 +51,7 @@ The script removes the desktop entry and icon, then asks interactively whether t
 ### Manual setup
 
 ```bash
-git clone https://github.com/db0x/wrapweb.git
+git clone https://github.com/db0x/voltage.git
 cd voltage
 npm install
 npm start

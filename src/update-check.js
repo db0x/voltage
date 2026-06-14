@@ -1,7 +1,7 @@
 // Fetches the version from the main branch on every Manager start — no caching,
 // since the payload is a tiny JSON file and stale cache caused missed notifications
 // when the local version matched an outdated cached latestVersion.
-const REMOTE_URL = 'https://raw.githubusercontent.com/db0x/wrapweb/main/package.json'
+const REMOTE_URL = 'https://raw.githubusercontent.com/db0x/voltage/main/package.json'
 
 function semverLt(a, b) {
   const pa = a.split('.').map(Number)

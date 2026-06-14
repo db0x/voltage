@@ -40,7 +40,7 @@ export function initAboutDialog({ i18n, version, icons, templates }, { obsidianA
   // openExternal goes through main to enforce an allowlist — renderer cannot open arbitrary URLs.
   document.getElementById('about-github-link').addEventListener('click', e => {
     e.preventDefault()
-    window.managerAPI.openExternal('https://github.com/db0x/wrapweb')
+    window.managerAPI.openExternal('https://github.com/db0x/voltage')
   })
 
   function openAboutDialog() { overlay.classList.remove('hidden') }

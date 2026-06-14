@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="https://github.com/db0x/wrapweb.git"
+REPO="https://github.com/db0x/voltage.git"
 DEFAULT_DEST="$HOME/.local/share/voltage"
 DESKTOP_DIR="$HOME/.local/share/applications"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
@@ -255,7 +255,7 @@ uninstall() {
 
 # ── main ──────────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}voltage installer${RESET}"
-echo    "  https://github.com/db0x/wrapweb"
+echo    "  https://github.com/db0x/voltage"
 
 MODE=install
 DEST=""

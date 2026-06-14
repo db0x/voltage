@@ -10,7 +10,7 @@ export function initUpdateNotice({ i18n, tr, icons, templates }) {
 
   // openExternal goes through main to enforce an allowlist — renderer cannot open arbitrary URLs.
   document.getElementById('update-notice-github').addEventListener('click', () => {
-    window.managerAPI.openExternal('https://github.com/db0x/wrapweb')
+    window.managerAPI.openExternal('https://github.com/db0x/voltage')
   })
 
   function show(latestVersion) {
