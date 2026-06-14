@@ -553,6 +553,10 @@ function createWindow(pkg, opts = {}) {
     mainWindow.on('resize', layoutView)
     // The host page draws the shadow in the gutter behind the view.
     mainWindow.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(viewMode.hostHtml))
+    // Let overlays (e.g. the About panel) match the inset app view exactly — without this they fill
+    // the whole window including the transparent shadow gutter / rounded corners, so their backdrop
+    // spills into the "invisible" frame.
+    mainWindow._voltageViewInset = { margin: viewMode.margin, radius: viewMode.radius }
   } else {
     appContents = mainWindow.webContents
   }

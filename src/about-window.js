@@ -208,16 +208,22 @@ function toggleAboutWindow(win) {
   // can't honour this, the backdrop simply looks more solid — never worse than before.
   try { view.setBackgroundColor('#00000000') } catch {}
 
-  // Fill the whole content area, on top of the page.
-  const { width, height } = win.getContentBounds()
-  view.setBounds({ x: 0, y: 0, width, height })
+  // In view mode the app is an inset, rounded WebContentsView; the overlay must match that exact
+  // rect (and corner radius) so its backdrop stays inside the widget instead of bleeding into the
+  // transparent shadow gutter / rounded corners. Non-view apps fill the whole content area (m=0).
+  const inset = win._voltageViewInset || { margin: 0, radius: 0 }
+  if (inset.radius && typeof view.setBorderRadius === 'function') view.setBorderRadius(inset.radius)
+  const layout = (b) => {
+    const m = inset.margin
+    view.setBounds({ x: m, y: m, width: Math.max(0, b.width - 2 * m), height: Math.max(0, b.height - 2 * m) })
+  }
+  layout(win.getContentBounds())
   win.contentView.addChildView(view)
 
   // Keep the overlay matched to the window size while it's open.
   const onResize = () => {
     if (!win._voltageAboutView) return
-    const b = win.getContentBounds()
-    view.setBounds({ x: 0, y: 0, width: b.width, height: b.height })
+    layout(win.getContentBounds())
   }
   win.on('resize', onResize)
 
