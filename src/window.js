@@ -9,6 +9,7 @@ const { createSession } = require('./session')
 const { aspellSuggestions } = require('./context-menu')
 const windowState = require('./window-state')
 const { findRoute, normalizeRouting } = require('./routing-match')
+const { appName, profileFromAppName } = require('./app-naming')
 const { toggleAboutWindow } = require('./about-window')
 const { t } = require('./i18n')
 
@@ -191,7 +192,7 @@ function resolveRoute(url, currentProfile) {
   const match = findRoute(loadRouting(), targetHost, targetPath, (target) => {
     const p = typeof target === 'string' ? target : target.path
     if (!p) return false
-    return path.basename(p).replace(/^wrapweb-/, '') !== currentProfile && fs.existsSync(p)
+    return profileFromAppName(path.basename(p)) !== currentProfile && fs.existsSync(p)
   })
   if (!match) return null
   const target       = match.entry
@@ -219,7 +220,7 @@ function appClaimsUrl(url, currentProfile) {
   })
   if (!match) return false
   const winnerPath = typeof match.entry === 'string' ? match.entry : match.entry.path
-  return path.basename(winnerPath).replace(/^wrapweb-/, '') === currentProfile
+  return profileFromAppName(path.basename(winnerPath)) === currentProfile
 }
 
 function routeExternalUrl(url, currentProfile) {
@@ -238,10 +239,11 @@ function iconToDataUrl(p) { try { return p ? `data:image/png;base64,${fs.readFil
 // there. Falls back to the bundled assets/webapps/<icon> set for non-installed / standard apps.
 function appIconDataUrl(pkg) {
   const hicolor = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
+  const iconBase = appName(pkg.profile)
   const candidates = [
-    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.svg`), 'image/svg+xml'],
-    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
-    [path.join(hicolor, '48x48',    'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
+    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.svg`), 'image/svg+xml'],
+    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.png`), 'image/png'],
+    [path.join(hicolor, '48x48',    'apps', `${iconBase}.png`), 'image/png'],
   ]
   if (pkg.icon) candidates.push(
     [path.join(__dirname, '..', 'assets', 'webapps', pkg.icon + '.svg'), 'image/svg+xml'],
@@ -394,7 +396,7 @@ function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg, a
   const api = {
     profile:         pkg.profile,
     // Human-readable app name (build-time displayName, else profile) — for plugin-built UI.
-    displayName:     pkg.displayName || (pkg.name || '').replace(/^wrapweb-/, '') || pkg.profile,
+    displayName:     pkg.displayName || pkg.profile,
     appOrigin,
     internalDomains,
     launchArg:       launchArg ?? null,
@@ -563,7 +565,7 @@ function createWindow(pkg, opts = {}) {
   mainWindow.on('closed', () => windowProfiles.delete(webContentsId))
 
   // Context for the custom context-menu's shared ipcMain handlers (see appMenuRegistry).
-  const displayName = pkg.displayName || (pkg.name || '').replace(/^wrapweb-/, '') || pkg.profile
+  const displayName = pkg.displayName || pkg.profile
   appMenuRegistry.set(webContentsId, {
     appContents, mainWindow, profile: pkg.profile, customSession, actions: {},
     displayName, appIcon: appIconDataUrl(pkg),
@@ -751,11 +753,12 @@ function createWindow(pkg, opts = {}) {
     const appImagePath   = typeof target === 'string' ? target : target.path
     const name           = typeof target === 'string' ? null   : (target.name ?? null)
     const iconName       = typeof target === 'string' ? null   : (target.icon ?? null)
-    const matchedProfile = path.basename(appImagePath).replace(/^wrapweb-/, '')
+    const matchedProfile = profileFromAppName(path.basename(appImagePath))
     if (matchedProfile === pkg.profile || !fs.existsSync(appImagePath)) return null
-    // Fall back to the installed wrapweb icon (wrapweb-<profile>) when the build-config icon
-    // name doesn't resolve — installed AppImages always register their icon under this name.
-    const iconDataUrl = toDataUrl(resolveIconPath(iconName) ?? resolveIconPath(`wrapweb-${matchedProfile}`))
+    // Fall back to the installed per-app icon (appName(<profile>), e.g. vTeams) when the
+    // build-config icon name doesn't resolve — installed AppImages always register their icon
+    // under this name.
+    const iconDataUrl = toDataUrl(resolveIconPath(iconName) ?? resolveIconPath(appName(matchedProfile)))
     // The raw routing key is passed through; the tooltip script matches it with a
     // keyMatches() port (page-injected JS cannot require routing-match.js).
     return { key, iconDataUrl, name: name || matchedProfile }

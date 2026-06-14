@@ -11,6 +11,7 @@ const zlib = require('node:zlib')
 const pkg = require(app.getAppPath() + '/package.json')
 const { createWindow, dispatchLaunchArg } = require('./window')
 const { parseMailtoFields }         = require('./mailto')
+const { wmClass }                   = require('./app-naming')
 
 // draw.io SVG files embed the diagram XML as HTML-escaped content= attribute value.
 function extractXmlFromDrawioSvg(content) {
@@ -91,8 +92,14 @@ function resolveUrl(raw) {
 module.exports = function setupAppWindow() {
   // These must run synchronously before app.whenReady() — Electron reads them during startup.
   app.setAppUserModelId(pkg.appId)
-  app.setName(`wrapweb-${pkg.profile}`)
-  app.commandLine.appendSwitch('wm-class', `wrapweb-${pkg.profile}`)
+  // WM class must equal the .desktop StartupWMClass so the taskbar groups the window under its
+  // launcher entry. Use the lowercased form (wmClass): Chromium forces the Wayland app_id to
+  // lowercase ("vteams"), and GNOME matches case-sensitively, so a capitalised value would never
+  // match. On X11 this switch sets WM_CLASS directly, so keeping it lowercase makes both display
+  // servers agree with the lowercase StartupWMClass. userData stays keyed by the raw profile so
+  // the rename never migrates a user's stored data.
+  app.setName(wmClass(pkg.profile))
+  app.commandLine.appendSwitch('wm-class', wmClass(pkg.profile))
   app.setPath('userData', path.join(app.getPath('appData'), 'wrapweb', pkg.profile))
 
   // acceptsFileArg lets an app receive a bare local file path as a launch argument; the file

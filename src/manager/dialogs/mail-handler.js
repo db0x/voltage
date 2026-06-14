@@ -1,5 +1,16 @@
 import { applyTemplate } from '../template.js'
 
+// Renderer-local mirror of src/app-naming.js (canonical source of truth, but that module is
+// CommonJS for the main process and can't be imported here). Keep these two in sync — they map
+// a build profile to/from the user-facing .desktop name (e.g. "teams" ⇄ "vTeams").
+const appNameFromProfile = (profile) => 'v' + profile.charAt(0).toUpperCase() + profile.slice(1)
+const profileFromDesktop = (name) => {
+  const base = name.replace(/\.desktop$/, '')
+  if (base.startsWith('wrapweb-')) return base.slice('wrapweb-'.length)  // legacy installs
+  const m = /^v(.+)/.exec(base)
+  return m ? m[1].charAt(0).toLowerCase() + m[1].slice(1) : base
+}
+
 export function initMailHandlerDialog({ i18n, icons, apps, appDefaultSrc, templates }, { onSave } = {}) {
   // Only mail-capable apps that are both built and installed can be set as default.
   const mailApps = apps.filter(
@@ -37,7 +48,7 @@ export function initMailHandlerDialog({ i18n, icons, apps, appDefaultSrc, templa
 
   saveBtn.addEventListener('click', async () => {
     if (selectedProfile !== null) {
-      await window.managerAPI.setMailHandler(`wrapweb-${selectedProfile}.desktop`)
+      await window.managerAPI.setMailHandler(`${appNameFromProfile(selectedProfile)}.desktop`)
       onSave?.(selectedProfile)
     }
     closeDialog()
@@ -46,10 +57,9 @@ export function initMailHandlerDialog({ i18n, icons, apps, appDefaultSrc, templa
   async function openMailHandlerDialog() {
     overlay.classList.remove('hidden')
     const current = await window.managerAPI.getMailHandler()
-    // Derive profile from "wrapweb-<profile>.desktop"; fall back to null if not in mail apps.
-    const profile = current
-      ? current.replace(/^wrapweb-/, '').replace(/\.desktop$/, '')
-      : null
+    // Derive profile from the default handler's .desktop name (e.g. "vGmail.desktop"); fall back
+    // to null if not in mail apps.
+    const profile = current ? profileFromDesktop(current) : null
     selectedProfile = mailApps.find(a => a.profile === profile) ? profile : null
     render()
   }

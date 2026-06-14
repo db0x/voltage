@@ -105,8 +105,10 @@ const RCLONE_TEST_CONFIG = {
     mimeTypes:        ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   },
 }
+// Desktop filename follows the artifact naming (appName: "test-rclone-app" → "vTest-rclone-app")
+// so the manager's `installed` detection in manager:apps finds it.
 const RCLONE_DESKTOP_FILE = path.join(
-  os.homedir(), '.local', 'share', 'applications', 'wrapweb-test-rclone-app.desktop'
+  os.homedir(), '.local', 'share', 'applications', 'vTest-rclone-app.desktop'
 )
 
 function writeRcloneTestConfig() {
@@ -176,11 +178,12 @@ const MAIL_TEST_CONFIG = {
     mimeTypes: ['x-scheme-handler/mailto'],
   },
 }
+// Artifact naming: appName("test-mail-dialog-app") → "vTest-mail-dialog-app".
 const MAIL_DESKTOP_FILE = path.join(
-  os.homedir(), '.local', 'share', 'applications', 'wrapweb-test-mail-dialog-app.desktop'
+  os.homedir(), '.local', 'share', 'applications', 'vTest-mail-dialog-app.desktop'
 )
 // Fake AppImage file — presence makes built:true in manager:apps.
-const MAIL_DIST_FILE = path.join(ROOT, 'dist', 'wrapweb-test-mail-dialog-app')
+const MAIL_DIST_FILE = path.join(ROOT, 'dist', 'vTest-mail-dialog-app')
 
 function writeMailTestConfig() {
   fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true })
@@ -203,7 +206,7 @@ async function launchAppWithMailHandler(extraEnv = {}) {
   writeMailTestConfig()
   const { app, userDataDir } = await launchApp({
     // Pretend the test mail dialog app is already the default handler.
-    WRAPWEB_TEST_MAIL_HANDLER: 'wrapweb-test-mail-dialog-app.desktop',
+    WRAPWEB_TEST_MAIL_HANDLER: 'vTest-mail-dialog-app.desktop',
     ...extraEnv,
   })
   return { app, userDataDir }

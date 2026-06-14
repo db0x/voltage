@@ -14,6 +14,7 @@ const os   = require('node:os')
 
 const pkg      = require(app.getAppPath() + '/package.json')
 const APP_ROOT = app.getAppPath()
+const { appName } = require('./app-naming')
 
 // Reads an SVG asset as a base64 data URL for inline embedding; null if missing.
 function svgDataUrl(absPath) {
@@ -25,10 +26,11 @@ function svgDataUrl(absPath) {
 // 48x48 fallback — otherwise such icons (e.g. mastodon) come up empty.
 function appIconDataUrl() {
   const hicolor = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
+  const iconBase = appName(pkg.profile)
   const candidates = [
-    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.svg`), 'image/svg+xml'],
-    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
-    [path.join(hicolor, '48x48',    'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
+    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.svg`), 'image/svg+xml'],
+    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.png`), 'image/png'],
+    [path.join(hicolor, '48x48',    'apps', `${iconBase}.png`), 'image/png'],
   ]
   for (const [p, mime] of candidates) {
     if (fs.existsSync(p)) return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`

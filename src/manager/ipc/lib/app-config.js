@@ -8,6 +8,7 @@ const os      = require('node:os')
 
 const { APP_ROOT, CONFIGS_DIR, pkg } = require('./paths')
 const { resolveIconsByGtk }          = require('./icons')
+const { appName }                    = require('../../../app-naming')
 
 // Inline semver comparison — avoids pulling in a dedicated package just for this.
 function semverLt(a, b) {
@@ -24,7 +25,7 @@ function semverLt(a, b) {
 // Returns { builtVersion: null, builtRclone: false } when the file is absent or unreadable.
 function readVersionSidecar(profile) {
   try {
-    const raw = fs.readFileSync(path.join(APP_ROOT, 'dist', `wrapweb-${profile}.version`), 'utf8').trim()
+    const raw = fs.readFileSync(path.join(APP_ROOT, 'dist', `${appName(profile)}.version`), 'utf8').trim()
     try {
       // Current format: JSON with version + optional capability flags.
       const meta = JSON.parse(raw)
@@ -60,8 +61,8 @@ function buildSingleApp(configFile, defaultMailDesktop) {
   const f   = path.basename(configFile)
   const cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'))
   const configLabel  = f.replace(/^build\.(.+)\.json$/, '$1')
-  const built        = fs.existsSync(path.join(APP_ROOT, 'dist', `wrapweb-${cfg.profile}`))
-  const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `wrapweb-${cfg.profile}.desktop`)
+  const built        = fs.existsSync(path.join(APP_ROOT, 'dist', appName(cfg.profile)))
+  const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(cfg.profile)}.desktop`)
   const installed    = fs.existsSync(desktopFile)
   let   iconValue    = cfg.icon || null
   if (installed) {
@@ -84,7 +85,7 @@ function buildSingleApp(configFile, defaultMailDesktop) {
     profile: cfg.profile, configLabel, name: cfg.name, url: cfg.url,
     built, installed, isPrivate: f.startsWith('build.private.'),
     iconPath,
-    appImagePath: path.join(APP_ROOT, 'dist', `wrapweb-${cfg.profile}`),
+    appImagePath: path.join(APP_ROOT, 'dist', appName(cfg.profile)),
     profilePath:  path.join(app.getPath('appData'), 'wrapweb', cfg.profile),
     icon: cfg.icon || null, geometry: cfg.geometry || null,
     userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
@@ -92,7 +93,7 @@ function buildSingleApp(configFile, defaultMailDesktop) {
     routingUrls: cfg.routingUrls || null,
     mimeTypes: cfg.mimeTypes || null, plugins: cfg.plugins || null,
     pluginConfig: cfg.pluginConfig || null,
-    isDefaultMailHandler: defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`,
+    isDefaultMailHandler: defaultMailDesktop === `${appName(cfg.profile)}.desktop`,
     category: cfg.category || null,
     builtVersion, builtRclone, rcloneFileHandler: usesRcloneSync(cfg),
     needsRebuild: needsRebuild(built, builtVersion, minVer),

@@ -3,6 +3,7 @@ const { _electron: electron } = require('@playwright/test')
 const path = require('node:path')
 const os   = require('node:os')
 const fs   = require('node:fs')
+const { appName } = require('../src/app-naming')
 
 const ROOT        = path.join(__dirname, '..')
 const CONFIGS_DIR = path.join(ROOT, 'webapps')
@@ -24,16 +25,16 @@ function writeConfig(profile) {
 // having version 0.0.0, which is always older than minAppImageVersion.
 function fakeBuilt(profile, version) {
   fs.mkdirSync(DIST_DIR, { recursive: true })
-  fs.writeFileSync(path.join(DIST_DIR, `wrapweb-${profile}`), '')
+  fs.writeFileSync(path.join(DIST_DIR, appName(profile)), '')
   if (version != null)
-    fs.writeFileSync(path.join(DIST_DIR, `wrapweb-${profile}.version`), version)
+    fs.writeFileSync(path.join(DIST_DIR, `${appName(profile)}.version`), version)
 }
 
 function cleanup(...profiles) {
   for (const p of profiles) {
     fs.rmSync(path.join(CONFIGS_DIR, `build.${p}.json`),      { force: true })
-    fs.rmSync(path.join(DIST_DIR,    `wrapweb-${p}`),         { force: true })
-    fs.rmSync(path.join(DIST_DIR,    `wrapweb-${p}.version`), { force: true })
+    fs.rmSync(path.join(DIST_DIR,    appName(p)),         { force: true })
+    fs.rmSync(path.join(DIST_DIR,    `${appName(p)}.version`), { force: true })
   }
 }
 

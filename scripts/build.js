@@ -3,6 +3,7 @@ const { build } = require('electron-builder')
 const fs = require('node:fs')
 const path = require('node:path')
 const { installDesktop, installIcon } = require('./lib')
+const { appName } = require('../src/app-naming')
 
 const APP_ID_BASE = 'de.db0x.wrapweb'
 const CONFIGS_DIR = path.join(__dirname, '..', 'webapps')
@@ -26,7 +27,10 @@ function resolvePlugins(app) {
 // without needing a separate config file next to the AppImage.
 function expandConfig(app) {
   const appId = `${APP_ID_BASE}.${app.profile}`
-  const productName = `wrapweb-${app.profile}`
+  // User-facing artifact name (AppImage file + internal executable name). The executable name
+  // drives the Wayland WM_CLASS (taskbar grouping reads /proc/self/exe), so this must stay in
+  // lock-step with the .desktop StartupWMClass and the runtime wm-class switch.
+  const productName = appName(app.profile)
   const plugins = resolvePlugins(app)
   return {
     appId,
@@ -35,15 +39,23 @@ function expandConfig(app) {
     linux: {
       target: ['AppImage'],
       executableArgs: ['--no-sandbox'],
+      // The internal executable name seeds the Wayland app_id (Chromium reads /proc/self/exe, then
+      // LOWERCASES it: "vTeams" → "vteams"). electron-builder otherwise derives it from package.json
+      // `name`. Pin it to the artifact name so the lowercased app_id matches the .desktop
+      // StartupWMClass (also lowercased — see scripts/lib.js wmClass()); a mismatch makes GNOME show
+      // the raw "vteams" id instead of grouping under the launcher.
+      executableName: productName,
     },
     extraMetadata: {
-      name: `wrapweb-${app.profile}`,
+      name: productName,
       appId,
       profile: app.profile,
       url: app.url,
-      // The embedded `name` must stay "wrapweb-<profile>" (WM class / app id depend on it),
-      // so the human-readable config name travels separately as displayName for UI like the
-      // About panel.
+      // The embedded `name` is Electron's app.getName() and electron-builder derives the
+      // updaterCacheDirName (and, on some Wayland compositors, the app_id) from it — so it must be
+      // the new artifact name, not the legacy "wrapweb-<profile>", or "wrapweb-teams" leaks back
+      // into the packaged app. The human-readable label travels separately as displayName (UI like
+      // the About panel); window.js falls back to pkg.profile when a config sets no name.
       ...(app.name                && { displayName: app.name }),
       ...(app.userAgent           && { userAgent: app.userAgent }),
       ...(app.geometry            && { geometry:  app.geometry  }),
@@ -83,7 +95,7 @@ async function buildOne(configFile) {
   // whether the app loads the rclone-sync plugin (rclone is a plugin, no longer a base flag).
   const hasRclonePlugin = (app.plugins ?? []).some(p => /(^|\/)rclone-sync\//.test(p))
   const meta = { version, ...(hasRclonePlugin && { rcloneFileHandler: true }) }
-  fs.writeFileSync(path.join('dist', `wrapweb-${app.profile}.version`), JSON.stringify(meta), 'utf8')
+  fs.writeFileSync(path.join('dist', `${appName(app.profile)}.version`), JSON.stringify(meta), 'utf8')
   installIcon()
   installDesktop(app)
 }

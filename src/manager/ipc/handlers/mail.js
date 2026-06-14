@@ -17,7 +17,7 @@ function registerMailHandlers() {
   ipcMain.handle('manager:get-mail-handler', () => getDefaultMailDesktop())
 
   // Sets the default mail handler using xdg-mime.
-  // desktopName is the full filename, e.g. "wrapweb-gmail.desktop".
+  // desktopName is the full filename, e.g. "vGmail.desktop".
   // In test mode, the xdg-mime call is skipped to avoid touching the real system config.
   ipcMain.handle('manager:set-mail-handler', (event, desktopName) => {
     if (process.env.WRAPWEB_TEST) return true

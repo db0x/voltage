@@ -316,7 +316,7 @@ npm run install-app -- whatsapp      # (re-)install launcher entry without rebui
 npm run install-app                  # all configs
 ```
 
-Output lands in `dist/` as a self-contained AppImage.
+Output lands in `dist/` as a self-contained AppImage. The artifact is named after the profile with a leading `v` and an upper-cased first letter — e.g. profile `teams` builds `dist/vTeams`, installs the launcher entry `vTeams.desktop`, and registers its icon as `vTeams.svg`. The build profile itself stays lowercase and remains the stable identity for the app's session/config directory under `~/.config/wrapweb/<profile>/`.
 
 ## Manual config (advanced)
 
