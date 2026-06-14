@@ -1,6 +1,6 @@
 {
   "name": "voltage",
-  "description": "PWA Wrapper",
+  "description": "Turn any web app into a standalone Linux desktop application - packaged as an AppImage, with its own window, session, and taskbar entry.",
   "keywords": [],
   "main": "./main.js",
   "version": "0.27.0",
