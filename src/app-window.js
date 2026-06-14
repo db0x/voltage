@@ -89,7 +89,20 @@ function resolveUrl(raw) {
 }
 
 
+// Whether this app neutralises the page's own window.close() — widget apps always (a frameless widget
+// must never let its content close it), others via the blockWindowClose build flag. Replies to the
+// preload's synchronous document-start query (see preload.js for why a per-frame IPC is the only gate
+// that reaches out-of-process iframes such as Teams' MSAL silent-auth iframe, whose window.close()
+// would otherwise close the host window in view mode). Registered once — one app per process here.
+function registerBlockCloseHandler() {
+  const usesWidget = (pkg.plugins ?? []).some(p => /(^|\/)widget\//.test(p))
+  const block = usesWidget || pkg.blockWindowClose === true
+  ipcMain.on('voltage:should-block-close', (event) => { event.returnValue = block })
+}
+
 module.exports = function setupAppWindow() {
+  registerBlockCloseHandler()
+
   // These must run synchronously before app.whenReady() — Electron reads them during startup.
   app.setAppUserModelId(pkg.appId)
   // WM class must equal the .desktop StartupWMClass so the taskbar groups the window under its

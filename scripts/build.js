@@ -61,6 +61,7 @@ function expandConfig(app) {
       ...(app.internalDomains     && { internalDomains: app.internalDomains }),
       ...(app.crossOriginIsolation && { crossOriginIsolation: true }),
       ...(app.singleInstance      && { singleInstance:       true }),
+      ...(app.blockWindowClose    && { blockWindowClose:     true }),
       ...(app.fileHandler        && { fileHandler:          true }),
       ...(app.acceptsFileArg     && { acceptsFileArg:       true }),
       ...(app.rcloneEditUrlBase && { rcloneEditUrlBase:   app.rcloneEditUrlBase }),

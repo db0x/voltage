@@ -24,6 +24,31 @@ if (process.argv.includes('--voltage-file-handler')) {
   })
 }
 
+// Neutralise the page's own window.close() for apps that opt in (widget apps + blockWindowClose).
+// Why this exists: Microsoft Teams' MSAL silent-auth runs in a hidden iframe whose redirect handler
+// (teams.cloud.microsoft/v2/authv2) calls window.close() to dismiss itself. In a normal browser an
+// iframe's window.close() is a no-op, but in Electron's view-mode (WebContentsView) it closes the
+// HOST window — so a fresh-login Teams vanishes the moment silent auth fails and MSAL falls back to
+// the interactive redirect. Neutralising window.close() lets MSAL continue to the login page.
+//
+// The gate is a synchronous IPC, NOT additionalArguments/process.argv or an env var. That auth iframe
+// becomes an out-of-process frame after its cross-origin hop through login.microsoftonline.com, and
+// neither additionalArguments nor a JS-set process.env ever reach an OOPIF renderer (Chromium
+// snapshots the renderer environment in C++ before any JS runs). The preload itself DOES run in every
+// frame including OOPIFs, and ipcRenderer.sendSync works there — and being synchronous it completes at
+// document-start, before any page script, so the override is in place before the page can call close.
+// webFrame.executeJavaScript reaches the MAIN world (where the page's own window.close lives — the
+// isolated preload world can't see it). WM/title-bar close and our context-menu Quit go through the
+// BrowserWindow, not window.close, so they keep working. Handler: registerBlockCloseHandler (app-window.js).
+let _blockClose = false
+try { _blockClose = ipcRenderer.sendSync('voltage:should-block-close') === true } catch {}
+if (_blockClose) {
+  webFrame.executeJavaScript(
+    '(function(){try{Object.defineProperty(window,"close",{value:function(){},writable:false,configurable:true});}' +
+    'catch(e){try{window.close=function(){};}catch(_){}}})();'
+  ).catch(() => {})
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Renderer→main bridge for the zoom plugin: a page can't reach its own webContents zoom, so the
   // injected ctrl+wheel listener signals the direction here and the plugin steps the zoom factor.
