@@ -5,7 +5,7 @@
 //   appOrigin, internalDomains, routeEntries, mailtoLabel
 
 // Bridge so iframe event handlers (which close over this window) can reach IPC.
-window._wrapwebCheck = url => window.electronAPI?.checkSafeBrowsing(url) ?? Promise.resolve('unknown');
+window._voltageCheck = url => window.electronAPI?.checkSafeBrowsing(url) ?? Promise.resolve('unknown');
 
 // Unwraps redirect URLs (e.g. Outlook Safe Links, Google redirect) to the real target.
 function unwrapUrl(url) {
@@ -42,7 +42,7 @@ function keyMatches(key, hostname, pathname) {
   return true;
 }
 
-// Returns route info { iconDataUrl, name } if this URL would open in another wrapweb app.
+// Returns route info { iconDataUrl, name } if this URL would open in another voltage app.
 // Unwraps redirect URLs first so Safe Links / Google redirects are matched correctly.
 function getRouteInfo(url) {
   try {
@@ -66,13 +66,13 @@ function isExternalLink(url) {
 
 // Tooltip element lives in the main frame — position:fixed is relative to the main viewport.
 const tip = document.createElement('div');
-tip.id = 'wrapweb-link-tooltip';
+tip.id = 'voltage-link-tooltip';
 // Icon element is always present; src is swapped per link type (browser vs. mail app).
 const iconEl = document.createElement('img');
 iconEl.alt = ''; iconEl.style.display = 'none';
 tip.appendChild(iconEl);
 const shield = document.createElement('img');
-shield.id = 'wrapweb-link-shield'; shield.alt = ''; shield.style.display = 'none';
+shield.id = 'voltage-link-shield'; shield.alt = ''; shield.style.display = 'none';
 tip.appendChild(shield);
 const label = document.createElement('span');
 tip.appendChild(label);
@@ -103,10 +103,10 @@ function showTooltip(url) {
     : unwrapUrl(url);
   shield.style.display = 'none';
   tip.style.display = 'flex';
-  // No safe-browsing for mail addresses or links routed to trusted wrapweb apps.
+  // No safe-browsing for mail addresses or links routed to trusted voltage apps.
   if (!isMail && !route) {
     const cs = ++checkSeq;
-    window._wrapwebCheck(url).then(r => {
+    window._voltageCheck(url).then(r => {
       if (cs !== checkSeq) return;
       if (r === 'safe'   && safeSrc)   { shield.src = safeSrc;   shield.style.display = ''; }
       if (r === 'unsafe' && unsafeSrc) { shield.src = unsafeSrc; shield.style.display = ''; }

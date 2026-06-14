@@ -52,7 +52,7 @@ const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates
   window.managerAPI.getObsidianAvailable(),
 ])
 
-document.title = `wrapweb Manager ${version}`
+document.title = `voltage Manager ${version}`
 
 // String interpolation for i18n keys — falls back to the key name if missing.
 const tr = (key, params = {}) =>
@@ -60,7 +60,7 @@ const tr = (key, params = {}) =>
 
 // Converts a GTK icon key to a file:// URL; returns null if the icon wasn't resolved.
 const s = k => uiIcons[k] ? `file://${uiIcons[k]}` : null
-// appDefault is always provided by main (system theme in production, wrapweb.svg in tests).
+// appDefault is always provided by main (system theme in production, voltage.svg in tests).
 const appDefaultSrc = s('appDefault')
 
 // An app is "mail-capable" when it declares the mailto scheme handler and is both built and installed.

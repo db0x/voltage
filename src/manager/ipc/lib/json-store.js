@@ -1,4 +1,4 @@
-// Generic JSON config store for a single file under the wrapweb appData dir.
+// Generic JSON config store for a single file under the voltage appData dir.
 // Replaces three near-identical load/save handler pairs (rclone, global-settings,
 // safe-browsing) that all shared the same shape: read-or-default, mkdir + atomic write.
 
@@ -7,14 +7,14 @@ const path    = require('node:path')
 const fs      = require('node:fs')
 
 // Creates a { load, save, configPath } trio bound to one filename.
-// WRAPWEB_TEST_DATA_DIR redirects the file into a temp dir in tests so tests never
+// VOLTAGE_TEST_DATA_DIR redirects the file into a temp dir in tests so tests never
 // read or write the user's real data files.
 function makeJsonStore(filename) {
   const configPath = () => {
-    const testDir = process.env.WRAPWEB_TEST_DATA_DIR
+    const testDir = process.env.VOLTAGE_TEST_DATA_DIR
     return testDir
       ? path.join(testDir, filename)
-      : path.join(app.getPath('appData'), 'wrapweb', filename)
+      : path.join(app.getPath('appData'), 'voltage', filename)
   }
 
   // Missing or unparseable file yields {} so callers always get a usable object.

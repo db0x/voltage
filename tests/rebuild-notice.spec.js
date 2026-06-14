@@ -41,10 +41,10 @@ function cleanup(...profiles) {
 // Launches a fresh Manager instance without the standard test-config fixture set.
 // Each rebuild-notice test manages its own configs so it can control built/version state.
 async function launchManager() {
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wrapweb-test-'))
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-test-'))
   const app = await electron.launch({
     args: [ROOT, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${userDataDir}`],
-    env: { ...process.env, WRAPWEB_TEST: '1', WRAPWEB_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined },
+    env: { ...process.env, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined },
   })
   const page = await app.firstWindow()
   await page.waitForSelector('.card-add', { timeout: 30_000 })

@@ -141,7 +141,7 @@
   "tooltipSingleInstance": "Verhindert, dass die App mehrfach geöffnet wird. Ein zweiter Start bringt stattdessen das bestehende Fenster in den Vordergrund.",
   "tooltipUAgent":         "Einige Webseiten blockieren Electron oder bieten bessere Funktionen für bestimmte Browser. Hier kann die App als Chrome, Firefox oder Edge auftreten.",
   "tooltipDomains":        "Links zu diesen Domains öffnen sich im App-Fenster statt im Standard-Browser – z. B. für Login-Seiten oder SSO-Anbieter.",
-  "tooltipRoutingUrls":    "Zusätzliche URLs, die zu dieser App geleitet werden – aus allen anderen wrapweb-Apps und aus Obsidian. Wildcards mit * sind erlaubt, z. B. *.example.com oder example.com/docs/*. Überschneidungen mit anderen Apps werden verhindert.",
+  "tooltipRoutingUrls":    "Zusätzliche URLs, die zu dieser App geleitet werden – aus allen anderen voltage-Apps und aus Obsidian. Wildcards mit * sind erlaubt, z. B. *.example.com oder example.com/docs/*. Überschneidungen mit anderen Apps werden verhindert.",
   "tooltipCoi":            "Ermöglicht SharedArrayBuffer und WASM-Threads. Nur aktivieren, wenn die Webseite es ausdrücklich benötigt – kann Cross-Origin-Requests einschränken.",
   "tooltipMailHandler":    "Registriert diese App systemweit als Standard für mailto:-Links. Ein Klick auf eine E-Mail-Adresse öffnet direkt das Compose-Fenster dieser App.",
   "tooltipPlugins":        "Zusätzliche, mit dieser App ausgelieferte Skripte, die ihr Verhalten erweitern – z. B. das Routen von OneDrive-Dokumenten an Word/Excel oder das automatische Öffnen des Compose-Dialogs einer Webmail-App. Eine Änderung der Auswahl erfordert ein Neu-Erstellen des AppImage.",
@@ -161,9 +161,9 @@
 
   "infoCopyToPrivate": "Als private Config kopieren",
 
-  "drawerAbout":   "Über wrapweb",
+  "drawerAbout":   "Über voltage",
   "aboutLicense":  "MIT-Lizenz",
-  "aboutGithub":   "wrapweb bei GitHub",
+  "aboutGithub":   "voltage bei GitHub",
   "aboutObsidianAvailable": "Obsidian-Plugin verfügbar",
   "aboutRclonePlugin":      "rclone-Plugin verfügbar",
 
@@ -217,15 +217,15 @@
   "profilesEmpty":          "Kein Datenverzeichnis vorhanden",
   "profilesDeleteConfirm":  "<p>Profildaten von <strong>{name}</strong> wirklich löschen?</p><p>Cookies, Login-Sessions und lokale Daten gehen verloren. Die App bleibt installiert.</p>",
 
-  "rebuildNoticeTitle":      "wrapweb wurde aktualisiert",
-  "rebuildNoticeIntro":      "wrapweb wurde auf Version <strong>{version}</strong> aktualisiert. Folgende AppImages wurden mit einer älteren Version erstellt und müssen neu erstellt werden, damit alle neuen Funktionen verfügbar sind:",
+  "rebuildNoticeTitle":      "voltage wurde aktualisiert",
+  "rebuildNoticeIntro":      "voltage wurde auf Version <strong>{version}</strong> aktualisiert. Folgende AppImages wurden mit einer älteren Version erstellt und müssen neu erstellt werden, damit alle neuen Funktionen verfügbar sind:",
   "rebuildNoticeOk":         "Verstanden",
   "rebuildNoticeRebuildAll": "Alle neu erstellen",
   "rebuildNoticeBuilding":   "Wird erstellt …",
   "rebuildNoticeDone":       "Fertig",
 
   "updateNoticeTitle":  "Update verfügbar",
-  "updateNoticeBody":   "<p>wrapweb <strong>{version}</strong> ist verfügbar.</p><p style=\"margin-top:8px\">Zum Aktualisieren im wrapweb-Verzeichnis <code>git pull</code> ausführen und anschließend alle AppImages neu erstellen.</p>",
+  "updateNoticeBody":   "<p>voltage <strong>{version}</strong> ist verfügbar.</p><p style=\"margin-top:8px\">Zum Aktualisieren im voltage-Verzeichnis <code>git pull</code> ausführen und anschließend alle AppImages neu erstellen.</p>",
   "updateNoticeGithub": "Auf GitHub öffnen",
   "updateNoticeOk":     "Verstanden"
 }

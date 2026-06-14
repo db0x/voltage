@@ -3,7 +3,7 @@
 // TEMPLATE: the {{ariaLabel}} placeholder is filled per-app with the configured matcher
 // (JSON-encoded to a string literal) before injection, so it is NOT valid standalone JS.
 (function () {
-    if (window.__wrapwebRobotLinkClicked) {
+    if (window.__voltageRobotLinkClicked) {
         return;
     }
 
@@ -35,7 +35,7 @@
 
         clearInterval(timer);
 
-        window.__wrapwebRobotLinkClicked = true;
+        window.__voltageRobotLinkClicked = true;
         link.click();
     }, 500);
 })();

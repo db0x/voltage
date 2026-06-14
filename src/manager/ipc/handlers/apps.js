@@ -38,7 +38,7 @@ module.exports = function registerAppHandlers() {
           profile: cfg.profile, configLabel, name: cfg.name, url: cfg.url,
           built, installed, isPrivate: f.startsWith('build.private.'), iconValue,
           appImagePath: path.join(APP_ROOT, 'dist', appName(cfg.profile)),
-          profilePath:  path.join(app.getPath('appData'), 'wrapweb', cfg.profile),
+          profilePath:  path.join(app.getPath('appData'), 'voltage', cfg.profile),
           icon: cfg.icon || null, geometry: cfg.geometry || null,
           userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
           singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
@@ -69,13 +69,13 @@ module.exports = function registerAppHandlers() {
     // Separate absolute paths from theme names — batch-resolve theme names via GTK.
     const themeNames = [...new Set(visible
       .map(c => c.iconValue)
-      .filter(v => v && v !== 'wrapweb' && !path.isAbsolute(v))
+      .filter(v => v && v !== 'voltage' && !path.isAbsolute(v))
     )]
     const resolved = resolveIconsByGtk(themeNames)
 
     return visible.map(({ iconValue, ...c }) => {
       let iconPath = null
-      if (iconValue && iconValue !== 'wrapweb') {
+      if (iconValue && iconValue !== 'voltage') {
         if (path.isAbsolute(iconValue) && fs.existsSync(iconValue)) {
           iconPath = iconValue
         } else {
@@ -140,17 +140,11 @@ module.exports = function registerAppHandlers() {
   ipcMain.handle('manager:delete', (event, { profile, configLabel, deleteConfig, deleteProfileData }) => {
     const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(profile)}.desktop`)
     const appImageFile = path.join(APP_ROOT, 'dist', appName(profile))
-    // Also clear any artifacts left by the legacy "wrapweb-<profile>" naming so a delete after
-    // the rename doesn't strand an old launcher entry / AppImage.
-    const legacyDesktop  = path.join(os.homedir(), '.local', 'share', 'applications', `wrapweb-${profile}.desktop`)
-    const legacyAppImage = path.join(APP_ROOT, 'dist', `wrapweb-${profile}`)
     const configFile   = configLabel ? path.join(CONFIGS_DIR, `build.${configLabel}.json`) : null
-    const profileDir   = path.join(app.getPath('appData'), 'wrapweb', profile)
+    const profileDir   = path.join(app.getPath('appData'), 'voltage', profile)
     try {
       if (fs.existsSync(desktopFile))                                  fs.rmSync(desktopFile)
       if (fs.existsSync(appImageFile))                                 fs.rmSync(appImageFile)
-      if (fs.existsSync(legacyDesktop))                                fs.rmSync(legacyDesktop)
-      if (fs.existsSync(legacyAppImage))                               fs.rmSync(legacyAppImage)
       if (deleteConfig     && configFile && fs.existsSync(configFile)) fs.rmSync(configFile)
       if (deleteProfileData && fs.existsSync(profileDir))              fs.rmSync(profileDir, { recursive: true })
 

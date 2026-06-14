@@ -10,7 +10,7 @@ const { CONFIGS_DIR } = require('../lib/paths')
 
 module.exports = function registerProfileHandlers() {
   ipcMain.handle('manager:delete-profile-data', (event, profile) => {
-    const dir = path.join(app.getPath('appData'), 'wrapweb', profile)
+    const dir = path.join(app.getPath('appData'), 'voltage', profile)
     try {
       if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true })
       return { success: true }
@@ -30,7 +30,7 @@ module.exports = function registerProfileHandlers() {
     // Files are read in alphabetical order, so build.private.* overwrites build.* in the Map.
     const configs = [...new Map(all.map(c => [c.profile, c])).values()]
     return configs.map(({ profile, name }) => {
-      const dir = path.join(app.getPath('appData'), 'wrapweb', profile)
+      const dir = path.join(app.getPath('appData'), 'voltage', profile)
       if (!fs.existsSync(dir)) return { profile, name, dir, bytes: 0, exists: false }
       const r = spawnSync('du', ['-sb', dir], { encoding: 'utf8' })
       const bytes = r.status === 0 ? parseInt((r.stdout || '').split('\t')[0]) || 0 : 0
@@ -42,7 +42,7 @@ module.exports = function registerProfileHandlers() {
   // profiles dialog so the user can judge how much head-room is left. Returns 0 on failure.
   ipcMain.handle('manager:profile-disk-free', () => {
     try {
-      const base = path.join(app.getPath('appData'), 'wrapweb')
+      const base = path.join(app.getPath('appData'), 'voltage')
       const stat = fs.statfsSync(fs.existsSync(base) ? base : app.getPath('appData'))
       return { free: stat.bavail * stat.bsize }
     } catch {

@@ -2,7 +2,7 @@ const { obsidianTest: test, expect } = require('./fixtures')
 
 // ── Flatpak-Hint visibility ───────────────────────────────────────────────────
 
-// Setup:    Manager launched with WRAPWEB_TEST_OBSIDIAN_FLATPAK=1 so the status
+// Setup:    Manager launched with VOLTAGE_TEST_OBSIDIAN_FLATPAK=1 so the status
 //           IPC reports a Flatpak install; Obsidian drawer entry is enabled.
 // Action:   Open drawer, click Obsidian Integration entry.
 // Expected: The Flatpak hint section is visible and shows the exact override
@@ -18,8 +18,8 @@ test('flatpak hint is visible when sandboxed Obsidian is detected', async ({ man
   )
 })
 
-// Setup:    Manager launched without WRAPWEB_TEST_OBSIDIAN_FLATPAK; Obsidian drawer
-//           entry is enabled via WRAPWEB_TEST_OBSIDIAN_AVAILABLE only.
+// Setup:    Manager launched without VOLTAGE_TEST_OBSIDIAN_FLATPAK; Obsidian drawer
+//           entry is enabled via VOLTAGE_TEST_OBSIDIAN_AVAILABLE only.
 // Action:   Open drawer, click Obsidian Integration entry.
 // Expected: The Flatpak hint section stays hidden — non-sandboxed users should not
 //           see instructions for a permission they do not need.

@@ -132,7 +132,7 @@ mailHandlerTest('mail handler dialog opens when menu item is clicked', async ({ 
   await expect(page.locator('.mail-handler-dialog')).toBeVisible()
 })
 
-// Setup:    Mail-handler dialog is open; WRAPWEB_TEST_MAIL_HANDLER set to the test app.
+// Setup:    Mail-handler dialog is open; VOLTAGE_TEST_MAIL_HANDLER set to the test app.
 // Action:   (none — reads initial state)
 // Expected: The test app is listed in the dialog and shown as the active (selected) entry.
 mailHandlerTest('mail handler dialog shows the current default app as selected', async ({ managerPageWithMailHandler }) => {

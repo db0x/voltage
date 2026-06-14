@@ -51,11 +51,11 @@ function updateHicolorCache() {
 }
 
 function installIcon() {
-  const src = path.join(PROJECT_ROOT, 'assets', 'wrapweb.svg')
+  const src = path.join(PROJECT_ROOT, 'assets', 'voltage.svg')
   if (!fs.existsSync(src)) return
 
   const iconDir = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', 'scalable', 'apps')
-  const dest = path.join(iconDir, 'wrapweb.svg')
+  const dest = path.join(iconDir, 'voltage.svg')
 
   fs.mkdirSync(iconDir, { recursive: true })
   fs.copyFileSync(src, dest)
@@ -70,10 +70,10 @@ function escapeDesktop(s) {
 
 // Copies a system icon into the user's hicolor theme under the app's desktop
 // name (e.g. vTeams) so the .desktop entry always has a valid icon.
-// Falls back to the bundled SVG from assets/webapps/ or assets/wrapweb.svg
+// Falls back to the bundled SVG from assets/webapps/ or assets/voltage.svg
 // when no matching icon is found in any system theme.
 function resolveIconToHicolor(iconName, desktopName) {
-  if (!iconName || iconName === 'wrapweb') return iconName
+  if (!iconName || iconName === 'voltage') return iconName
 
   const hicolorDir = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', 'scalable', 'apps')
   const destName = desktopName  // e.g. 'vTeams'
@@ -113,11 +113,11 @@ function resolveIconToHicolor(iconName, desktopName) {
       return destName
     } catch { /* non-fatal */ }
   }
-  // Bundled fallback: check assets/webapps/<iconName>.svg, then assets/wrapweb.svg
+  // Bundled fallback: check assets/webapps/<iconName>.svg, then assets/voltage.svg
   const bundledWebapp = path.join(PROJECT_ROOT, 'assets', 'webapps', `${iconName}.svg`)
   const fallbackSvg = fs.existsSync(bundledWebapp)
     ? bundledWebapp
-    : path.join(PROJECT_ROOT, 'assets', 'wrapweb.svg')
+    : path.join(PROJECT_ROOT, 'assets', 'voltage.svg')
   if (fs.existsSync(fallbackSvg)) {
     try {
       fs.mkdirSync(hicolorDir, { recursive: true })
@@ -136,7 +136,7 @@ function installDesktop(app) {
 
   const appImagePath = path.resolve('dist', appName(app.profile))
   const displayName = escapeDesktop(app.name || toDisplayName(app.profile))
-  const icon = resolveIconToHicolor(app.icon || 'wrapweb', desktopName)
+  const icon = resolveIconToHicolor(app.icon || 'voltage', desktopName)
   const mimeTypes = app.mimeTypes?.length ? app.mimeTypes.join(';') + ';' : null
 
   const lines = [
@@ -298,7 +298,7 @@ function installDesktop(app) {
 // Keys use path-prefix notation with optional '*' wildcards (e.g. docs.google.com/d/*).
 // The 48×48 PNG is preferred over SVG because nativeImage cannot load SVG on Linux.
 function updateRoutingTable() {
-  const routingDir  = path.join(os.homedir(), '.config', 'wrapweb', 'plugins', 'routing')
+  const routingDir  = path.join(os.homedir(), '.config', 'voltage', 'plugins', 'routing')
   const routingFile = path.join(routingDir, 'routing.json')
 
   const routing = { base: {}, routing: {} }

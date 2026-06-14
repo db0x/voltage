@@ -7,11 +7,11 @@
 //   1. The ctrl+wheel listener that reports zoom INTENT to the main process via the preload bridge
 //      (window.electronAPI.adjustZoom). Main does the actual zooming + step/min/max clamping — the
 //      page can't read or set its own webContents zoom factor.
-//   2. window.__wrapwebZoomOsd.show(pct): a centred card — laid out like the widget's "move" panel —
+//   2. window.__voltageZoomOsd.show(pct): a centred card — laid out like the widget's "move" panel —
 //      that main calls after each zoom step. It appears on the first change and hides when Ctrl is
 //      released, so it tracks the live zoom level only while the user is actively zooming.
 //
-// The icon is handed in as a data URL on window.__wrapwebZoomIcon (set by zoom.js right before this
+// The icon is handed in as a data URL on window.__voltageZoomIcon (set by zoom.js right before this
 // runs), mirroring how move-overlay.js receives its icon — no file:// path needed in the page.
 //
 // Styles use element.style (CSSOM), NOT a <style> tag: strict app CSPs (e.g. Mastodon) silently
@@ -19,9 +19,9 @@
 // everywhere. The theme (and the icon's invert) is re-read on every show() so a light/dark switch
 // after load is reflected on the next zoom gesture.
 (() => {
-  if (window.__wrapwebZoomOsd) return                       // already installed for this document
+  if (window.__voltageZoomOsd) return                       // already installed for this document
 
-  const ID = 'wrapweb-zoom-osd'
+  const ID = 'voltage-zoom-osd'
 
   // Built lazily on the first show() and reused. pointer-events:none — it's purely informational and
   // must never block the page. No dimming backdrop (unlike move mode, which needs a drag surface):
@@ -37,7 +37,7 @@
       'box-shadow:0 8px 32px rgba(0,0,0,0.45);opacity:0;transition:opacity .15s ease;' +
       "font:600 13px/1 'Ubuntu',system-ui,sans-serif;letter-spacing:.3px;white-space:nowrap"
 
-    const icon = window.__wrapwebZoomIcon
+    const icon = window.__voltageZoomIcon
     if (icon) {
       iconEl = document.createElement('img')
       iconEl.src = icon
@@ -75,7 +75,7 @@
   // hide() is also exposed so main can close it early on Ctrl keyUp (a before-input-event hook in
   // zoom.js that fires regardless of page focus); blur closes it if focus leaves mid-gesture. Both
   // are nice-to-haves on top of the timer, which is the guaranteed close.
-  window.__wrapwebZoomOsd = { show, hide }
+  window.__voltageZoomOsd = { show, hide }
   window.addEventListener('blur', hide, true)
 
   // The zoom gesture itself: ctrl+wheel → ask main to zoom. passive — we only read the gesture.

@@ -6,7 +6,6 @@ import { applyTemplate } from '../template.js'
 const appNameFromProfile = (profile) => 'v' + profile.charAt(0).toUpperCase() + profile.slice(1)
 const profileFromDesktop = (name) => {
   const base = name.replace(/\.desktop$/, '')
-  if (base.startsWith('wrapweb-')) return base.slice('wrapweb-'.length)  // legacy installs
   const m = /^v(.+)/.exec(base)
   return m ? m[1].charAt(0).toLowerCase() + m[1].slice(1) : base
 }

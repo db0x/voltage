@@ -100,7 +100,7 @@ module.exports = function setupAppWindow() {
   // the rename never migrates a user's stored data.
   app.setName(wmClass(pkg.profile))
   app.commandLine.appendSwitch('wm-class', wmClass(pkg.profile))
-  app.setPath('userData', path.join(app.getPath('appData'), 'wrapweb', pkg.profile))
+  app.setPath('userData', path.join(app.getPath('appData'), 'voltage', pkg.profile))
 
   // acceptsFileArg lets an app receive a bare local file path as a launch argument; the file
   // itself is handled either by the built-in draw.io fileHandler (resolveFileUrl) or by a

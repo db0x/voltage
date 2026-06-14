@@ -11,7 +11,7 @@
 // so the central setWindowOpenHandler can't route it — the real Office editor URL
 // (…sharepoint.com/:w:/…) only appears a moment later when the freshly opened child window
 // navigates (an in-page SPA navigation we can observe but not prevent). So we watch that
-// child and, as soon as it heads to a URL another built wrapweb app claims (Word/Excel/
+// child and, as soon as it heads to a URL another built voltage app claims (Word/Excel/
 // PowerPoint via routing.json), we launch that app and discard the child.
 //
 // To avoid a stray OneDrive window flashing up, same-origin popups are created hidden; the

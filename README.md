@@ -1,9 +1,9 @@
 ```
-                                 __ 
- _    _________ ____ _    _____ / / 
-| |/|/ / __/ _ `/ _ \ |/|/ / -_) _ \
-|__,__/_/  \_,_/ .__/__,__/\__/_.__/🐧
-              /_/                   
+            ____               
+ _  _____  / / /____ ____ ____ 
+| |/ / _ \/ / __/ _ `/ _ `/ -_)
+|___/\___/_/\__/\_,_/\_, /\__/ 🐧
+                    /___/                       
 ```
 [![Platform: Linux](https://img.shields.io/badge/platform-linux-blue?logo=linux&logoColor=white)](https://github.com/db0x/wrapweb)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -17,7 +17,7 @@ Turn any *web app* into a standalone Linux *desktop application* — packaged as
 Built on [Electron](https://www.electronjs.org/). Each app gets an isolated browser profile so WhatsApp, Teams, Google Earth and your own internal tools can all run side by side without interfering.
 
 > **Target environment: Linux🐧**
-> wrapweb is built and tested on GNOME and KDE Plasma (Wayland). Features like correct WM class, taskbar grouping, window management, and the Manager's native icon integration work well on both desktops. X11 may work but is not actively tested.
+> voltage is built and tested on GNOME and KDE Plasma (Wayland). Features like correct WM class, taskbar grouping, window management, and the Manager's native icon integration work well on both desktops. X11 may work but is not actively tested.
 
 ## Installation
 
@@ -34,25 +34,25 @@ The script:
 - checks for **Node.js ≥ 20** — if missing, offers to install it automatically via [nvm](https://github.com/nvm-sh/nvm)
 - checks for **npm** — if missing, offers to install it via the system package manager
 - checks for optional dependencies (FUSE, python3-gi, aspell) and prints install hints if any are absent
-- clones the repository to `~/.local/share/wrapweb` (or a custom path passed as the first argument)
+- clones the repository to `~/.local/share/voltage` (or a custom path passed as the first argument)
 - runs `npm install`
-- creates a `wrapweb` launcher entry in the application menu
+- creates a `voltage` launcher entry in the application menu
 
 Re-running the script on an existing installation does a `git pull` and reinstalls dependencies.
 
 ### Uninstall
 
 ```bash
-~/.local/share/wrapweb/install.sh --uninstall
+~/.local/share/voltage/install.sh --uninstall
 ```
 
-The script removes the desktop entry and icon, then asks interactively whether to also delete the installation directory and the app profile data (`~/.config/wrapweb/`).
+The script removes the desktop entry and icon, then asks interactively whether to also delete the installation directory and the app profile data (`~/.config/voltage/`).
 
 ### Manual setup
 
 ```bash
 git clone https://github.com/db0x/wrapweb.git
-cd wrapweb
+cd voltage
 npm install
 npm start
 ```
@@ -64,9 +64,9 @@ npm start
 - **Context menu** — a single self-rendered in-page **layer** (no native menu anywhere); both variants share one design:
   - **Plain right-click** → the slim menu: spelling suggestions (Electron's spellchecker, falling back to `aspell`) + Cut / Copy / Paste (enabled per the field's edit flags). Driven by the native `context-menu` event as its data source (the only place the misspelled word is exposed), then rendered as the overlay. Apps that handle `contextmenu` themselves still show their own.
   - **Ctrl+right-click** → the full menu: Cut / Copy / Paste, **Open with [App]** / **Open in browser** for links, **Save image as** for images, and plugin actions (the widget's Move/Quit, the zoom submenu). Triggered on the raw right mouse button so it works in *every* app at any spot — even where the native menu fails: apps that suppress `contextmenu` (Teams/Office), Word's canvas editor (in a cross-origin iframe; the preload loads in all frames), app-region drag zones, and Wayland's popup-grab quirks
-- **Cross-app link routing** — links to URLs handled by another installed wrapweb app open directly in that app instead of the system browser; a `routing.json` plugin file (written by `install-app`, read at runtime) maps hostnames to AppImages — no rebuild required when routing changes. The file is split into `base` claims (each app's primary URL) and `routing` claims (extra URLs apps opt into via the `routingUrls` config field, with `*` wildcards, editable in the create/edit dialog); when both match a link, the `routing` claim wins
+- **Cross-app link routing** — links to URLs handled by another installed voltage app open directly in that app instead of the system browser; a `routing.json` plugin file (written by `install-app`, read at runtime) maps hostnames to AppImages — no rebuild required when routing changes. The file is split into `base` claims (each app's primary URL) and `routing` claims (extra URLs apps opt into via the `routingUrls` config field, with `*` wildcards, editable in the create/edit dialog); when both match a link, the `routing` claim wins
 - **Per-app plugins** — main-process modules shipped under `webapps/plugins/` that extend a single app's behaviour (e.g. routing OneDrive document opens to the Word/Excel/PowerPoint app, or driving a webmail app's compose UI for `mailto:` links). Selected per app in the create/edit dialog; a change takes effect after rebuilding the AppImage. A plugin can be **configurable** — it ships its own settings dialog (`config.html`) opened from a gear button on its chip, and its values are stored per app in `pluginConfig` (e.g. the widget plugin's window corner radius)
-- **About panel** — `F12` toggles an in-app About overlay showing the current domain (with a Google Safe Browsing badge when active), the app, the build versions (wrapweb / Electron / Chromium), and the loaded plugins
+- **About panel** — `F12` toggles an in-app About overlay showing the current domain (with a Google Safe Browsing badge when active), the app, the build versions (voltage / Electron / Chromium), and the loaded plugins
 - **Zoom** — `Ctrl+Scroll` zooms the page, provided per app by the configurable **zoom** plugin (step size and the min/max zoom factor are set in its config dialog); a centred on-screen panel shows the current zoom percentage while zooming and auto-hides 1s after the last change (it keeps a constant size, so it always reads at 100% regardless of the page zoom). The plugin also adds a **Zoom** submenu to the context menu (zoom in / out / reset). Add it to an app in the create/edit dialog to enable zoom for that app
 - **Screen sharing** — WebRTC / PipeWire capture works out of the box
 - **DevTools** — `Shift+F12` to toggle
@@ -77,7 +77,7 @@ npm start
 
 ## Manager
 
-Running `npm start` (without a profile) opens the **wrapweb Manager** — a graphical overview of all configured apps. The Manager is the primary interface for adding, configuring, building, installing, and launching apps. The UI language follows the system locale (German and English supported).
+Running `npm start` (without a profile) opens the **voltage Manager** — a graphical overview of all configured apps. The Manager is the primary interface for adding, configuring, building, installing, and launching apps. The UI language follows the system locale (German and English supported).
 
 ![Manager UI](assets/manager.png)
 
@@ -133,7 +133,7 @@ The menu (top right) offers:
 
 ## System mail handler
 
-wrapweb can register any web mail app as the system-wide default handler for `mailto:` links. Once registered, clicking a `mailto:` link in any application — browser, PDF viewer, terminal, Teams, … — opens a compose window in the configured web app. No native mail client required.
+voltage can register any web mail app as the system-wide default handler for `mailto:` links. Once registered, clicking a `mailto:` link in any application — browser, PDF viewer, terminal, Teams, … — opens a compose window in the configured web app. No native mail client required.
 
 ### How it works
 
@@ -170,14 +170,14 @@ After installing, double-clicking any of these files in the file manager opens i
 
 ## rclone Integration (Google Drive)
 
-wrapweb can act as a system file handler for Office formats and route them through **Google Drive** via [rclone](https://rclone.org/). Double-clicking a `.docx`, `.xlsx`, or `.pptx` file in the file manager uploads it to your Drive and opens it directly in Google Docs, Sheets, or Slides. When you close the app window, the edited file is automatically synced back to its original local path.
+voltage can act as a system file handler for Office formats and route them through **Google Drive** via [rclone](https://rclone.org/). Double-clicking a `.docx`, `.xlsx`, or `.pptx` file in the file manager uploads it to your Drive and opens it directly in Google Docs, Sheets, or Slides. When you close the app window, the edited file is automatically synced back to its original local path.
 
 ### Prerequisites
 
 - **rclone** installed — see [rclone.org/install](https://rclone.org/install/)
 - A **Google Drive remote** configured in rclone — see [rclone Google Drive docs](https://rclone.org/drive/) for the one-time setup
 
-### Setup in wrapweb
+### Setup in voltage
 
 1. Build and install the relevant app(s) — **Google Docs**, **Google Spreadsheets**, and/or **Google Presentation** — via the Manager
 2. Open the Manager side menu → **rclone Integration**
@@ -189,18 +189,18 @@ wrapweb can act as a system file handler for Office formats and route them throu
 
 | Step | What happens |
 |---|---|
-| Double-click `.docx` / `.xlsx` / `.pptx` in the file manager | wrapweb checks whether a file with that name already exists on Drive |
+| Double-click `.docx` / `.xlsx` / `.pptx` in the file manager | voltage checks whether a file with that name already exists on Drive |
 | File already on Drive, identical to local | Opens directly — no upload needed |
 | File already on Drive, different content | Shows a comparison dialog (size, last modified) — choose to overwrite or open the Drive version |
 | New file | Uploads to the configured Drive folder |
 | Editing in the browser | File is open in Google Docs / Sheets / Slides |
-| Close the app window | wrapweb syncs the Drive version back to the original local path |
+| Close the app window | voltage syncs the Drive version back to the original local path |
 
 > Uploaded files land in the configured Drive folder (e.g. `google-docs/` in your Drive root). The folder is created automatically on first use.
 
 ## Google Safe Browsing
 
-wrapweb can check every external link you hover over against the **Google Safe Browsing** database. A small shield icon appears in the link tooltip — green for known-safe, red for a known threat.
+voltage can check every external link you hover over against the **Google Safe Browsing** database. A small shield icon appears in the link tooltip — green for known-safe, red for a known threat.
 
 ### Privacy
 
@@ -219,29 +219,29 @@ Results are cached per origin (5 minutes for safe, 30 minutes for flagged) to ke
 2. Open the Manager side menu → **Google Safe Browsing**
 3. Enable the toggle, paste your API key, click **Save**
 
-No AppImage rebuild is required — the key and enabled state are read at runtime from `~/.config/wrapweb/safe-browsing.json`.
+No AppImage rebuild is required — the key and enabled state are read at runtime from `~/.config/voltage/safe-browsing.json`.
 
 ## Obsidian Plugin
 
-wrapweb ships a plugin for [Obsidian](https://obsidian.md/). Once installed, external links in your notes that match a wrapweb-routed app open directly in that app instead of the system browser. All external links show a **link tooltip** at the bottom of the screen — identical in style to the tooltips in wrapweb app windows: the app icon and URL for wrapweb targets, the browser icon and URL for everything else.
+voltage ships a plugin for [Obsidian](https://obsidian.md/). Once installed, external links in your notes that match a voltage-routed app open directly in that app instead of the system browser. All external links show a **link tooltip** at the bottom of the screen — identical in style to the tooltips in voltage app windows: the app icon and URL for voltage targets, the browser icon and URL for everything else.
 
 ### Prerequisites
 
 - Obsidian ≥ 1.12.7 installed with at least one vault
-- At least one wrapweb app built and installed (so `routing.json` exists)
+- At least one voltage app built and installed (so `routing.json` exists)
 
 ### Setup
 
 1. Open the Manager side menu → **Obsidian Integration**
 2. The dialog lists all known vaults with their current plugin status
-3. Click **Plugin installieren** — the plugin files are copied into every vault's `.obsidian/plugins/wrapweb/` directory
-4. In Obsidian: **Settings → Community Plugins → wrapweb** → enable
+3. Click **Plugin installieren** — the plugin files are copied into every vault's `.obsidian/plugins/voltage/` directory
+4. In Obsidian: **Settings → Community Plugins → voltage** → enable
 
-When wrapweb is updated and ships a newer plugin version, the dialog shows **Update verfügbar** per vault and an **Plugin aktualisieren** button.
+When voltage is updated and ships a newer plugin version, the dialog shows **Update verfügbar** per vault and an **Plugin aktualisieren** button.
 
 ### Obsidian via Flatpak
 
-If Obsidian is installed as a Flatpak, the dialog shows an extra section with the one-time command required to grant the sandbox access to your home directory — otherwise it cannot spawn the wrapweb AppImages. The command is offered with a one-click copy button:
+If Obsidian is installed as a Flatpak, the dialog shows an extra section with the one-time command required to grant the sandbox access to your home directory — otherwise it cannot spawn the voltage AppImages. The command is offered with a one-click copy button:
 
 ```
 flatpak override --user --filesystem=home md.obsidian.Obsidian
@@ -251,7 +251,7 @@ Run it once in a terminal and restart Obsidian. The hint is only displayed when 
 
 ### How it works
 
-The plugin reads `~/.config/wrapweb/plugins/routing/routing.json` at runtime — the same file that is written automatically whenever you install a wrapweb app. No rebuild and no Obsidian restart are required when routing changes.
+The plugin reads `~/.config/voltage/plugins/routing/routing.json` at runtime — the same file that is written automatically whenever you install a voltage app. No rebuild and no Obsidian restart are required when routing changes.
 
 The plugin works in both **Reading Mode** and **Live Preview** (CodeMirror 6). Routing and icon data are cached in memory; the routing file is re-read at most once per second to pick up changes without measurable overhead.
 
@@ -316,7 +316,7 @@ npm run install-app -- whatsapp      # (re-)install launcher entry without rebui
 npm run install-app                  # all configs
 ```
 
-Output lands in `dist/` as a self-contained AppImage. The artifact is named after the profile with a leading `v` and an upper-cased first letter — e.g. profile `teams` builds `dist/vTeams`, installs the launcher entry `vTeams.desktop`, and registers its icon as `vTeams.svg`. The build profile itself stays lowercase and remains the stable identity for the app's session/config directory under `~/.config/wrapweb/<profile>/`.
+Output lands in `dist/` as a self-contained AppImage. The artifact is named after the profile with a leading `v` and an upper-cased first letter — e.g. profile `teams` builds `dist/vTeams`, installs the launcher entry `vTeams.desktop`, and registers its icon as `vTeams.svg`. The build profile itself stays lowercase and remains the stable identity for the app's session/config directory under `~/.config/voltage/<profile>/`.
 
 ## Manual config (advanced)
 
@@ -410,7 +410,7 @@ The same matcher (`src/routing-match.js`) is shared by the app windows, the Obsi
 Each app stores cookies, localStorage and cache under:
 
 ```
-~/.config/wrapweb/<profile>/
+~/.config/voltage/<profile>/
 ```
 
 Profiles are fully isolated and persist across restarts.

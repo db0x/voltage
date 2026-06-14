@@ -21,10 +21,10 @@ function resolveObsidianJson(configHome) {
 }
 
 // Pre-warm Obsidian availability at module load (resolved before the first IPC call).
-// In test mode, WRAPWEB_TEST_OBSIDIAN_AVAILABLE forces the drawer entry on without
+// In test mode, VOLTAGE_TEST_OBSIDIAN_AVAILABLE forces the drawer entry on without
 // requiring a real obsidian:// MIME registration on the host.
-const prefetchedObsidianAvailable = process.env.WRAPWEB_TEST
-  ? Promise.resolve(process.env.WRAPWEB_TEST_OBSIDIAN_AVAILABLE === '1')
+const prefetchedObsidianAvailable = process.env.VOLTAGE_TEST
+  ? Promise.resolve(process.env.VOLTAGE_TEST_OBSIDIAN_AVAILABLE === '1')
   : runAsync('xdg-mime', ['query', 'default', 'x-scheme-handler/obsidian'], 2000).then(out => !!out.trim())
 
 module.exports = function registerObsidianHandlers() {
@@ -40,13 +40,13 @@ module.exports = function registerObsidianHandlers() {
     // We try standard XDG first (AppImage, .deb, .rpm), then Flatpak, then Snap.
     const obsidianJson  = resolveObsidianJson(configHome)
     const flatpakObsidianJson = path.join(os.homedir(), '.var', 'app', 'md.obsidian.Obsidian', 'config', 'obsidian', 'obsidian.json')
-    // WRAPWEB_TEST_OBSIDIAN_FLATPAK forces detection on/off in tests so the dialog hint
+    // VOLTAGE_TEST_OBSIDIAN_FLATPAK forces detection on/off in tests so the dialog hint
     // can be exercised without an actual Flatpak Obsidian install on the host.
-    // WRAPWEB_FORCE_OBSIDIAN_FLATPAK=1 enables the same override outside test mode —
+    // VOLTAGE_FORCE_OBSIDIAN_FLATPAK=1 enables the same override outside test mode —
     // useful for previewing the hint locally on a native Obsidian install.
-    const isObsidianFlatpak   = process.env.WRAPWEB_FORCE_OBSIDIAN_FLATPAK === '1'
-      || (process.env.WRAPWEB_TEST
-        ? process.env.WRAPWEB_TEST_OBSIDIAN_FLATPAK === '1'
+    const isObsidianFlatpak   = process.env.VOLTAGE_FORCE_OBSIDIAN_FLATPAK === '1'
+      || (process.env.VOLTAGE_TEST
+        ? process.env.VOLTAGE_TEST_OBSIDIAN_FLATPAK === '1'
         : fs.existsSync(flatpakObsidianJson))
     const bundledManifest = path.join(APP_ROOT, 'src', 'plugins', 'obsidian', 'manifest.json')
 
@@ -59,7 +59,7 @@ module.exports = function registerObsidianHandlers() {
       vaults = Object.values(data.vaults || {})
         .filter(v => v.path && fs.existsSync(v.path))
         .map(v => {
-          const pluginDir      = path.join(v.path, '.obsidian', 'plugins', 'wrapweb')
+          const pluginDir      = path.join(v.path, '.obsidian', 'plugins', 'voltage')
           const manifestFile   = path.join(pluginDir, 'manifest.json')
           const mainFile       = path.join(pluginDir, 'main.js')
           let installedVersion = null
@@ -90,7 +90,7 @@ module.exports = function registerObsidianHandlers() {
     let count = 0
     for (const vaultPath of vaultPaths) {
       try {
-        const dest = path.join(vaultPath, '.obsidian', 'plugins', 'wrapweb')
+        const dest = path.join(vaultPath, '.obsidian', 'plugins', 'voltage')
         fs.mkdirSync(dest, { recursive: true })
         fs.copyFileSync(path.join(srcDir, 'manifest.json'), path.join(dest, 'manifest.json'))
         fs.copyFileSync(path.join(srcDir, 'main.js'),       path.join(dest, 'main.js'))

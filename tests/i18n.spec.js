@@ -4,7 +4,7 @@ const { test, expect } = require('./fixtures')
 // the tooltip mechanism works end-to-end. One representative string is
 // checked per test rather than asserting every label.
 
-// Setup:    Manager launched with WRAPWEB_LANG=en (default fixture).
+// Setup:    Manager launched with VOLTAGE_LANG=en (default fixture).
 // Action:   Open the create dialog.
 // Expected: Dialog title is in English ("Add new WebApp").
 test('UI renders in English by default', async ({ managerPage }) => {
@@ -12,10 +12,10 @@ test('UI renders in English by default', async ({ managerPage }) => {
   await expect(managerPage.locator('.dialog-overlay:not(.hidden) .dialog-title')).toHaveText('Add new WebApp')
 })
 
-// Setup:    Manager launched with WRAPWEB_LANG=de (German fixture).
+// Setup:    Manager launched with VOLTAGE_LANG=de (German fixture).
 // Action:   Open the create dialog.
 // Expected: Dialog title is in German ("Neue WebApp hinzufügen").
-test('UI renders in German when WRAPWEB_LANG=de', async ({ managerPageDe }) => {
+test('UI renders in German when VOLTAGE_LANG=de', async ({ managerPageDe }) => {
   await managerPageDe.click('.card-add')
   await expect(managerPageDe.locator('.dialog-overlay:not(.hidden) .dialog-title')).toHaveText('Neue WebApp hinzufügen')
 })

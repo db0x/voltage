@@ -41,13 +41,6 @@ test.describe('profileFromAppName — artifact name → profile', () => {
     expect(profileFromAppName('vGoogle-docs')).toBe('google-docs')
   })
 
-  // Setup:    a legacy "wrapweb-<profile>" artifact name from a pre-rename install.
-  // Action:   recover the build profile.
-  // Expected: routing must keep working across a mixed old/new install set while users rebuild.
-  test('still accepts the legacy wrapweb- prefix', () => {
-    expect(profileFromAppName('wrapweb-teams')).toBe('teams')
-  })
-
   // Setup:    every profile that ships as a build config.
   // Action:   round-trip profile → appName → profile.
   // Expected: lossless, otherwise renamed AppImages would fail to route back to their profile.

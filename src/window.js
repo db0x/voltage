@@ -13,7 +13,7 @@ const { appName, profileFromAppName } = require('./app-naming')
 const { toggleAboutWindow } = require('./about-window')
 const { t } = require('./i18n')
 
-const ROUTING_FILE = path.join(app.getPath('appData'), 'wrapweb', 'plugins', 'routing', 'routing.json')
+const ROUTING_FILE = path.join(app.getPath('appData'), 'voltage', 'plugins', 'routing', 'routing.json')
 
 // In-memory cache: origin → { result: 'safe'|'unsafe', expiresAt }
 // Avoids repeated API calls for the same domain during a browsing session.
@@ -24,10 +24,10 @@ const safeBrowsingCache = new Map()
 const windowProfiles = new Map()  // webContentsId → profile
 
 function safeBrowsingConfigPath() {
-  const testDir = process.env.WRAPWEB_TEST_DATA_DIR
+  const testDir = process.env.VOLTAGE_TEST_DATA_DIR
   return testDir
     ? path.join(testDir, 'safe-browsing.json')
-    : path.join(app.getPath('appData'), 'wrapweb', 'safe-browsing.json')
+    : path.join(app.getPath('appData'), 'voltage', 'safe-browsing.json')
 }
 
 function httpsPost(url, body) {
@@ -74,7 +74,7 @@ ipcMain.handle('safe-browsing:check', async (event, url, ignoreExclude = false) 
   const prefixB64 = fullHash.slice(0, 4).toString('base64')
 
   const body = JSON.stringify({
-    client:     { clientId: 'wrapweb', clientVersion: '1.0' },
+    client:     { clientId: 'voltage', clientVersion: '1.0' },
     threatInfo: {
       threatTypes:      ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
       platformTypes:    ['ANY_PLATFORM'],
@@ -301,7 +301,7 @@ function serializePluginMenu(list, actions, seq = { n: 0 }) {
 // Builds the FULL menu's items (Ctrl+right-click) and records this window's action map. Cut/copy/
 // paste act on the app's webContents; a link under the cursor adds Open-with/Open-in-browser; an
 // image adds Save-image-as; plugin entries come last.
-ipcMain.handle('wrapweb:menu-items', (event, { linkURL, imageURL } = {}) => {
+ipcMain.handle('voltage:menu-items', (event, { linkURL, imageURL } = {}) => {
   const ctx = appMenuRegistry.get(event.sender.id)
   if (!ctx) return { items: [] }
   const i18n = t()
@@ -361,7 +361,7 @@ ipcMain.handle('wrapweb:menu-items', (event, { linkURL, imageURL } = {}) => {
     click: () => toggleAboutWindow(ctx.mainWindow),
   }
   const pluginList = [
-    ...(ctx.mainWindow._wrapwebPlugins ?? [])
+    ...(ctx.mainWindow._voltagePlugins ?? [])
       .flatMap(inst => { try { return inst.contextMenuItems?.() ?? [] } catch { return [] } }),
     fullscreenItem,
     aboutItem,
@@ -372,7 +372,7 @@ ipcMain.handle('wrapweb:menu-items', (event, { linkURL, imageURL } = {}) => {
   return { items }
 })
 
-ipcMain.on('wrapweb:menu-action', (event, { id } = {}) => {
+ipcMain.on('voltage:menu-action', (event, { id } = {}) => {
   const ctx = appMenuRegistry.get(event.sender.id)
   try { ctx?.actions?.[id]?.() } catch {}
 })
@@ -505,7 +505,7 @@ function createWindow(pkg, opts = {}) {
     nodeIntegrationInSubFrames: true,
     session: customSession,
     ...(pkg.crossOriginIsolation && { enableBlinkFeatures: 'SharedArrayBuffer' }),
-    ...(pkg.fileHandler && { additionalArguments: ['--wrapweb-file-handler'] }),
+    ...(pkg.fileHandler && { additionalArguments: ['--voltage-file-handler'] }),
   }
 
   const viewMode = collectPluginViewMode(pkg)
@@ -554,7 +554,7 @@ function createWindow(pkg, opts = {}) {
     appContents = mainWindow.webContents
   }
   // Lets other modules (e.g. the About overlay) reach the app's webContents in view mode.
-  mainWindow._wrapwebAppContents = appContents
+  mainWindow._voltageAppContents = appContents
 
   if (!pkg.geometry) mainWindow.on('close', () => windowState.save(mainWindow))
 
@@ -593,7 +593,7 @@ function createWindow(pkg, opts = {}) {
       )) {
         return { action: 'allow' }
       }
-      // External URLs: route to another wrapweb app or open in system browser
+      // External URLs: route to another voltage app or open in system browser
       if (!routeExternalUrl(url, pkg.profile)) shell.openExternal(url)
       return { action: 'deny' }
     } catch (err) {
@@ -607,7 +607,7 @@ function createWindow(pkg, opts = {}) {
     // Electron requires a synchronous save path — use a temp file and move it
     // to the user-chosen location afterwards.
     const filename = item.getFilename()
-    const tmpPath  = path.join(app.getPath('temp'), `wrapweb-${Date.now()}-${filename}`)
+    const tmpPath  = path.join(app.getPath('temp'), `voltage-${Date.now()}-${filename}`)
     item.setSavePath(tmpPath)
 
     // Register the done listener BEFORE opening the dialog to avoid a race
@@ -713,9 +713,9 @@ function createWindow(pkg, opts = {}) {
     actions.cut = () => appContents.cut(); actions.copy = () => appContents.copy(); actions.paste = () => appContents.paste()
 
     // Render in the frame the click came from (params.x/y are that frame's coordinates), falling
-    // back to the top frame. The preload's wrapweb:menu-show handler pops the overlay.
-    try { (event.senderFrame || appContents).send('wrapweb:menu-show', { items, x: params.x, y: params.y }) }
-    catch { try { appContents.send('wrapweb:menu-show', { items, x: params.x, y: params.y }) } catch {} }
+    // back to the top frame. The preload's voltage:menu-show handler pops the overlay.
+    try { (event.senderFrame || appContents).send('voltage:menu-show', { items, x: params.x, y: params.y }) }
+    catch { try { appContents.send('voltage:menu-show', { items, x: params.x, y: params.y }) } catch {} }
   })
 
   // F12 toggles the About panel; Shift+F12 toggles DevTools; F11 toggles fullscreen. before-input-event
@@ -827,7 +827,7 @@ function createWindow(pkg, opts = {}) {
 
   // Main-process plugins selected for this app (config-driven, no longer hardcoded). Stored
   // on the window so app-window.js can forward a second-instance launch argument to them.
-  mainWindow._wrapwebPlugins = loadPlugins(mainWindow, pkg, {
+  mainWindow._voltagePlugins = loadPlugins(mainWindow, pkg, {
     appOrigin, internalDomains, launchArg: opts.launchArg, appContents,
   })
 
@@ -837,7 +837,7 @@ function createWindow(pkg, opts = {}) {
 // Re-dispatches a new launch argument (from a second-instance activation) to a window's
 // plugins, so e.g. the strato mail plugin can act on a fresh mailto: while already running.
 function dispatchLaunchArg(win, arg) {
-  for (const inst of win._wrapwebPlugins ?? []) {
+  for (const inst of win._voltagePlugins ?? []) {
     try { inst.onLaunch?.(arg) } catch (err) { console.error('[plugin] onLaunch failed:', err) }
   }
 }

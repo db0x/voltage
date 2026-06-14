@@ -14,7 +14,7 @@ function semverLt(a, b) {
 }
 
 async function checkForUpdate(currentVersion) {
-  if (process.env.WRAPWEB_TEST) return null
+  if (process.env.VOLTAGE_TEST) return null
   try {
     const res = await fetch(REMOTE_URL, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) return null

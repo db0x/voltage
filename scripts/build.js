@@ -5,7 +5,7 @@ const path = require('node:path')
 const { installDesktop, installIcon } = require('./lib')
 const { appName } = require('../src/app-naming')
 
-const APP_ID_BASE = 'de.db0x.wrapweb'
+const APP_ID_BASE = 'de.db0x.voltage'
 const CONFIGS_DIR = path.join(__dirname, '..', 'webapps')
 
 // Validates that each configured plugin path resolves to an existing file under webapps/.
@@ -53,8 +53,7 @@ function expandConfig(app) {
       url: app.url,
       // The embedded `name` is Electron's app.getName() and electron-builder derives the
       // updaterCacheDirName (and, on some Wayland compositors, the app_id) from it — so it must be
-      // the new artifact name, not the legacy "wrapweb-<profile>", or "wrapweb-teams" leaks back
-      // into the packaged app. The human-readable label travels separately as displayName (UI like
+      // the artifact name (e.g. "vTeams"). The human-readable label travels separately as displayName (UI like
       // the About panel); window.js falls back to pkg.profile when a config sets no name.
       ...(app.name                && { displayName: app.name }),
       ...(app.userAgent           && { userAgent: app.userAgent }),

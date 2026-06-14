@@ -6,7 +6,7 @@ const translations = {
 }
 
 function t() {
-  const lang = (process.env.WRAPWEB_LANG ?? app.getLocale()).split('-')[0].toLowerCase()
+  const lang = (process.env.VOLTAGE_LANG ?? app.getLocale()).split('-')[0].toLowerCase()
   return translations[lang] ?? translations.en
 }
 

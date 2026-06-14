@@ -255,7 +255,7 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     // Title and header icon reflect the specific app being edited.
     document.getElementById('edit-title').textContent = tr('editTitle', { name: app.name || app.profile })
     selectedIconName = app.icon || ''
-    // Header icon mirrors the app's own icon (falls back to the wrapweb default).
+    // Header icon mirrors the app's own icon (falls back to the voltage default).
     document.getElementById('edit-header-icon').src = app.iconPath ? `file://${app.iconPath}` : appDefaultSrc
     if (app.iconPath) {
       iconPreview.src = `file://${app.iconPath}`

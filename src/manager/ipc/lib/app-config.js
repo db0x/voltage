@@ -43,7 +43,7 @@ function readVersionSidecar(profile) {
 // avoids false positives for AppImages built without the sidecar.
 function needsRebuild(built, builtVersion, minVer) {
   if (!built) return false
-  return process.env.WRAPWEB_TEST
+  return process.env.VOLTAGE_TEST
     ? builtVersion !== null && semverLt(builtVersion, minVer)
     : semverLt(builtVersion ?? '0.0.0', minVer)
 }
@@ -72,7 +72,7 @@ function buildSingleApp(configFile, defaultMailDesktop) {
   const { builtVersion, builtRclone } = readVersionSidecar(cfg.profile)
   const minVer = pkg.minAppImageVersion ?? pkg.version
   let iconPath = null
-  if (iconValue && iconValue !== 'wrapweb') {
+  if (iconValue && iconValue !== 'voltage') {
     if (path.isAbsolute(iconValue) && fs.existsSync(iconValue)) {
       iconPath = iconValue
     } else {
@@ -86,7 +86,7 @@ function buildSingleApp(configFile, defaultMailDesktop) {
     built, installed, isPrivate: f.startsWith('build.private.'),
     iconPath,
     appImagePath: path.join(APP_ROOT, 'dist', appName(cfg.profile)),
-    profilePath:  path.join(app.getPath('appData'), 'wrapweb', cfg.profile),
+    profilePath:  path.join(app.getPath('appData'), 'voltage', cfg.profile),
     icon: cfg.icon || null, geometry: cfg.geometry || null,
     userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
     singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,

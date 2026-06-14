@@ -1,4 +1,4 @@
-// Central naming helper for the product rename (legacy "wrapweb-<profile>" → "v<Profile>").
+// Central naming helper. Maps a build profile to the user-facing artifact name (e.g. "v<Profile>").
 //
 // The build profile (lowercase kebab, e.g. "teams") stays the stable identity used for
 // userData paths, config keys and extraMetadata.profile — only the USER-FACING artifact
@@ -7,9 +7,7 @@
 // any user data. The WM class / Wayland app_id is a third, lowercased form — see wmClass().
 //
 // profileFromAppName() is the inverse, used at runtime to recover the profile from an
-// AppImage filename (routing parses sibling AppImage basenames). It still accepts the
-// legacy "wrapweb-" prefix so a mixed old/new install set keeps routing while the user
-// rebuilds their apps onto the new naming scheme.
+// AppImage filename (routing parses sibling AppImage basenames).
 
 // "teams" → "vTeams". Only the first letter is upper-cased so hyphenated profiles like
 // "google-docs" become "vGoogle-docs" (matching the inverse below).
@@ -17,9 +15,8 @@ function appName(profile) {
   return 'v' + profile.charAt(0).toUpperCase() + profile.slice(1)
 }
 
-// "vTeams" → "teams", "vGoogle-docs" → "google-docs". Legacy "wrapweb-teams" → "teams".
+// "vTeams" → "teams", "vGoogle-docs" → "google-docs".
 function profileFromAppName(name) {
-  if (name.startsWith('wrapweb-')) return name.slice('wrapweb-'.length)  // legacy artifacts
   const m = /^v(.+)/.exec(name)
   return m ? m[1].charAt(0).toLowerCase() + m[1].slice(1) : name
 }

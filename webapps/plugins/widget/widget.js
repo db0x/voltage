@@ -171,13 +171,13 @@ function hostHtml(config) {
     .replace(/\{\{shadow\}\}/g, shadow)
 }
 
-// Enters move mode: hands the overlay its parameters via window.__wrapwebWidgetMove, then runs
+// Enters move mode: hands the overlay its parameters via window.__voltageWidgetMove, then runs
 // move-overlay.js in the page. `wc` is the app view's webContents.
 function enterMoveMode(wc, t) {
   // Pass the current page zoom so the overlay can counter-scale its panel to a constant on-screen
   // size — otherwise a zoomed view (zoom plugin) would scale the move panel along with the page.
   const params = { icon: MOVE_ICON, hintText: t.widgetMoveHint, doneText: t.widgetMoveDone, zoom: wc.getZoomFactor() }
-  wc.executeJavaScript(`window.__wrapwebWidgetMove = ${JSON.stringify(params)};`)
+  wc.executeJavaScript(`window.__voltageWidgetMove = ${JSON.stringify(params)};`)
     .then(() => wc.executeJavaScript(MOVE_SCRIPT))
     .catch(() => {})
 }
