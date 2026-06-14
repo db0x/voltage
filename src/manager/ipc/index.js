@@ -1,4 +1,4 @@
-// Registers all IPC handlers for the wrapweb manager.
+// Registers all IPC handlers for the voltage manager.
 // Called once at startup in manager mode (pkg.profile is not set).
 //
 // Each domain lives in its own handlers/* module. The requires run at module load

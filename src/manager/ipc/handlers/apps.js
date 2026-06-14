@@ -11,10 +11,11 @@ const { resolveIconsByGtk }                                = require('../lib/ico
 const { readVersionSidecar, needsRebuild, buildSingleApp, buildAppCfg, usesRcloneSync } = require('../lib/app-config')
 const { getDefaultMailDesktop }                            = require('./mail')
 const { urlToRoutingKey, keyOverlaps, primaryKeyFromUrl, routingUrlKeys } = require('../../../routing-match')
+const { appName }                                          = require('../../../app-naming')
 
 module.exports = function registerAppHandlers() {
   ipcMain.handle('manager:apps', () => {
-    // xdg-mime returns a .desktop filename (e.g. "wrapweb-thunderbird.desktop");
+    // xdg-mime returns a .desktop filename (e.g. "vThunderbird.desktop");
     // compare against each app's desktop name to determine the current mail handler.
     const defaultMailDesktop = getDefaultMailDesktop()
     const minVer = pkg.minAppImageVersion ?? pkg.version
@@ -24,8 +25,8 @@ module.exports = function registerAppHandlers() {
       .map(f => {
         const cfg          = JSON.parse(fs.readFileSync(path.join(CONFIGS_DIR, f), 'utf8'))
         const configLabel  = f.replace(/^build\.(.+)\.json$/, '$1')
-        const built        = fs.existsSync(path.join(APP_ROOT, 'dist', `wrapweb-${cfg.profile}`))
-        const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `wrapweb-${cfg.profile}.desktop`)
+        const built        = fs.existsSync(path.join(APP_ROOT, 'dist', appName(cfg.profile)))
+        const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(cfg.profile)}.desktop`)
         const installed    = fs.existsSync(desktopFile)
         let iconValue      = cfg.icon || null
         if (installed) {
@@ -36,15 +37,15 @@ module.exports = function registerAppHandlers() {
         return {
           profile: cfg.profile, configLabel, name: cfg.name, url: cfg.url,
           built, installed, isPrivate: f.startsWith('build.private.'), iconValue,
-          appImagePath: path.join(APP_ROOT, 'dist', `wrapweb-${cfg.profile}`),
-          profilePath:  path.join(app.getPath('appData'), 'wrapweb', cfg.profile),
+          appImagePath: path.join(APP_ROOT, 'dist', appName(cfg.profile)),
+          profilePath:  path.join(app.getPath('appData'), 'voltage', cfg.profile),
           icon: cfg.icon || null, geometry: cfg.geometry || null,
           userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
           singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
           routingUrls: cfg.routingUrls || null,
           mimeTypes: cfg.mimeTypes || null, plugins: cfg.plugins || null,
           pluginConfig: cfg.pluginConfig || null,
-          isDefaultMailHandler: defaultMailDesktop === `wrapweb-${cfg.profile}.desktop`,
+          isDefaultMailHandler: defaultMailDesktop === `${appName(cfg.profile)}.desktop`,
           category: cfg.category || null,
           builtVersion, builtRclone, rcloneFileHandler: usesRcloneSync(cfg),
           needsRebuild: needsRebuild(built, builtVersion, minVer),
@@ -68,13 +69,13 @@ module.exports = function registerAppHandlers() {
     // Separate absolute paths from theme names — batch-resolve theme names via GTK.
     const themeNames = [...new Set(visible
       .map(c => c.iconValue)
-      .filter(v => v && v !== 'wrapweb' && !path.isAbsolute(v))
+      .filter(v => v && v !== 'voltage' && !path.isAbsolute(v))
     )]
     const resolved = resolveIconsByGtk(themeNames)
 
     return visible.map(({ iconValue, ...c }) => {
       let iconPath = null
-      if (iconValue && iconValue !== 'wrapweb') {
+      if (iconValue && iconValue !== 'voltage') {
         if (path.isAbsolute(iconValue) && fs.existsSync(iconValue)) {
           iconPath = iconValue
         } else {
@@ -137,10 +138,10 @@ module.exports = function registerAppHandlers() {
   })
 
   ipcMain.handle('manager:delete', (event, { profile, configLabel, deleteConfig, deleteProfileData }) => {
-    const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `wrapweb-${profile}.desktop`)
-    const appImageFile = path.join(APP_ROOT, 'dist', `wrapweb-${profile}`)
+    const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(profile)}.desktop`)
+    const appImageFile = path.join(APP_ROOT, 'dist', appName(profile))
     const configFile   = configLabel ? path.join(CONFIGS_DIR, `build.${configLabel}.json`) : null
-    const profileDir   = path.join(app.getPath('appData'), 'wrapweb', profile)
+    const profileDir   = path.join(app.getPath('appData'), 'voltage', profile)
     try {
       if (fs.existsSync(desktopFile))                                  fs.rmSync(desktopFile)
       if (fs.existsSync(appImageFile))                                 fs.rmSync(appImageFile)

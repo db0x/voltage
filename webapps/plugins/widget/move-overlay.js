@@ -1,6 +1,6 @@
 // Move-mode overlay for the widget plugin. RUNS IN THE PAGE CONTEXT: widget.js reads this file
 // and executes it via webContents.executeJavaScript (a frameless window can't load an external
-// <script> under strict app CSPs). Parameters are passed in on window.__wrapwebWidgetMove,
+// <script> under strict app CSPs). Parameters are passed in on window.__voltageWidgetMove,
 // which widget.js sets right before executing this — keeping this a real, lintable file instead
 // of a string built in JS.
 //
@@ -14,11 +14,11 @@
 // injected <style> elements under style-src, leaving the panel invisible. CSSOM inline styles
 // are not subject to style-src, so this works everywhere.
 (() => {
-  const ID = 'wrapweb-widget-move'
+  const ID = 'voltage-widget-move'
   // Running again while active toggles move mode OFF (so the menu item and F10 both toggle).
-  if (window.__wrapwebWidgetMoveClose) { window.__wrapwebWidgetMoveClose(); return }
+  if (window.__voltageWidgetMoveClose) { window.__voltageWidgetMoveClose(); return }
 
-  const { icon, hintText, doneText, zoom } = window.__wrapwebWidgetMove || {}
+  const { icon, hintText, doneText, zoom } = window.__voltageWidgetMove || {}
   const dark = matchMedia('(prefers-color-scheme: dark)').matches
   // Counter-scale the panel so it keeps a constant on-screen size when the view is zoomed (the zoom
   // plugin sets the page zoom; without this the panel would scale with the page). The backdrop (ov)
@@ -67,10 +67,10 @@
   ov.appendChild(card)
 
   // Exposed so a second run (menu/F10) or Esc/button closes the SAME instance with proper cleanup.
-  const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); window.__wrapwebWidgetMoveClose = null }
+  const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); window.__voltageWidgetMoveClose = null }
   const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close() } }
   btn.addEventListener('click', close)
   document.addEventListener('keydown', onKey, true)
-  window.__wrapwebWidgetMoveClose = close
+  window.__voltageWidgetMoveClose = close
   document.body.appendChild(ov)
 })();

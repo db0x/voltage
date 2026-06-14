@@ -37,7 +37,7 @@ function resolveIconsByGtkAsync(names) {
 // Pre-warm the generic app-placeholder lookup the moment this module is loaded — Electron's
 // app.whenReady() and BrowserWindow creation run in parallel, so it is usually resolved
 // before the first IPC call. Skipped in tests (no display server in headless Playwright).
-const prefetchedAppDefaultIcon = process.env.WRAPWEB_TEST
+const prefetchedAppDefaultIcon = process.env.VOLTAGE_TEST
   ? Promise.resolve({})
   : resolveIconsByGtkAsync(['application-default-icon'])
 

@@ -141,7 +141,7 @@
   "tooltipSingleInstance": "Prevents the app from being opened more than once. A second launch brings the existing window to the front instead.",
   "tooltipUAgent":         "Some websites block Electron or work better with a specific browser identity. The app can pose as Chrome, Firefox or Edge.",
   "tooltipDomains":        "Links to these domains open inside the app window instead of the default browser — e.g. for login pages or SSO providers.",
-  "tooltipRoutingUrls":    "Extra URLs that get routed to this app — from every other wrapweb app and from Obsidian. Wildcards with * are allowed, e.g. *.example.com or example.com/docs/*. Overlaps with other apps are prevented.",
+  "tooltipRoutingUrls":    "Extra URLs that get routed to this app — from every other voltage app and from Obsidian. Wildcards with * are allowed, e.g. *.example.com or example.com/docs/*. Overlaps with other apps are prevented.",
   "tooltipCoi":            "Enables SharedArrayBuffer and WASM threads. Only turn on if the website explicitly requires it — may restrict cross-origin requests.",
   "tooltipMailHandler":    "Registers this app system-wide as the default for mailto: links. Clicking an email address anywhere opens the compose window directly in this app.",
   "tooltipPlugins":        "Extra scripts shipped with this app that extend its behaviour — e.g. routing OneDrive documents to Word/Excel, or auto-opening a webmail app's compose dialog. Changing the selection requires rebuilding the AppImage.",
@@ -161,9 +161,9 @@
 
   "infoCopyToPrivate": "Copy to private config",
 
-  "drawerAbout":   "About wrapweb",
+  "drawerAbout":   "About voltage",
   "aboutLicense":  "MIT License",
-  "aboutGithub":   "wrapweb on GitHub",
+  "aboutGithub":   "voltage on GitHub",
   "aboutObsidianAvailable": "Obsidian plugin available",
   "aboutRclonePlugin":      "rclone plugin available",
 
@@ -217,15 +217,15 @@
   "profilesEmpty":          "No data directory",
   "profilesDeleteConfirm":  "<p>Really delete profile data for <strong>{name}</strong>?</p><p>Cookies, login sessions and local data will be lost. The app remains installed.</p>",
 
-  "rebuildNoticeTitle":      "wrapweb updated",
-  "rebuildNoticeIntro":      "wrapweb was updated to version <strong>{version}</strong>. The following AppImages were built with an older version and need to be rebuilt for all new features to work:",
+  "rebuildNoticeTitle":      "voltage updated",
+  "rebuildNoticeIntro":      "voltage was updated to version <strong>{version}</strong>. The following AppImages were built with an older version and need to be rebuilt for all new features to work:",
   "rebuildNoticeOk":         "Got it",
   "rebuildNoticeRebuildAll": "Rebuild all",
   "rebuildNoticeBuilding":   "Building …",
   "rebuildNoticeDone":       "Done",
 
   "updateNoticeTitle":  "Update available",
-  "updateNoticeBody":   "<p>wrapweb <strong>{version}</strong> is available.</p><p style=\"margin-top:8px\">To update, run <code>git pull</code> in the wrapweb directory and then rebuild all AppImages.</p>",
+  "updateNoticeBody":   "<p>voltage <strong>{version}</strong> is available.</p><p style=\"margin-top:8px\">To update, run <code>git pull</code> in the voltage directory and then rebuild all AppImages.</p>",
   "updateNoticeGithub": "Open on GitHub",
   "updateNoticeOk":     "Got it"
 }

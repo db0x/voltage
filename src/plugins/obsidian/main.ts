@@ -20,7 +20,7 @@ const IS_FLATPAK   = !!process.env.FLATPAK_ID || existsSync('/.flatpak-info')
 const CONFIG_HOME  = IS_FLATPAK
   ? join(homedir(), '.config')
   : (process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'))
-const ROUTING_FILE = join(CONFIG_HOME, 'wrapweb', 'plugins', 'routing', 'routing.json')
+const ROUTING_FILE = join(CONFIG_HOME, 'voltage', 'plugins', 'routing', 'routing.json')
 
 
 interface RouteTarget {
@@ -73,7 +73,7 @@ function getXdgDataDirs(): string[] {
 
 // Looks up a PNG icon file by name in standard hicolor theme locations.
 // Checks all XDG data directories so Flatpak/Snap icon exports are found too.
-// For wrapweb app icons we also check for SVG since we're in a plain web context here.
+// For voltage app icons we also check for SVG since we're in a plain web context here.
 function resolveIconPath(iconName: string, allowSvg = false): string | null {
   if (!iconName) return null
   const bases = getXdgDataDirs().map(d => join(d, 'icons', 'hicolor'))
@@ -237,7 +237,7 @@ const appIconCache = new Map<string, string | null>()
 function getAppIconDataUrl(appImagePath: string): string | null {
   if (appIconCache.has(appImagePath)) return appIconCache.get(appImagePath)!
   const name = basename(appImagePath).replace(/\.(AppImage|appimage)$/, '')
-  const p    = resolveIconPath(name, true) // allow SVG for wrapweb app icons
+  const p    = resolveIconPath(name, true) // allow SVG for voltage app icons
   const url  = p ? pathToDataUrl(p) : null
   appIconCache.set(appImagePath, url)
   return url
@@ -274,12 +274,14 @@ function resolveRoute(url: string): ResolvedRoute | null {
   const name =
     typeof target === 'object' && target.name
       ? target.name
-      : basename(appImagePath).replace(/^wrapweb-/, '').replace(/-/g, ' ')
+      // Fallback display name from the AppImage basename ("vTeams" → "teams"): strip the leading
+      // "v", lowercase the first letter (inverse of appName()), then dashes → spaces.
+      : basename(appImagePath).replace(/^v/, '').replace(/^./, c => c.toLowerCase()).replace(/-/g, ' ')
 
   return { appImagePath, name, iconDataUrl: getAppIconDataUrl(appImagePath) }
 }
 
-function openInWrapweb(route: ResolvedRoute, url: string): void {
+function openInVoltage(route: ResolvedRoute, url: string): void {
   // Inside Flatpak: spawn directly. The AppImage runs in the same sandbox which has
   // X11 access (DISPLAY is set). Force X11 via --ozone-platform to prevent Electron
   // from trying the Wayland socket (not accessible in this sandbox context).
@@ -292,7 +294,7 @@ function openInWrapweb(route: ResolvedRoute, url: string): void {
     stdio:    'ignore',
     env:      { ...process.env, ...extraEnv },
   })
-  child.on('error', e => console.log('[wrapweb] spawn error:', e.message))
+  child.on('error', e => console.log('[voltage] spawn error:', e.message))
   child.unref()
   new Notice(`Opening in ${route.name} …`)
 }
@@ -315,7 +317,7 @@ function extractUrlAt(text: string, offset: number): string | null {
   return null
 }
 
-// Builds the tooltip label for a mailto: link, mirroring the wording used in the wrapweb
+// Builds the tooltip label for a mailto: link, mirroring the wording used in the voltage
 // app windows ("Mail an {addr} verfassen" / "Compose mail to {addr}"). The address is the
 // part between "mailto:" and any "?query".
 function mailtoTooltipLabel(url: string): string {
@@ -327,7 +329,7 @@ function mailtoTooltipLabel(url: string): string {
 // --- Tooltip CSS (identical to src/tooltip.css injected into app windows) ---
 
 const TOOLTIP_CSS = `
-#wrapweb-link-tooltip {
+#voltage-link-tooltip {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
   z-index: 2147483647; max-width: 60%; padding: 3px 10px 4px;
   font: 12px/1.5 -apple-system, system-ui, sans-serif; color: #fff;
@@ -335,11 +337,11 @@ const TOOLTIP_CSS = `
   border-top-right-radius: 5px; pointer-events: none; display: none;
   backdrop-filter: blur(4px); align-items: center; gap: 6px; min-width: 0;
 }
-#wrapweb-link-tooltip img { width:14px; height:14px; flex-shrink:0; object-fit:contain; }
-#wrapweb-link-tooltip span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+#voltage-link-tooltip img { width:14px; height:14px; flex-shrink:0; object-fit:contain; }
+#voltage-link-tooltip span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 `
 
-export default class WrapwebPlugin extends Plugin {
+export default class VoltagePlugin extends Plugin {
   private tipEl:    HTMLElement      | null = null
   private tipIcon:  HTMLImageElement | null = null
   private tipLabel: HTMLElement      | null = null
@@ -350,7 +352,7 @@ export default class WrapwebPlugin extends Plugin {
     this.styleEl.textContent = TOOLTIP_CSS
 
     this.tipEl    = document.body.createEl('div')
-    this.tipEl.id = 'wrapweb-link-tooltip'
+    this.tipEl.id = 'voltage-link-tooltip'
     this.tipIcon  = this.tipEl.createEl('img')
     this.tipIcon.alt = ''
     this.tipIcon.style.display = 'none'
@@ -409,7 +411,7 @@ export default class WrapwebPlugin extends Plugin {
     evt.preventDefault()
     evt.stopImmediatePropagation()
     this.hideTooltip()
-    openInWrapweb(route, url)
+    openInVoltage(route, url)
   }
 
   private onMouseover(evt: MouseEvent): void {
@@ -425,7 +427,7 @@ export default class WrapwebPlugin extends Plugin {
       this.hideTooltip()
       return
     }
-    // Wrapweb route → app icon; no route → browser icon.
+    // Voltage route → app icon; no route → browser icon.
     const route       = resolveRoute(url)
     const iconDataUrl = route ? route.iconDataUrl : getBrowserIconDataUrl()
     this.showTooltip(iconDataUrl, url)

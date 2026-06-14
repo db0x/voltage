@@ -27,7 +27,7 @@ export function initInfoDialog({ i18n, icons, appDefaultSrc, plugins, templates 
   function openInfoDialog(app, name) {
     currentApp = app
     document.getElementById('info-title').textContent = name
-    // Header icon mirrors the app's own icon (falls back to the wrapweb default).
+    // Header icon mirrors the app's own icon (falls back to the voltage default).
     document.getElementById('info-header-icon').src = app.iconPath ? `file://${app.iconPath}` : appDefaultSrc
     const fieldsEl = document.getElementById('info-fields')
 

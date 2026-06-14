@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 // Expose window.electron only for apps that opt in via fileHandler flag.
 // draw.io-desktop protocol: if window.electron.request() is present, draw.io
 // bypasses the File System Access API and uses native IPC instead.
-if (process.argv.includes('--wrapweb-file-handler')) {
+if (process.argv.includes('--voltage-file-handler')) {
   let reqId = 0
   const pending = {}
 
@@ -22,6 +22,31 @@ if (process.argv.includes('--wrapweb-file-handler')) {
       ipcRenderer.send('rendererReq', msg)
     }
   })
+}
+
+// Neutralise the page's own window.close() for apps that opt in (widget apps + blockWindowClose).
+// Why this exists: Microsoft Teams' MSAL silent-auth runs in a hidden iframe whose redirect handler
+// (teams.cloud.microsoft/v2/authv2) calls window.close() to dismiss itself. In a normal browser an
+// iframe's window.close() is a no-op, but in Electron's view-mode (WebContentsView) it closes the
+// HOST window — so a fresh-login Teams vanishes the moment silent auth fails and MSAL falls back to
+// the interactive redirect. Neutralising window.close() lets MSAL continue to the login page.
+//
+// The gate is a synchronous IPC, NOT additionalArguments/process.argv or an env var. That auth iframe
+// becomes an out-of-process frame after its cross-origin hop through login.microsoftonline.com, and
+// neither additionalArguments nor a JS-set process.env ever reach an OOPIF renderer (Chromium
+// snapshots the renderer environment in C++ before any JS runs). The preload itself DOES run in every
+// frame including OOPIFs, and ipcRenderer.sendSync works there — and being synchronous it completes at
+// document-start, before any page script, so the override is in place before the page can call close.
+// webFrame.executeJavaScript reaches the MAIN world (where the page's own window.close lives — the
+// isolated preload world can't see it). WM/title-bar close and our context-menu Quit go through the
+// BrowserWindow, not window.close, so they keep working. Handler: registerBlockCloseHandler (app-window.js).
+let _blockClose = false
+try { _blockClose = ipcRenderer.sendSync('voltage:should-block-close') === true } catch {}
+if (_blockClose) {
+  webFrame.executeJavaScript(
+    '(function(){try{Object.defineProperty(window,"close",{value:function(){},writable:false,configurable:true});}' +
+    'catch(e){try{window.close=function(){};}catch(_){}}})();'
+  ).catch(() => {})
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -45,7 +70,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 // Styling uses element.style (CSSOM), never a <style> tag, so strict app CSPs can't drop it.
 (() => {
   const Z = 2147483647
-  const MENU_ID = 'wrapweb-context-menu'
+  const MENU_ID = 'voltage-context-menu'
   let teardown = null  // removes the open menu's document/window dismiss listeners
 
   const palette = () => matchMedia('(prefers-color-scheme: dark)').matches
@@ -138,7 +163,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const s = 1 / (webFrame.getZoomFactor() || 1)
     const scale = (el) => { el.style.transform = 'scale(' + s + ')' }
 
-    const fire = (id) => { try { ipcRenderer.send('wrapweb:menu-action', { id }) } finally { closeMenu() } }
+    const fire = (id) => { try { ipcRenderer.send('voltage:menu-action', { id }) } finally { closeMenu() } }
 
     let subBox = null, subRow = null
     const openSubmenu = (item, parentRow) => {
@@ -200,7 +225,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const x = e.clientX, y = e.clientY
     let linkURL = null
     try { linkURL = (e.target.closest && e.target.closest('a[href]'))?.href || null } catch {}
-    ipcRenderer.invoke('wrapweb:menu-items', { linkURL })
+    ipcRenderer.invoke('voltage:menu-items', { linkURL })
       .then(res => { if (res && res.items && res.items.length) showMenu(res.items, x, y) })
       .catch(() => {})
   }, true)
@@ -209,12 +234,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // behind our layer. The plain (no-Ctrl) contextmenu is left for the slim native menu in window.js.
   window.addEventListener('contextmenu', (e) => { if (e.ctrlKey) { e.preventDefault(); e.stopImmediatePropagation() } }, true)
 
-  ipcRenderer.on('wrapweb:menu-close', closeMenu)
+  ipcRenderer.on('voltage:menu-close', closeMenu)
 
   // Plain right-click: the main process derives the slim menu (spelling + cut/copy/paste) from the
   // native context-menu event and pushes it here to render with the SAME overlay — so both menus
   // look identical and nothing native is ever shown.
-  ipcRenderer.on('wrapweb:menu-show', (_e, d) => { if (d && d.items && d.items.length) showMenu(d.items, d.x, d.y) })
+  ipcRenderer.on('voltage:menu-show', (_e, d) => { if (d && d.items && d.items.length) showMenu(d.items, d.x, d.y) })
 })();
 
 window.addEventListener('DOMContentLoaded', () => {

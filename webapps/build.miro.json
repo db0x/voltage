@@ -2,7 +2,7 @@
     "profile": "miro",
     "url": "https://miro.com/",
     "name": "Miro",
-    "icon": "miro",
+    "icon": "miro-board",
     "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
     "crossOriginIsolation": true,
     "singleInstance": true

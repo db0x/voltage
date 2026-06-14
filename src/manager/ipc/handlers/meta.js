@@ -92,11 +92,11 @@ module.exports = function registerMetaHandlers() {
       shadow:             a('shadow.svg'),
     }
 
-    // In tests, WRAPWEB_TEST_FILTER_ICONS replaces the category filter icons with a
+    // In tests, VOLTAGE_TEST_FILTER_ICONS replaces the category filter icons with a
     // single known path so tests can assert on icon presence without coupling to
     // specific filenames.
-    if (process.env.WRAPWEB_TEST) {
-      const fi = process.env.WRAPWEB_TEST_FILTER_ICONS || null
+    if (process.env.VOLTAGE_TEST) {
+      const fi = process.env.VOLTAGE_TEST_FILTER_ICONS || null
       if (fi) return { ...icons, filterMicrosoft: fi, filterGoogle: fi }
     }
     return icons

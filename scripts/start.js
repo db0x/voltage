@@ -5,11 +5,11 @@ const { execFileSync } = require('child_process')
 // A symlink won't work: Linux resolves symlinks in execve(), so /proc/self/exe
 // still points at the real electron binary and Chromium reads "electron" as the
 // process name (→ WM_CLASS).  A hard link shares the same inode but Linux stores
-// the exec'd path as /proc/self/exe, so Chromium sees "wrapweb" instead.
+// the exec'd path as /proc/self/exe, so Chromium sees "voltage" instead.
 const electronBin = require('electron')
-const wrapwebBin  = path.join(path.dirname(electronBin), 'wrapweb')
+const voltageBin  = path.join(path.dirname(electronBin), 'voltage')
 
-try { fs.unlinkSync(wrapwebBin) } catch {}
-fs.linkSync(electronBin, wrapwebBin)
+try { fs.unlinkSync(voltageBin) } catch {}
+fs.linkSync(electronBin, voltageBin)
 
-execFileSync(wrapwebBin, ['.', '--no-sandbox'], { stdio: 'inherit' })
+execFileSync(voltageBin, ['.', '--no-sandbox'], { stdio: 'inherit' })

@@ -6,7 +6,7 @@ const fs   = require('node:fs')
 
 const ROOT             = path.join(__dirname, '..')
 const CONFIGS_DIR      = path.join(ROOT, 'webapps')
-const FAKE_ICON_PATH   = path.join(ROOT, 'assets', 'wrapweb.svg')
+const FAKE_ICON_PATH   = path.join(ROOT, 'assets', 'voltage.svg')
 const RCLONE_FAKE_BIN  = path.join(__dirname, 'fixtures', 'bin')
 
 // Minimal set of test configs that covers all major card variants:
@@ -24,16 +24,16 @@ const TEST_CONFIGS = [
 ]
 
 // Writes test configs, launches the Electron app, and returns the app instance.
-// WRAPWEB_TEST=1 disables update checks, GTK icon lookups, and other non-test behaviors.
+// VOLTAGE_TEST=1 disables update checks, GTK icon lookups, and other non-test behaviors.
 // A fresh temp directory is used as userData so tests never share persistent state.
 async function launchApp(extraEnv = {}) {
   for (const { file, content } of TEST_CONFIGS)
     fs.writeFileSync(path.join(CONFIGS_DIR, file), JSON.stringify(content, null, 4))
 
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wrapweb-test-'))
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-test-'))
   const app = await electron.launch({
     args: [ROOT, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${userDataDir}`],
-    env: { ...process.env, WRAPWEB_TEST: '1', WRAPWEB_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined, ...extraEnv },
+    env: { ...process.env, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined, ...extraEnv },
   })
   return { app, userDataDir }
 }
@@ -53,17 +53,17 @@ const test = base.extend({
     await closeApp(app, userDataDir)
   }, { scope: 'test' }],
 
-  // Like electronApp but with WRAPWEB_TEST_FILTER_ICONS set, so filter buttons
+  // Like electronApp but with VOLTAGE_TEST_FILTER_ICONS set, so filter buttons
   // receive a resolved icon path and render both an <img> and a text label.
   electronAppWithFilterIcons: [async ({}, use) => {
-    const { app, userDataDir } = await launchApp({ WRAPWEB_TEST_FILTER_ICONS: FAKE_ICON_PATH })
+    const { app, userDataDir } = await launchApp({ VOLTAGE_TEST_FILTER_ICONS: FAKE_ICON_PATH })
     await use(app)
     await closeApp(app, userDataDir)
   }, { scope: 'test' }],
 
-  // Like electronApp but with WRAPWEB_LANG=de so all UI text is in German.
+  // Like electronApp but with VOLTAGE_LANG=de so all UI text is in German.
   electronAppDe: [async ({}, use) => {
-    const { app, userDataDir } = await launchApp({ WRAPWEB_LANG: 'de' })
+    const { app, userDataDir } = await launchApp({ VOLTAGE_LANG: 'de' })
     await use(app)
     await closeApp(app, userDataDir)
   }, { scope: 'test' }],
@@ -105,8 +105,10 @@ const RCLONE_TEST_CONFIG = {
     mimeTypes:        ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   },
 }
+// Desktop filename follows the artifact naming (appName: "test-rclone-app" → "vTest-rclone-app")
+// so the manager's `installed` detection in manager:apps finds it.
 const RCLONE_DESKTOP_FILE = path.join(
-  os.homedir(), '.local', 'share', 'applications', 'wrapweb-test-rclone-app.desktop'
+  os.homedir(), '.local', 'share', 'applications', 'vTest-rclone-app.desktop'
 )
 
 function writeRcloneTestConfig() {
@@ -118,7 +120,7 @@ function writeRcloneTestConfig() {
   fs.mkdirSync(path.dirname(RCLONE_DESKTOP_FILE), { recursive: true })
   fs.writeFileSync(RCLONE_DESKTOP_FILE, [
     '[Desktop Entry]', 'Type=Application',
-    'Name=Test Rclone App', 'Icon=wrapweb', 'Exec=/dev/null',
+    'Name=Test Rclone App', 'Icon=voltage', 'Exec=/dev/null',
   ].join('\n') + '\n')
 }
 
@@ -128,16 +130,16 @@ function cleanupRcloneTestConfig() {
 }
 
 // Launches the Manager with the fake rclone binary prepended to PATH.
-// mode controls WRAPWEB_TEST_RCLONE_MODE (default: 'new').
+// mode controls VOLTAGE_TEST_RCLONE_MODE (default: 'new').
 // A dedicated temp dir is used for the rclone config so the user's real
-// ~/.config/wrapweb/rclone.json is never touched during tests.
+// ~/.config/voltage/rclone.json is never touched during tests.
 async function launchAppWithRclone(mode = 'new', extraEnv = {}) {
   writeRcloneTestConfig()
-  const rcloneDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wrapweb-rclone-test-'))
+  const rcloneDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-rclone-test-'))
   const { app, userDataDir } = await launchApp({
     PATH: `${RCLONE_FAKE_BIN}:${process.env.PATH}`,
-    WRAPWEB_TEST_RCLONE_MODE: mode,
-    WRAPWEB_TEST_DATA_DIR: rcloneDataDir,
+    VOLTAGE_TEST_RCLONE_MODE: mode,
+    VOLTAGE_TEST_DATA_DIR: rcloneDataDir,
     ...extraEnv,
   })
   return { app, userDataDir, rcloneDataDir }
@@ -176,11 +178,12 @@ const MAIL_TEST_CONFIG = {
     mimeTypes: ['x-scheme-handler/mailto'],
   },
 }
+// Artifact naming: appName("test-mail-dialog-app") → "vTest-mail-dialog-app".
 const MAIL_DESKTOP_FILE = path.join(
-  os.homedir(), '.local', 'share', 'applications', 'wrapweb-test-mail-dialog-app.desktop'
+  os.homedir(), '.local', 'share', 'applications', 'vTest-mail-dialog-app.desktop'
 )
 // Fake AppImage file — presence makes built:true in manager:apps.
-const MAIL_DIST_FILE = path.join(ROOT, 'dist', 'wrapweb-test-mail-dialog-app')
+const MAIL_DIST_FILE = path.join(ROOT, 'dist', 'vTest-mail-dialog-app')
 
 function writeMailTestConfig() {
   fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true })
@@ -189,7 +192,7 @@ function writeMailTestConfig() {
   fs.mkdirSync(path.dirname(MAIL_DESKTOP_FILE), { recursive: true })
   fs.writeFileSync(MAIL_DESKTOP_FILE, [
     '[Desktop Entry]', 'Type=Application',
-    'Name=Test Mail Dialog App', 'Icon=wrapweb', 'Exec=/dev/null',
+    'Name=Test Mail Dialog App', 'Icon=voltage', 'Exec=/dev/null',
   ].join('\n') + '\n')
 }
 
@@ -203,7 +206,7 @@ async function launchAppWithMailHandler(extraEnv = {}) {
   writeMailTestConfig()
   const { app, userDataDir } = await launchApp({
     // Pretend the test mail dialog app is already the default handler.
-    WRAPWEB_TEST_MAIL_HANDLER: 'wrapweb-test-mail-dialog-app.desktop',
+    VOLTAGE_TEST_MAIL_HANDLER: 'vTest-mail-dialog-app.desktop',
     ...extraEnv,
   })
   return { app, userDataDir }
@@ -230,11 +233,11 @@ const mailHandlerTest = base.extend({
 
 // ── Global-settings test helpers ─────────────────────────────────────────────
 
-// Uses WRAPWEB_TEST_DATA_DIR so global-settings.json is written to a temp
+// Uses VOLTAGE_TEST_DATA_DIR so global-settings.json is written to a temp
 // directory — tests never touch the user's real config.
 async function launchAppWithGlobalSettings(extraEnv = {}) {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wrapweb-gs-test-'))
-  const { app, userDataDir } = await launchApp({ WRAPWEB_TEST_DATA_DIR: dataDir, ...extraEnv })
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-gs-test-'))
+  const { app, userDataDir } = await launchApp({ VOLTAGE_TEST_DATA_DIR: dataDir, ...extraEnv })
   return { app, userDataDir, dataDir }
 }
 
@@ -259,14 +262,14 @@ const globalSettingsTest = base.extend({
 
 // ── Obsidian-dialog test helpers ─────────────────────────────────────────────
 
-// WRAPWEB_TEST_OBSIDIAN_AVAILABLE turns the drawer entry on without a real
-// obsidian:// MIME registration; WRAPWEB_TEST_OBSIDIAN_FLATPAK toggles the
+// VOLTAGE_TEST_OBSIDIAN_AVAILABLE turns the drawer entry on without a real
+// obsidian:// MIME registration; VOLTAGE_TEST_OBSIDIAN_FLATPAK toggles the
 // Flatpak-hint section inside the dialog.
 const obsidianTest = base.extend({
   electronAppObsidianFlatpak: [async ({}, use) => {
     const { app, userDataDir } = await launchApp({
-      WRAPWEB_TEST_OBSIDIAN_AVAILABLE: '1',
-      WRAPWEB_TEST_OBSIDIAN_FLATPAK:   '1',
+      VOLTAGE_TEST_OBSIDIAN_AVAILABLE: '1',
+      VOLTAGE_TEST_OBSIDIAN_FLATPAK:   '1',
     })
     await use(app)
     await closeApp(app, userDataDir)
@@ -274,7 +277,7 @@ const obsidianTest = base.extend({
 
   electronAppObsidianNative: [async ({}, use) => {
     const { app, userDataDir } = await launchApp({
-      WRAPWEB_TEST_OBSIDIAN_AVAILABLE: '1',
+      VOLTAGE_TEST_OBSIDIAN_AVAILABLE: '1',
     })
     await use(app)
     await closeApp(app, userDataDir)

@@ -14,8 +14,8 @@
 //   2. navigator.windowControlsOverlay — presented as present-but-not-visible, covering apps that
 //      gate their titlebar on the API's existence or its `visible` flag.
 (() => {
-  if (window.__wrapwebNoTitlebar) return                    // already installed for this document
-  window.__wrapwebNoTitlebar = true
+  if (window.__voltageNoTitlebar) return                    // already installed for this document
+  window.__voltageNoTitlebar = true
 
   // 1) display-mode → browser. Wrap matchMedia; only rewrite display-mode queries.
   const realMatchMedia = typeof window.matchMedia === 'function' ? window.matchMedia.bind(window) : null

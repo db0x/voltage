@@ -30,8 +30,8 @@ const CSS = `
 // selection there is untouched. Injected after load; re-applied on navigation since the page
 // document is replaced. Kept tiny and self-contained — it runs in the page, not Node.
 const GUARD = `(() => {
-  if (window.__wrapwebNoSelect) return;
-  window.__wrapwebNoSelect = true;
+  if (window.__voltageNoSelect) return;
+  window.__voltageNoSelect = true;
   const editable = (el) => !!(el && el.closest && el.closest('input,textarea,[contenteditable]'));
   for (const ev of ['selectstart', 'dragstart']) {
     document.addEventListener(ev, (e) => { if (!editable(e.target)) e.preventDefault(); }, { capture: true });

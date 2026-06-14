@@ -1,11 +1,11 @@
 import { applyTemplate } from '../template.js'
 
 const ASCII_ART = [
-  '                                 __ ',
-  ' _    _________ ____ _    _____ / / ',
-  '| |/|/ / __/ _ `/ _ \\ |/|/ / -_) _ \\',
-  '|__,__/_/  \\_,_/ .__/__,__/\\__/_.__/🐧',
-  '              /_/                   ',
+  '            ____               ',
+  ' _  _____  / / /____ ____ ____ ',
+  '| |/ / _ \\/ / __/ _ `/ _ `/ -_)',
+  '|___/\\___/_/\\__/\\_,_/\\_, /\\__/ 🐧',
+  '                    /___/       ',
 ].join('\n')
 
 export function initAboutDialog({ i18n, version, icons, templates }, { obsidianAvailable = false, rcloneAvailable = false, onOpenObsidian = null, onOpenRclone = null } = {}) {

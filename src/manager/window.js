@@ -1,4 +1,4 @@
-// Creates and manages the wrapweb manager window.
+// Creates and manages the voltage manager window.
 // Persists window bounds and the user's last-known theme across sessions:
 // bounds restore the preferred size; the theme flag is used as the BrowserWindow
 // backgroundColor so the freshly created window is painted in the user's chosen
@@ -13,7 +13,7 @@ const fs   = require('node:fs')
 const { t } = require('../i18n')
 
 const APP_ROOT         = app.getAppPath()
-const managerStatePath = path.join(app.getPath('appData'), 'wrapweb', 'manager-state.json')
+const managerStatePath = path.join(app.getPath('appData'), 'voltage', 'manager-state.json')
 
 // Theme-matching backgrounds keep the initial window frame visually consistent
 // with what the renderer will draw a moment later — must mirror --bg in manager.css.
@@ -64,7 +64,7 @@ function openManager() {
     width, height,
     minWidth:  400,
     minHeight: 400,
-    title: 'wrapweb Manager',
+    title: 'Voltage',
     backgroundColor: dark ? BG_DARK : BG_LIGHT,
     webPreferences: {
       preload: path.join(APP_ROOT, 'src', 'manager', 'preload.js'),

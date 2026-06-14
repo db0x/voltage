@@ -9,21 +9,21 @@ const ROOT = path.join(__dirname, '..')
 // Launches the Manager without the standard test-config fixture set.
 // The update-notice tests manage their own environment and don't need app cards.
 async function launchManager() {
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wrapweb-test-'))
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-test-'))
   const app = await electron.launch({
     args: [ROOT, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${userDataDir}`],
-    env: { ...process.env, WRAPWEB_TEST: '1', WRAPWEB_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined },
+    env: { ...process.env, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined },
   })
   const page = await app.firstWindow()
   await page.waitForSelector('.card-add', { timeout: 30000 })
   return { app, page }
 }
 
-// Setup:    Manager launched with WRAPWEB_TEST=1, which skips the remote version fetch.
+// Setup:    Manager launched with VOLTAGE_TEST=1, which skips the remote version fetch.
 // Action:   (none — reads dialog state on load)
 // Expected: The update-notice body element is not visible because no update check ran.
-base('update notice does not appear when WRAPWEB_TEST is set (no network check)', async () => {
-  // WRAPWEB_TEST=1 skips all update checks — dialog must not appear
+base('update notice does not appear when VOLTAGE_TEST is set (no network check)', async () => {
+  // VOLTAGE_TEST=1 skips all update checks — dialog must not appear
   const { app, page } = await launchManager()
   try {
     const visible = await page.locator('#update-notice-body').isVisible()
@@ -42,7 +42,7 @@ base('update notice does not appear when WRAPWEB_TEST is set (no network check)'
 base('update notice appears when cache says newer version exists', async () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
   // Write a fresh cache with a higher version so update-check.js returns it
-  // We temporarily patch the IPC handler by injecting via env — but since WRAPWEB_TEST
+  // We temporarily patch the IPC handler by injecting via env — but since VOLTAGE_TEST
   // skips the check, we test the dialog directly via a fake IPC mock.
   // Instead: test that the dialog HTML is correct when show() is called in isolation.
   // The IPC integration is covered by the "does not appear" test above.
@@ -52,7 +52,7 @@ base('update notice appears when cache says newer version exists', async () => {
     await page.evaluate((v) => {
       const body = document.getElementById('update-notice-body')
       if (body) {
-        body.innerHTML = `<p>wrapweb <strong>${v}</strong> is available.</p>`
+        body.innerHTML = `<p>voltage <strong>${v}</strong> is available.</p>`
         document.getElementById('update-notice-overlay')?.classList.remove('hidden')
       }
     }, '99.99.99')
@@ -71,7 +71,7 @@ base('update notice "Got it" button dismisses the dialog', async () => {
     await page.evaluate(() => {
       const body = document.getElementById('update-notice-body')
       if (body) {
-        body.innerHTML = '<p>wrapweb <strong>99.0.0</strong> is available.</p>'
+        body.innerHTML = '<p>voltage <strong>99.0.0</strong> is available.</p>'
         document.getElementById('update-notice-overlay')?.classList.remove('hidden')
       }
     })

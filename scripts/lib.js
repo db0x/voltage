@@ -3,6 +3,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { execSync } = require('node:child_process')
 const { primaryKeyFromUrl, routingUrlKeys } = require('../src/routing-match')
+const { appName, wmClass } = require('../src/app-naming')
 
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 
@@ -50,11 +51,11 @@ function updateHicolorCache() {
 }
 
 function installIcon() {
-  const src = path.join(PROJECT_ROOT, 'assets', 'wrapweb.svg')
+  const src = path.join(PROJECT_ROOT, 'assets', 'voltage.svg')
   if (!fs.existsSync(src)) return
 
   const iconDir = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', 'scalable', 'apps')
-  const dest = path.join(iconDir, 'wrapweb.svg')
+  const dest = path.join(iconDir, 'voltage.svg')
 
   fs.mkdirSync(iconDir, { recursive: true })
   fs.copyFileSync(src, dest)
@@ -68,14 +69,14 @@ function escapeDesktop(s) {
 }
 
 // Copies a system icon into the user's hicolor theme under the app's desktop
-// name (e.g. wrapweb-teams) so the .desktop entry always has a valid icon.
-// Falls back to the bundled SVG from assets/webapps/ or assets/wrapweb.svg
+// name (e.g. vTeams) so the .desktop entry always has a valid icon.
+// Falls back to the bundled SVG from assets/webapps/ or assets/voltage.svg
 // when no matching icon is found in any system theme.
 function resolveIconToHicolor(iconName, desktopName) {
-  if (!iconName || iconName === 'wrapweb') return iconName
+  if (!iconName || iconName === 'voltage') return iconName
 
   const hicolorDir = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', 'scalable', 'apps')
-  const destName = desktopName  // e.g. 'wrapweb-teams'
+  const destName = desktopName  // e.g. 'vTeams'
   const destSvg  = path.join(hicolorDir, `${destName}.svg`)
   const destPng  = path.join(hicolorDir, `${destName}.png`)
 
@@ -112,11 +113,11 @@ function resolveIconToHicolor(iconName, desktopName) {
       return destName
     } catch { /* non-fatal */ }
   }
-  // Bundled fallback: check assets/webapps/<iconName>.svg, then assets/wrapweb.svg
+  // Bundled fallback: check assets/webapps/<iconName>.svg, then assets/voltage.svg
   const bundledWebapp = path.join(PROJECT_ROOT, 'assets', 'webapps', `${iconName}.svg`)
   const fallbackSvg = fs.existsSync(bundledWebapp)
     ? bundledWebapp
-    : path.join(PROJECT_ROOT, 'assets', 'wrapweb.svg')
+    : path.join(PROJECT_ROOT, 'assets', 'voltage.svg')
   if (fs.existsSync(fallbackSvg)) {
     try {
       fs.mkdirSync(hicolorDir, { recursive: true })
@@ -129,13 +130,13 @@ function resolveIconToHicolor(iconName, desktopName) {
 }
 
 function installDesktop(app) {
-  const desktopName = `wrapweb-${app.profile}`
+  const desktopName = appName(app.profile)
   const desktopsDir = path.join(os.homedir(), '.local', 'share', 'applications')
   const desktopFile = path.join(desktopsDir, `${desktopName}.desktop`)
 
-  const appImagePath = path.resolve('dist', `wrapweb-${app.profile}`)
+  const appImagePath = path.resolve('dist', appName(app.profile))
   const displayName = escapeDesktop(app.name || toDisplayName(app.profile))
-  const icon = resolveIconToHicolor(app.icon || 'wrapweb', desktopName)
+  const icon = resolveIconToHicolor(app.icon || 'voltage', desktopName)
   const mimeTypes = app.mimeTypes?.length ? app.mimeTypes.join(';') + ';' : null
 
   const lines = [
@@ -147,7 +148,10 @@ function installDesktop(app) {
     'Terminal=false',
     'Type=Application',
     `Icon=${icon}`,
-    `StartupWMClass=${desktopName}`,
+    // Must equal the app_id Chromium emits on Wayland (the lowercased artifact name, e.g.
+    // "vteams") so GNOME associates the window with this launcher; a capitalised value would
+    // not match and GNOME would show the raw lowercase id instead.
+    `StartupWMClass=${wmClass(app.profile)}`,
   ]
   if (mimeTypes) lines.push(`MimeType=${mimeTypes}`)
   lines.push('')
@@ -267,7 +271,7 @@ function installDesktop(app) {
 
   if (app.mimeExtensions) {
     const mimePackagesDir = path.join(os.homedir(), '.local', 'share', 'mime', 'packages')
-    const mimeXmlFile     = path.join(mimePackagesDir, `wrapweb-${app.profile}.xml`)
+    const mimeXmlFile     = path.join(mimePackagesDir, `${appName(app.profile)}.xml`)
     const types = Object.entries(app.mimeExtensions).map(([type, exts]) =>
       `  <mime-type type="${type}">\n` +
       `    <comment>${escapeDesktop(app.name || type)}</comment>\n` +
@@ -294,7 +298,7 @@ function installDesktop(app) {
 // Keys use path-prefix notation with optional '*' wildcards (e.g. docs.google.com/d/*).
 // The 48×48 PNG is preferred over SVG because nativeImage cannot load SVG on Linux.
 function updateRoutingTable() {
-  const routingDir  = path.join(os.homedir(), '.config', 'wrapweb', 'plugins', 'routing')
+  const routingDir  = path.join(os.homedir(), '.config', 'voltage', 'plugins', 'routing')
   const routingFile = path.join(routingDir, 'routing.json')
 
   const routing = { base: {}, routing: {} }
@@ -303,12 +307,12 @@ function updateRoutingTable() {
     for (const f of fs.readdirSync(webappsDir).filter(f => /^build\..+\.json$/.test(f))) {
       let cfg
       try { cfg = JSON.parse(fs.readFileSync(path.join(webappsDir, f), 'utf8')) } catch { continue }
-      const appImagePath = path.join(PROJECT_ROOT, 'dist', `wrapweb-${cfg.profile}`)
+      const appImagePath = path.join(PROJECT_ROOT, 'dist', appName(cfg.profile))
       if (!fs.existsSync(appImagePath)) continue
       try {
         const name      = cfg.name || toDisplayName(cfg.profile)
         const hicolor   = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
-        const iconName  = `wrapweb-${cfg.profile}`
+        const iconName  = appName(cfg.profile)
         const iconPng48 = path.join(hicolor, '48x48', 'apps', `${iconName}.png`)
         const iconPng   = path.join(hicolor, 'scalable', 'apps', `${iconName}.png`)
         const iconSvg   = path.join(hicolor, 'scalable', 'apps', `${iconName}.svg`)

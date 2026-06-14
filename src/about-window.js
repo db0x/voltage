@@ -14,6 +14,7 @@ const os   = require('node:os')
 
 const pkg      = require(app.getAppPath() + '/package.json')
 const APP_ROOT = app.getAppPath()
+const { appName } = require('./app-naming')
 
 // Reads an SVG asset as a base64 data URL for inline embedding; null if missing.
 function svgDataUrl(absPath) {
@@ -25,10 +26,11 @@ function svgDataUrl(absPath) {
 // 48x48 fallback — otherwise such icons (e.g. mastodon) come up empty.
 function appIconDataUrl() {
   const hicolor = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
+  const iconBase = appName(pkg.profile)
   const candidates = [
-    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.svg`), 'image/svg+xml'],
-    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
-    [path.join(hicolor, '48x48',    'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
+    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.svg`), 'image/svg+xml'],
+    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.png`), 'image/png'],
+    [path.join(hicolor, '48x48',    'apps', `${iconBase}.png`), 'image/png'],
   ]
   for (const [p, mime] of candidates) {
     if (fs.existsSync(p)) return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`
@@ -58,17 +60,17 @@ function esc(s) {
 // our own context (no foreign CSP), plain innerHTML/inline styles are safe here.
 function buildAboutHtml(info) {
   const de = app.getLocale().split('-')[0].toLowerCase() === 'de'
-  const displayName = pkg.displayName || (pkg.name || '').replace(/^wrapweb-/, '') || pkg.profile
+  const displayName = pkg.displayName || pkg.profile
   const t = de
-    ? { titlePrefix: 'Über ', subtitle: 'wrapweb-AppImage', domain: 'Aktuelle Domain', appName: 'App', plugins: 'Geladene Plugins',
-        versions: 'Versionen', wrapwebHint: 'Stand der AppImage-Erstellung',
+    ? { titlePrefix: 'Über ', subtitle: 'voltage-AppImage', domain: 'Aktuelle Domain', appName: 'App', plugins: 'Geladene Plugins',
+        versions: 'Versionen', voltageHint: 'Stand der AppImage-Erstellung',
         electronHint: 'zugrundeliegendes Electron-Framework', chromiumHint: 'Render-Engine / Browser-Kern',
-        builtWith: 'Erstellt mit wrapweb', electron: 'Electron', close: 'Schließen',
+        builtWith: 'Erstellt mit voltage', electron: 'Electron', close: 'Schließen',
         sbSafe: 'Google Safe Browsing: keine Bedrohung bekannt', sbUnsafe: 'Google Safe Browsing: als gefährlich gemeldet' }
-    : { titlePrefix: 'About ', subtitle: 'wrapweb AppImage', domain: 'Current domain', appName: 'App', plugins: 'Loaded plugins',
-        versions: 'Versions', wrapwebHint: 'when this AppImage was built',
+    : { titlePrefix: 'About ', subtitle: 'voltage AppImage', domain: 'Current domain', appName: 'App', plugins: 'Loaded plugins',
+        versions: 'Versions', voltageHint: 'when this AppImage was built',
         electronHint: 'underlying Electron framework', chromiumHint: 'render engine / browser core',
-        builtWith: 'Built with wrapweb', electron: 'Electron', close: 'Close',
+        builtWith: 'Built with voltage', electron: 'Electron', close: 'Close',
         sbSafe: 'Google Safe Browsing: no known threat', sbUnsafe: 'Google Safe Browsing: flagged as dangerous' }
 
   const appIcon = appIconDataUrl()
@@ -141,7 +143,7 @@ function buildAboutHtml(info) {
         <div class="wa-field"><div class="wa-label">${esc(t.appName)}</div><div class="wa-val">${esc(pkg.name || pkg.profile)}</div></div>
         <div class="wa-field"><div class="wa-label">${esc(t.versions)}</div>
           <div class="wa-vers">
-            ${ver('wrapweb ' + pkg.version, t.wrapwebHint)}
+            ${ver('voltage ' + pkg.version, t.voltageHint)}
             ${ver('Electron ' + process.versions.electron, t.electronHint)}
             ${ver('Chromium ' + process.versions.chrome, t.chromiumHint)}
           </div></div>
@@ -182,13 +184,13 @@ function buildAboutHtml(info) {
 // Toggles the About overlay view on a window: present → remove (F12 again closes), else create.
 // The view is sized to fill the window and kept in sync on resize while open.
 function toggleAboutWindow(win) {
-  if (win._wrapwebAboutView) {
+  if (win._voltageAboutView) {
     closeAbout(win)
     return
   }
 
   // In view mode the app lives in an inset WebContentsView, not the window's own webContents.
-  const appContents = win._wrapwebAppContents || win.webContents
+  const appContents = win._voltageAppContents || win.webContents
   const fullUrl = appContents.getURL()
   const domain = (() => {
     try { const u = new URL(fullUrl); return `${u.protocol}//${u.host}` } catch { return fullUrl }
@@ -213,34 +215,34 @@ function toggleAboutWindow(win) {
 
   // Keep the overlay matched to the window size while it's open.
   const onResize = () => {
-    if (!win._wrapwebAboutView) return
+    if (!win._voltageAboutView) return
     const b = win.getContentBounds()
     view.setBounds({ x: 0, y: 0, width: b.width, height: b.height })
   }
   win.on('resize', onResize)
 
-  win._wrapwebAboutView = view
-  win._wrapwebAboutCleanup = () => win.removeListener('resize', onResize)
+  win._voltageAboutView = view
+  win._voltageAboutCleanup = () => win.removeListener('resize', onResize)
 
   view.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildAboutHtml({ domain, fullUrl })))
   view.webContents.once('did-finish-load', () => view.webContents.focus())
 }
 
 function closeAbout(win) {
-  const view = win._wrapwebAboutView
+  const view = win._voltageAboutView
   if (!view) return
-  win._wrapwebAboutCleanup?.()
+  win._voltageAboutCleanup?.()
   try { win.contentView.removeChildView(view) } catch {}
   try { view.webContents.destroy() } catch {}
-  win._wrapwebAboutView = null
-  win._wrapwebAboutCleanup = null
+  win._voltageAboutView = null
+  win._voltageAboutCleanup = null
   win.webContents.focus()
 }
 
 // 'about:close' is sent by the overlay's preload (close button / Esc / F12 / backdrop).
 ipcMain.on('about:close', (event) => {
   for (const win of require('electron').BrowserWindow.getAllWindows()) {
-    if (win._wrapwebAboutView && win._wrapwebAboutView.webContents.id === event.sender.id) {
+    if (win._voltageAboutView && win._voltageAboutView.webContents.id === event.sender.id) {
       closeAbout(win)
       return
     }

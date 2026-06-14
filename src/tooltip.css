@@ -1,6 +1,6 @@
 /* Injected into every app window via insertCSS(). */
 
-#wrapweb-link-tooltip {
+#voltage-link-tooltip {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
   z-index: 2147483647; max-width: 60%; padding: 3px 10px 4px;
   font: 12px/1.5 -apple-system, system-ui, sans-serif; color: #fff;
@@ -8,6 +8,6 @@
   border-top-right-radius: 5px; pointer-events: none; display: none;
   backdrop-filter: blur(4px); align-items: center; gap: 6px; min-width: 0;
 }
-#wrapweb-link-tooltip img { width:14px; height:14px; flex-shrink:0; object-fit:contain; }
-#wrapweb-link-shield { width:16px; height:16px; margin-right:2px; }
-#wrapweb-link-tooltip span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+#voltage-link-tooltip img { width:14px; height:14px; flex-shrink:0; object-fit:contain; }
+#voltage-link-shield { width:16px; height:16px; margin-right:2px; }
+#voltage-link-tooltip span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }

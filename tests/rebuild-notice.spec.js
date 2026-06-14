@@ -3,6 +3,7 @@ const { _electron: electron } = require('@playwright/test')
 const path = require('node:path')
 const os   = require('node:os')
 const fs   = require('node:fs')
+const { appName } = require('../src/app-naming')
 
 const ROOT        = path.join(__dirname, '..')
 const CONFIGS_DIR = path.join(ROOT, 'webapps')
@@ -24,26 +25,26 @@ function writeConfig(profile) {
 // having version 0.0.0, which is always older than minAppImageVersion.
 function fakeBuilt(profile, version) {
   fs.mkdirSync(DIST_DIR, { recursive: true })
-  fs.writeFileSync(path.join(DIST_DIR, `wrapweb-${profile}`), '')
+  fs.writeFileSync(path.join(DIST_DIR, appName(profile)), '')
   if (version != null)
-    fs.writeFileSync(path.join(DIST_DIR, `wrapweb-${profile}.version`), version)
+    fs.writeFileSync(path.join(DIST_DIR, `${appName(profile)}.version`), version)
 }
 
 function cleanup(...profiles) {
   for (const p of profiles) {
     fs.rmSync(path.join(CONFIGS_DIR, `build.${p}.json`),      { force: true })
-    fs.rmSync(path.join(DIST_DIR,    `wrapweb-${p}`),         { force: true })
-    fs.rmSync(path.join(DIST_DIR,    `wrapweb-${p}.version`), { force: true })
+    fs.rmSync(path.join(DIST_DIR,    appName(p)),         { force: true })
+    fs.rmSync(path.join(DIST_DIR,    `${appName(p)}.version`), { force: true })
   }
 }
 
 // Launches a fresh Manager instance without the standard test-config fixture set.
 // Each rebuild-notice test manages its own configs so it can control built/version state.
 async function launchManager() {
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wrapweb-test-'))
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-test-'))
   const app = await electron.launch({
     args: [ROOT, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${userDataDir}`],
-    env: { ...process.env, WRAPWEB_TEST: '1', WRAPWEB_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined },
+    env: { ...process.env, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined },
   })
   const page = await app.firstWindow()
   await page.waitForSelector('.card-add', { timeout: 30_000 })

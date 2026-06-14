@@ -9,7 +9,7 @@ Menu.setApplicationMenu(null)
 
 // Skip GPU/Wayland switches in tests — Playwright runs without a display server
 // and some switches crash the headless Chromium instance used by tests.
-if (!process.env.WRAPWEB_TEST) {
+if (!process.env.VOLTAGE_TEST) {
   app.commandLine.appendSwitch('ozone-platform-hint', 'wayland')
   app.commandLine.appendSwitch('use-gl',              'angle')
   app.commandLine.appendSwitch('disable-vulkan')
@@ -22,7 +22,7 @@ if (pkg.profile) {
   // App-window mode: profile is set — run as a single packaged web app.
   require('./src/app-window')()
 } else {
-  // Manager mode: no profile — run as the wrapweb app manager.
+  // Manager mode: no profile — run as the voltage app manager.
   require('./src/manager/ipc')()
   const { openManager } = require('./src/manager/window')
   app.whenReady().then(() => {

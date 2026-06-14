@@ -9,10 +9,11 @@ const { createSession } = require('./session')
 const { aspellSuggestions } = require('./context-menu')
 const windowState = require('./window-state')
 const { findRoute, normalizeRouting } = require('./routing-match')
+const { appName, profileFromAppName } = require('./app-naming')
 const { toggleAboutWindow } = require('./about-window')
 const { t } = require('./i18n')
 
-const ROUTING_FILE = path.join(app.getPath('appData'), 'wrapweb', 'plugins', 'routing', 'routing.json')
+const ROUTING_FILE = path.join(app.getPath('appData'), 'voltage', 'plugins', 'routing', 'routing.json')
 
 // In-memory cache: origin → { result: 'safe'|'unsafe', expiresAt }
 // Avoids repeated API calls for the same domain during a browsing session.
@@ -23,10 +24,10 @@ const safeBrowsingCache = new Map()
 const windowProfiles = new Map()  // webContentsId → profile
 
 function safeBrowsingConfigPath() {
-  const testDir = process.env.WRAPWEB_TEST_DATA_DIR
+  const testDir = process.env.VOLTAGE_TEST_DATA_DIR
   return testDir
     ? path.join(testDir, 'safe-browsing.json')
-    : path.join(app.getPath('appData'), 'wrapweb', 'safe-browsing.json')
+    : path.join(app.getPath('appData'), 'voltage', 'safe-browsing.json')
 }
 
 function httpsPost(url, body) {
@@ -73,7 +74,7 @@ ipcMain.handle('safe-browsing:check', async (event, url, ignoreExclude = false) 
   const prefixB64 = fullHash.slice(0, 4).toString('base64')
 
   const body = JSON.stringify({
-    client:     { clientId: 'wrapweb', clientVersion: '1.0' },
+    client:     { clientId: 'voltage', clientVersion: '1.0' },
     threatInfo: {
       threatTypes:      ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
       platformTypes:    ['ANY_PLATFORM'],
@@ -191,7 +192,7 @@ function resolveRoute(url, currentProfile) {
   const match = findRoute(loadRouting(), targetHost, targetPath, (target) => {
     const p = typeof target === 'string' ? target : target.path
     if (!p) return false
-    return path.basename(p).replace(/^wrapweb-/, '') !== currentProfile && fs.existsSync(p)
+    return profileFromAppName(path.basename(p)) !== currentProfile && fs.existsSync(p)
   })
   if (!match) return null
   const target       = match.entry
@@ -219,7 +220,7 @@ function appClaimsUrl(url, currentProfile) {
   })
   if (!match) return false
   const winnerPath = typeof match.entry === 'string' ? match.entry : match.entry.path
-  return path.basename(winnerPath).replace(/^wrapweb-/, '') === currentProfile
+  return profileFromAppName(path.basename(winnerPath)) === currentProfile
 }
 
 function routeExternalUrl(url, currentProfile) {
@@ -238,10 +239,11 @@ function iconToDataUrl(p) { try { return p ? `data:image/png;base64,${fs.readFil
 // there. Falls back to the bundled assets/webapps/<icon> set for non-installed / standard apps.
 function appIconDataUrl(pkg) {
   const hicolor = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
+  const iconBase = appName(pkg.profile)
   const candidates = [
-    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.svg`), 'image/svg+xml'],
-    [path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
-    [path.join(hicolor, '48x48',    'apps', `wrapweb-${pkg.profile}.png`), 'image/png'],
+    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.svg`), 'image/svg+xml'],
+    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.png`), 'image/png'],
+    [path.join(hicolor, '48x48',    'apps', `${iconBase}.png`), 'image/png'],
   ]
   if (pkg.icon) candidates.push(
     [path.join(__dirname, '..', 'assets', 'webapps', pkg.icon + '.svg'), 'image/svg+xml'],
@@ -299,7 +301,7 @@ function serializePluginMenu(list, actions, seq = { n: 0 }) {
 // Builds the FULL menu's items (Ctrl+right-click) and records this window's action map. Cut/copy/
 // paste act on the app's webContents; a link under the cursor adds Open-with/Open-in-browser; an
 // image adds Save-image-as; plugin entries come last.
-ipcMain.handle('wrapweb:menu-items', (event, { linkURL, imageURL } = {}) => {
+ipcMain.handle('voltage:menu-items', (event, { linkURL, imageURL } = {}) => {
   const ctx = appMenuRegistry.get(event.sender.id)
   if (!ctx) return { items: [] }
   const i18n = t()
@@ -359,7 +361,7 @@ ipcMain.handle('wrapweb:menu-items', (event, { linkURL, imageURL } = {}) => {
     click: () => toggleAboutWindow(ctx.mainWindow),
   }
   const pluginList = [
-    ...(ctx.mainWindow._wrapwebPlugins ?? [])
+    ...(ctx.mainWindow._voltagePlugins ?? [])
       .flatMap(inst => { try { return inst.contextMenuItems?.() ?? [] } catch { return [] } }),
     fullscreenItem,
     aboutItem,
@@ -370,7 +372,7 @@ ipcMain.handle('wrapweb:menu-items', (event, { linkURL, imageURL } = {}) => {
   return { items }
 })
 
-ipcMain.on('wrapweb:menu-action', (event, { id } = {}) => {
+ipcMain.on('voltage:menu-action', (event, { id } = {}) => {
   const ctx = appMenuRegistry.get(event.sender.id)
   try { ctx?.actions?.[id]?.() } catch {}
 })
@@ -394,7 +396,7 @@ function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg, a
   const api = {
     profile:         pkg.profile,
     // Human-readable app name (build-time displayName, else profile) — for plugin-built UI.
-    displayName:     pkg.displayName || (pkg.name || '').replace(/^wrapweb-/, '') || pkg.profile,
+    displayName:     pkg.displayName || pkg.profile,
     appOrigin,
     internalDomains,
     launchArg:       launchArg ?? null,
@@ -491,6 +493,9 @@ function createWindow(pkg, opts = {}) {
 
   // The app's webPreferences — applied to the window's own webContents normally, or to the inset
   // WebContentsView in view mode (so the app keeps its preload/session/flags either way).
+  // NB: the window.close() neutralisation is NOT wired through additionalArguments — those never reach
+  // out-of-process iframes (Teams' MSAL auth iframe), so the preload asks main per-frame over a
+  // synchronous IPC instead. See preload.js and registerBlockCloseHandler() in app-window.js.
   const appWebPreferences = {
     preload: path.join(__dirname, '..', 'preload.js'),
     contextIsolation: true,
@@ -503,7 +508,7 @@ function createWindow(pkg, opts = {}) {
     nodeIntegrationInSubFrames: true,
     session: customSession,
     ...(pkg.crossOriginIsolation && { enableBlinkFeatures: 'SharedArrayBuffer' }),
-    ...(pkg.fileHandler && { additionalArguments: ['--wrapweb-file-handler'] }),
+    ...(pkg.fileHandler && { additionalArguments: ['--voltage-file-handler'] }),
   }
 
   const viewMode = collectPluginViewMode(pkg)
@@ -552,7 +557,7 @@ function createWindow(pkg, opts = {}) {
     appContents = mainWindow.webContents
   }
   // Lets other modules (e.g. the About overlay) reach the app's webContents in view mode.
-  mainWindow._wrapwebAppContents = appContents
+  mainWindow._voltageAppContents = appContents
 
   if (!pkg.geometry) mainWindow.on('close', () => windowState.save(mainWindow))
 
@@ -563,7 +568,7 @@ function createWindow(pkg, opts = {}) {
   mainWindow.on('closed', () => windowProfiles.delete(webContentsId))
 
   // Context for the custom context-menu's shared ipcMain handlers (see appMenuRegistry).
-  const displayName = pkg.displayName || (pkg.name || '').replace(/^wrapweb-/, '') || pkg.profile
+  const displayName = pkg.displayName || pkg.profile
   appMenuRegistry.set(webContentsId, {
     appContents, mainWindow, profile: pkg.profile, customSession, actions: {},
     displayName, appIcon: appIconDataUrl(pkg),
@@ -591,7 +596,7 @@ function createWindow(pkg, opts = {}) {
       )) {
         return { action: 'allow' }
       }
-      // External URLs: route to another wrapweb app or open in system browser
+      // External URLs: route to another voltage app or open in system browser
       if (!routeExternalUrl(url, pkg.profile)) shell.openExternal(url)
       return { action: 'deny' }
     } catch (err) {
@@ -605,7 +610,7 @@ function createWindow(pkg, opts = {}) {
     // Electron requires a synchronous save path — use a temp file and move it
     // to the user-chosen location afterwards.
     const filename = item.getFilename()
-    const tmpPath  = path.join(app.getPath('temp'), `wrapweb-${Date.now()}-${filename}`)
+    const tmpPath  = path.join(app.getPath('temp'), `voltage-${Date.now()}-${filename}`)
     item.setSavePath(tmpPath)
 
     // Register the done listener BEFORE opening the dialog to avoid a race
@@ -711,9 +716,9 @@ function createWindow(pkg, opts = {}) {
     actions.cut = () => appContents.cut(); actions.copy = () => appContents.copy(); actions.paste = () => appContents.paste()
 
     // Render in the frame the click came from (params.x/y are that frame's coordinates), falling
-    // back to the top frame. The preload's wrapweb:menu-show handler pops the overlay.
-    try { (event.senderFrame || appContents).send('wrapweb:menu-show', { items, x: params.x, y: params.y }) }
-    catch { try { appContents.send('wrapweb:menu-show', { items, x: params.x, y: params.y }) } catch {} }
+    // back to the top frame. The preload's voltage:menu-show handler pops the overlay.
+    try { (event.senderFrame || appContents).send('voltage:menu-show', { items, x: params.x, y: params.y }) }
+    catch { try { appContents.send('voltage:menu-show', { items, x: params.x, y: params.y }) } catch {} }
   })
 
   // F12 toggles the About panel; Shift+F12 toggles DevTools; F11 toggles fullscreen. before-input-event
@@ -751,11 +756,12 @@ function createWindow(pkg, opts = {}) {
     const appImagePath   = typeof target === 'string' ? target : target.path
     const name           = typeof target === 'string' ? null   : (target.name ?? null)
     const iconName       = typeof target === 'string' ? null   : (target.icon ?? null)
-    const matchedProfile = path.basename(appImagePath).replace(/^wrapweb-/, '')
+    const matchedProfile = profileFromAppName(path.basename(appImagePath))
     if (matchedProfile === pkg.profile || !fs.existsSync(appImagePath)) return null
-    // Fall back to the installed wrapweb icon (wrapweb-<profile>) when the build-config icon
-    // name doesn't resolve — installed AppImages always register their icon under this name.
-    const iconDataUrl = toDataUrl(resolveIconPath(iconName) ?? resolveIconPath(`wrapweb-${matchedProfile}`))
+    // Fall back to the installed per-app icon (appName(<profile>), e.g. vTeams) when the
+    // build-config icon name doesn't resolve — installed AppImages always register their icon
+    // under this name.
+    const iconDataUrl = toDataUrl(resolveIconPath(iconName) ?? resolveIconPath(appName(matchedProfile)))
     // The raw routing key is passed through; the tooltip script matches it with a
     // keyMatches() port (page-injected JS cannot require routing-match.js).
     return { key, iconDataUrl, name: name || matchedProfile }
@@ -794,19 +800,6 @@ function createWindow(pkg, opts = {}) {
   // way back. Reset those to 100% on load. The zoom plugin, when present, owns the zoom instead.
   const zoomManaged = usesZoomPlugin(pkg)
 
-  // A frameless widget must not be closeable by the page itself: apps like Teams call window.close()
-  // from their own bootstrap right after loading, which would kill the widget. Neutralise the page's
-  // window.close() (a no-op) rather than blocking the BrowserWindow's close — so GNOME/WM close and
-  // our context-menu Quit (both go through the window, not window.close) keep working normally. Only
-  // for widget apps; framed apps may legitimately self-close. Injected early (dom-ready) + on every
-  // load so it's in place before the app's close call.
-  if (usesWidgetPlugin(pkg)) {
-    const NEUTRALISE_CLOSE = '(function(){try{window.close=function(){};}catch(e){' +
-      'try{Object.defineProperty(window,"close",{value:function(){},configurable:true});}catch(_){}}})();'
-    appContents.on('dom-ready',       () => appContents.executeJavaScript(NEUTRALISE_CLOSE).catch(() => {}))
-    appContents.on('did-finish-load', () => appContents.executeJavaScript(NEUTRALISE_CLOSE).catch(() => {}))
-  }
-
   appContents.on('did-finish-load', () => {
     if (!zoomManaged) appContents.setZoomFactor(1)
     appContents.insertCSS(`
@@ -824,7 +817,7 @@ function createWindow(pkg, opts = {}) {
 
   // Main-process plugins selected for this app (config-driven, no longer hardcoded). Stored
   // on the window so app-window.js can forward a second-instance launch argument to them.
-  mainWindow._wrapwebPlugins = loadPlugins(mainWindow, pkg, {
+  mainWindow._voltagePlugins = loadPlugins(mainWindow, pkg, {
     appOrigin, internalDomains, launchArg: opts.launchArg, appContents,
   })
 
@@ -834,7 +827,7 @@ function createWindow(pkg, opts = {}) {
 // Re-dispatches a new launch argument (from a second-instance activation) to a window's
 // plugins, so e.g. the strato mail plugin can act on a fresh mailto: while already running.
 function dispatchLaunchArg(win, arg) {
-  for (const inst of win._wrapwebPlugins ?? []) {
+  for (const inst of win._voltagePlugins ?? []) {
     try { inst.onLaunch?.(arg) } catch (err) { console.error('[plugin] onLaunch failed:', err) }
   }
 }

@@ -136,8 +136,8 @@ test.describe('keyMatches — negative clauses (OneNote routing)', () => {
   //           OneNote key first, whose negation lets the .docx fall through to Word.
   test('findRoute separates OneNote from Word on shared Doc.aspx', () => {
     const table = { base: {}, routing: {
-      '*.sharepoint.com/*.docx*': { path: '/d/wrapweb-word',    name: 'Word' },
-      [KEY]:                      { path: '/d/wrapweb-onenote', name: 'OneNote' },
+      '*.sharepoint.com/*.docx*': { path: '/d/voltage-word',    name: 'Word' },
+      [KEY]:                      { path: '/d/voltage-onenote', name: 'OneNote' },
     } }
     expect(findRoute(table, host, wordUrl)?.entry.name).toBe('Word')
     expect(findRoute(table, host, noteUrl)?.entry.name).toBe('OneNote')
@@ -153,8 +153,8 @@ test.describe('keyMatches — negative clauses (OneNote routing)', () => {
     expect(keyMatches(KEY, host, wordViewerUrl)).toBe(false)
     expect(keyMatches('*.sharepoint.com/:w:/*', host, wordViewerUrl)).toBe(true)
     const table = { base: {}, routing: {
-      '*.sharepoint.com/:w:/*': { path: '/d/wrapweb-word',    name: 'Word' },
-      [KEY]:                    { path: '/d/wrapweb-onenote', name: 'OneNote' },
+      '*.sharepoint.com/:w:/*': { path: '/d/voltage-word',    name: 'Word' },
+      [KEY]:                    { path: '/d/voltage-onenote', name: 'OneNote' },
     } }
     expect(findRoute(table, host, wordViewerUrl)?.entry.name).toBe('Word')
   })
@@ -169,8 +169,8 @@ test.describe('keyMatches — negative clauses (OneNote routing)', () => {
   //           The two predicates are exact inverses, so loading in-app is correct precisely when
   //           routeUrl misses by self-exclusion.
   test('a self-owned note: excluded by routeUrl, claimed by appClaimsUrl', () => {
-    const table = { base: {}, routing: { [KEY]: { path: '/d/wrapweb-onenote', name: 'OneNote' } } }
-    const isOnenote = (e) => e.path.replace(/.*\/wrapweb-/, '') === 'onenote'
+    const table = { base: {}, routing: { [KEY]: { path: '/d/voltage-onenote', name: 'OneNote' } } }
+    const isOnenote = (e) => e.path.replace(/.*\/voltage-/, '') === 'onenote'
     expect(findRoute(table, host, noteUrl, (e) => !isOnenote(e))).toBe(null)
     expect(findRoute(table, host, noteUrl, isOnenote)?.entry.name).toBe('OneNote')
   })
@@ -187,9 +187,9 @@ test.describe('keyMatches — negative clauses (OneNote routing)', () => {
   test('a personal (-my) note: routing claim (OneNote) beats base claim (OneDrive host)', () => {
     const myHost  = 'contoso-my.sharepoint.com'
     const myNote  = '/personal/user_contoso_de/_layouts/15/Doc.aspx?sourcedoc=%7B7%7D&file=Mein%20Notizbuch&action=edit&mobileredirect=true'
-    const ownerOf = (e) => e.path.replace(/.*\/wrapweb-/, '')
-    const table = { base:    { [myHost]: { path: '/d/wrapweb-onedrive', name: 'OneDrive' } },
-                    routing: { [KEY]:    { path: '/d/wrapweb-onenote',  name: 'OneNote' } } }
+    const ownerOf = (e) => e.path.replace(/.*\/voltage-/, '')
+    const table = { base:    { [myHost]: { path: '/d/voltage-onedrive', name: 'OneDrive' } },
+                    routing: { [KEY]:    { path: '/d/voltage-onenote',  name: 'OneNote' } } }
     expect(keyMatches(KEY, myHost, myNote)).toBe(true)            // OneNote's routing key matches
     expect(keyMatches(myHost, myHost, myNote)).toBe(true)         // OneDrive's base key matches too
     // appClaimsUrl's resolution: eligibility = exists (no self-exclusion) → the global winner.

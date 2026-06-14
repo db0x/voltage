@@ -16,7 +16,7 @@ const fs   = require('node:fs')
 const path = require('node:path')
 
 // The page-context script (ctrl+wheel listener + the percentage OSD), read once. Injected after
-// every load; main calls window.__wrapwebZoomOsd.show(pct) through it after each zoom step.
+// every load; main calls window.__voltageZoomOsd.show(pct) through it after each zoom step.
 const OSD_SCRIPT = fs.readFileSync(path.join(__dirname, 'zoom-osd.js'), 'utf8')
 
 // zoom.svg as a data URL, handed to the OSD so no file:// path is needed in the page (same pattern
@@ -80,7 +80,7 @@ function attachPlugin(win, api) {
     // pct is an integer literal from Math.round → safe to interpolate; the OSD may not be installed
     // yet (zoom before load finished), so the page guards the call.
     const pct = Math.round(next * 100)
-    wc.executeJavaScript(`window.__wrapwebZoomOsd && window.__wrapwebZoomOsd.show(${pct})`).catch(() => {})
+    wc.executeJavaScript(`window.__voltageZoomOsd && window.__voltageZoomOsd.show(${pct})`).catch(() => {})
   }
 
   // The event.sender guard matters because ipcMain is process-global: with more than one window in a
@@ -95,14 +95,14 @@ function attachPlugin(win, api) {
   // over the page without clicking into it, so a page-level keyup would never arrive.
   wc.on('before-input-event', (event, input) => {
     if (input.type === 'keyUp' && input.key === 'Control')
-      wc.executeJavaScript('window.__wrapwebZoomOsd && window.__wrapwebZoomOsd.hide()').catch(() => {})
+      wc.executeJavaScript('window.__voltageZoomOsd && window.__voltageZoomOsd.hide()').catch(() => {})
   })
 
   // Inject the page-context script (wheel listener + OSD) after the initial load and every full
   // navigation; a fresh document drops the previous one. SPA soft-navigations keep it. The icon
   // data URL is set first so the OSD can read it on install (mirrors widget.js enterMoveMode).
   wc.on('did-finish-load', () => {
-    wc.executeJavaScript(`window.__wrapwebZoomIcon = ${JSON.stringify(ZOOM_ICON)};`)
+    wc.executeJavaScript(`window.__voltageZoomIcon = ${JSON.stringify(ZOOM_ICON)};`)
       .then(() => wc.executeJavaScript(OSD_SCRIPT))
       .catch(() => {})
   })

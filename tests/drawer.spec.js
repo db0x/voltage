@@ -6,7 +6,7 @@ const { test, expect } = require('./fixtures')
 // even when no icon is resolved from the system GTK theme (standard fixture).
 // When an icon is available (electronAppWithFilterIcons fixture), they also show an image.
 
-// Setup:    Manager open without any system icon resolution (WRAPWEB_TEST=1, no custom icons).
+// Setup:    Manager open without any system icon resolution (VOLTAGE_TEST=1, no custom icons).
 // Action:   Open the drawer.
 // Expected: Microsoft filter button is present and visible even without an icon.
 test('microsoft filter button is always visible even without icons', async ({ managerPage }) => {
@@ -38,7 +38,7 @@ test('google filter button always shows text label', async ({ managerPage }) => 
   await expect(managerPage.locator('[data-filter="google"] span')).toHaveText('Google Apps')
 })
 
-// Setup:    Manager launched with WRAPWEB_TEST_FILTER_ICONS pointing to a valid SVG file,
+// Setup:    Manager launched with VOLTAGE_TEST_FILTER_ICONS pointing to a valid SVG file,
 //           so both filter buttons receive a resolved icon path.
 // Action:   Open the drawer.
 // Expected: Microsoft filter button shows both an <img> element and the "Microsoft Apps" text label.
@@ -49,7 +49,7 @@ test('microsoft filter button shows text label with icon when icon is available'
   await expect(btn.locator('span')).toHaveText('Microsoft Apps')
 })
 
-// Setup:    Manager launched with WRAPWEB_TEST_FILTER_ICONS pointing to a valid SVG file.
+// Setup:    Manager launched with VOLTAGE_TEST_FILTER_ICONS pointing to a valid SVG file.
 // Action:   Open the drawer.
 // Expected: Google filter button shows both an <img> element and the "Google Apps" text label.
 test('google filter button shows text label with icon when icon is available', async ({ managerPageWithFilterIcons }) => {

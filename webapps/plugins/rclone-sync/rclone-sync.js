@@ -2,14 +2,14 @@
 // argument) in the matching Google web editor by uploading it to a configured rclone Google
 // Drive remote, then syncs the edited file back to disk when the window closes.
 //
-// This used to live in the wrapweb base (src/rclone-file-handler.js + app-window.js); it is
+// This used to live in the voltage base (src/rclone-file-handler.js + app-window.js); it is
 // now an opt-in per-app plugin. The host only has to accept a bare file path as a launch arg
 // (config flag `acceptsFileArg`) — everything rclone-specific is contained here.
 //
 // Config fields it reads from the embedded package.json:
 //   rcloneEditUrlBase — e.g. "https://docs.google.com/document/d"; "<base>/<id>/edit" is the
 //                       editor URL the window navigates to after upload.
-// Runtime config (~/.config/wrapweb/rclone.json, written by the manager's rclone dialog):
+// Runtime config (~/.config/voltage/rclone.json, written by the manager's rclone dialog):
 //   googleDriveRemote, uploadFolders[profile].
 
 const { app, ipcMain } = require('electron')
@@ -50,9 +50,10 @@ function fmtBytes(b) {
 
 // Installed app icon as a data URL (svg preferred), for the conflict page header.
 function appIconDataUrl() {
+  const { appName } = require(path.join(APP_ROOT, 'src', 'app-naming'))
   const hicolor = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
-  const svg = path.join(hicolor, 'scalable', 'apps', `wrapweb-${pkg.profile}.svg`)
-  const png = path.join(hicolor, '48x48',    'apps', `wrapweb-${pkg.profile}.png`)
+  const svg = path.join(hicolor, 'scalable', 'apps', `${appName(pkg.profile)}.svg`)
+  const png = path.join(hicolor, '48x48',    'apps', `${appName(pkg.profile)}.png`)
   if (fs.existsSync(svg)) return `data:image/svg+xml;base64,${fs.readFileSync(svg).toString('base64')}`
   if (fs.existsSync(png)) return `data:image/png;base64,${fs.readFileSync(png).toString('base64')}`
   return null
@@ -66,7 +67,7 @@ function assetDataUrl(name) {
 // Self-contained local-vs-Drive comparison page; the user picks overwrite vs. open existing.
 function buildConfirmPage(filename, existing, localStat, de) {
   const appIconUrl  = appIconDataUrl()
-  const wrapwebIcon = assetDataUrl('wrapweb.svg')
+  const voltageIcon = assetDataUrl('voltage.svg')
   const rcloneIcon  = assetDataUrl('rclone.svg')
   const html = fillHtml(conflictTemplate, {
     title:      de ? 'Datei überschreiben?' : 'Overwrite file?',
@@ -81,7 +82,7 @@ function buildConfirmPage(filename, existing, localStat, de) {
     remMod:     new Date(existing.ModTime).toLocaleString(),
     remSize:    fmtBytes(existing.Size),
     filename,
-    wrapwebIconHtml: wrapwebIcon ? `<img src="${wrapwebIcon}" alt="wrapweb">` : '',
+    voltageIconHtml: voltageIcon ? `<img src="${voltageIcon}" alt="voltage">` : '',
     rcloneIconHtml:  rcloneIcon  ? `<span class="header-rclone-badge"><img src="${rcloneIcon}" alt=""></span>` : '',
     appIconHtml:     appIconUrl  ? `<img class="file-icon" src="${appIconUrl}" alt="">` : '',
   })
@@ -93,7 +94,7 @@ function buildConfirmPage(filename, existing, localStat, de) {
 // page, minus the comparison table.
 function buildSyncBackPage(filename, de) {
   const appIconUrl  = appIconDataUrl()
-  const wrapwebIcon = assetDataUrl('wrapweb.svg')
+  const voltageIcon = assetDataUrl('voltage.svg')
   const rcloneIcon  = assetDataUrl('rclone.svg')
   const html = fillHtml(syncBackTemplate, {
     title:        de ? 'Lokale Datei aktualisieren?' : 'Update local file?',
@@ -103,7 +104,7 @@ function buildSyncBackPage(filename, de) {
     btnKeep:      de ? 'Lokal behalten'  : 'Keep local',
     btnOverwrite: de ? 'Überschreiben'   : 'Overwrite',
     filename,
-    wrapwebIconHtml: wrapwebIcon ? `<img src="${wrapwebIcon}" alt="wrapweb">` : '',
+    voltageIconHtml: voltageIcon ? `<img src="${voltageIcon}" alt="voltage">` : '',
     rcloneIconHtml:  rcloneIcon  ? `<span class="header-rclone-badge"><img src="${rcloneIcon}" alt=""></span>` : '',
     appIconHtml:     appIconUrl  ? `<img class="file-icon" src="${appIconUrl}" alt="">` : '',
   })
@@ -139,7 +140,7 @@ function remoteMd5(remotePath) {
 // Polls until the remote hash matches (Drive lags a few seconds after upload) or times out.
 async function waitForDriveSync(remotePath, expectedHash, win, de) {
   const processingText = de ? 'Wird verarbeitet …' : 'Processing …'
-  if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildLoadingPage(processingText))
+  if (!win.isDestroyed()) win._voltageAppContents.loadURL(buildLoadingPage(processingText))
   const deadline = Date.now() + 20000
   while (Date.now() < deadline) {
     const remoteHash = await remoteMd5(remotePath)
@@ -178,7 +179,7 @@ function registerSyncBack(win, remotePath, localPath, de) {
   const syncText = de ? 'Wird synchronisiert …' : 'Syncing …'
   win.once('close', async (event) => {
     event.preventDefault()
-    if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildLoadingPage(syncText))
+    if (!win.isDestroyed()) win._voltageAppContents.loadURL(buildLoadingPage(syncText))
     await copyRemoteToLocal(remotePath, localPath)
     win.destroy()
   })
@@ -196,11 +197,11 @@ function registerSyncBackPrompt(win, remotePath, localPath, filename, de) {
       const done    = (v) => { ipcMain.removeListener('rclone-confirm', onIpc); resolve(v) }
       const onIpc   = (_, v) => done(v)
       ipcMain.once('rclone-confirm', onIpc)
-      if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildSyncBackPage(filename, de))
+      if (!win.isDestroyed()) win._voltageAppContents.loadURL(buildSyncBackPage(filename, de))
     })
     if (choice === 0) {
       const syncText = de ? 'Wird synchronisiert …' : 'Syncing …'
-      if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildLoadingPage(syncText))
+      if (!win.isDestroyed()) win._voltageAppContents.loadURL(buildLoadingPage(syncText))
       await copyRemoteToLocal(remotePath, localPath)
     }
     if (!win.isDestroyed()) win.destroy()
@@ -209,7 +210,7 @@ function registerSyncBackPrompt(win, remotePath, localPath, filename, de) {
 
 // Uploads the local file to Drive and returns its Google editor URL (or null on any failure).
 async function resolveEditUrl(filePath, win) {
-  const cfgPath = path.join(app.getPath('appData'), 'wrapweb', 'rclone.json')
+  const cfgPath = path.join(app.getPath('appData'), 'voltage', 'rclone.json')
   let remote, uploadFolder
   try {
     const cfgJson    = JSON.parse(fs.readFileSync(cfgPath, 'utf8'))
@@ -247,7 +248,7 @@ async function resolveEditUrl(filePath, win) {
       const onClose = ()     => done(1)
       ipcMain.once('rclone-confirm', onIpc)
       win.once('closed', onClose)
-      win._wrapwebAppContents.loadURL(buildConfirmPage(filename, existing, localStat, de))
+      win._voltageAppContents.loadURL(buildConfirmPage(filename, existing, localStat, de))
     })
     // "Open existing": don't push the local file up. The Drive copy may still get edited, so
     // on close ask whether to pull it back over the local file (instead of silently leaving the
@@ -257,7 +258,7 @@ async function resolveEditUrl(filePath, win) {
       if (!win.isDestroyed()) registerSyncBackPrompt(win, dest, filePath, filename, de)
       return `${pkg.rcloneEditUrlBase}/${existing.ID}/edit`
     }
-    if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(buildLoadingPage())
+    if (!win.isDestroyed()) win._voltageAppContents.loadURL(buildLoadingPage())
   }
 
   // --no-check-dest forces the transfer even when rclone thinks the remote is up to date.
@@ -303,16 +304,16 @@ function attachPlugin(win, { launchArg }) {
   // (In the old base flow app-window.js pre-loaded the loading page; a plugin runs after the
   // initial loadURL, so it cancels it here.)
   //
-  // All the page swaps target win._wrapwebAppContents (set by window.js), NOT win.webContents: when
+  // All the page swaps target win._voltageAppContents (set by window.js), NOT win.webContents: when
   // the app also loads the widget plugin it runs in an inset view, where win.webContents is the
   // empty host page — loading there would leave the app view untouched. The two are identical when
   // there's no view mode, so this is a no-op for the usual rclone apps.
-  win._wrapwebAppContents.stop()
-  win._wrapwebAppContents.loadURL(buildLoadingPage())
+  win._voltageAppContents.stop()
+  win._voltageAppContents.loadURL(buildLoadingPage())
 
   resolveEditUrl(filePath, win)
-    .then(editUrl => { if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(editUrl ?? pkg.url) })
-    .catch(()     => { if (!win.isDestroyed()) win._wrapwebAppContents.loadURL(pkg.url) })
+    .then(editUrl => { if (!win.isDestroyed()) win._voltageAppContents.loadURL(editUrl ?? pkg.url) })
+    .catch(()     => { if (!win.isDestroyed()) win._voltageAppContents.loadURL(pkg.url) })
 }
 
 module.exports = { attachPlugin }

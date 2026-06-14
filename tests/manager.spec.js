@@ -2,9 +2,9 @@ const { test, expect } = require('./fixtures')
 
 // Setup:    Manager launched with standard test configs (5 apps: public, private, MS, Google, mail).
 // Action:   (none — reads window title attribute)
-// Expected: Title starts with "wrapweb Manager" followed by the version string.
+// Expected: Title starts with "Voltage" followed by the version string (no "Manager").
 test('manager window has correct title', async ({ managerPage }) => {
-  await expect(managerPage).toHaveTitle(/^wrapweb Manager \d+\.\d+\.\d+/)
+  await expect(managerPage).toHaveTitle(/^Voltage \d+\.\d+\.\d+/)
 })
 
 // Setup:    Manager launched with standard test configs.
@@ -28,7 +28,7 @@ test('public test-app card is rendered', async ({ managerPage }) => {
 // Action:   (none — reads the card image src attribute)
 // Expected: The fallback icon src starts with "file://" — meaning it was resolved
 //           via the IPC/GTK path (application-default-icon or a local file path),
-//           not via a hard-coded relative path like "../../assets/wrapweb.svg".
+//           not via a hard-coded relative path like "../../assets/voltage.svg".
 test('icon-less app card uses a resolved file:// icon, not a hard-coded relative path', async ({ managerPage }) => {
   const card = managerPage.locator('.card', { hasText: 'Test App' })
   const imgSrc = await card.locator('img').first().getAttribute('src')

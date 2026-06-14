@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="https://github.com/db0x/wrapweb.git"
-DEFAULT_DEST="$HOME/.local/share/wrapweb"
+DEFAULT_DEST="$HOME/.local/share/voltage"
 DESKTOP_DIR="$HOME/.local/share/applications"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 
@@ -188,21 +188,21 @@ install_desktop_entry() {
   local dest="$1"
 
   mkdir -p "$ICON_DIR"
-  cp "$dest/assets/wrapweb.svg" "$ICON_DIR/wrapweb.svg"
+  cp "$dest/assets/voltage.svg" "$ICON_DIR/voltage.svg"
   gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" &>/dev/null || true
 
   mkdir -p "$DESKTOP_DIR"
-  local desktop_file="$DESKTOP_DIR/wrapweb-manager.desktop"
+  local desktop_file="$DESKTOP_DIR/voltage-manager.desktop"
   cat > "$desktop_file" <<EOF
 [Desktop Entry]
 Version=1.0
-Name=wrapweb
-Comment=Web App Manager (wrapweb)
+Name=voltage
+Comment=Web App Manager (voltage)
 Exec=bash -c 'cd "$dest" && npm start'
 Terminal=false
 Type=Application
-Icon=wrapweb
-StartupWMClass=wrapweb
+Icon=voltage
+StartupWMClass=voltage
 EOF
   update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
   ok "Desktop entry created: $desktop_file"
@@ -212,13 +212,13 @@ EOF
 uninstall() {
   local dest="$1"
 
-  header "Removing wrapweb …"
+  header "Removing voltage …"
 
-  local desktop_file="$DESKTOP_DIR/wrapweb-manager.desktop"
+  local desktop_file="$DESKTOP_DIR/voltage-manager.desktop"
 
   [ -f "$desktop_file" ] && { rm -f "$desktop_file"; ok "Desktop entry removed"; } \
                           || info "Desktop entry not found, skipping"
-  for icon in wrapweb; do
+  for icon in voltage; do
     local f="$ICON_DIR/${icon}.svg"
     [ -f "$f" ] && { rm -f "$f"; ok "Icon removed: ${icon}.svg"; } || true
   done
@@ -238,7 +238,7 @@ uninstall() {
     info "Installation directory not found, skipping"
   fi
 
-  local profile_dir="$HOME/.config/wrapweb"
+  local profile_dir="$HOME/.config/voltage"
   if [ -d "$profile_dir" ]; then
     echo ""
     read -rp "  Remove app profile data at $profile_dir? [y/N] " _answer
@@ -250,11 +250,11 @@ uninstall() {
     fi
   fi
 
-  echo -e "\n${GREEN}${BOLD}Done.${RESET} wrapweb has been uninstalled.\n"
+  echo -e "\n${GREEN}${BOLD}Done.${RESET} voltage has been uninstalled.\n"
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
-echo -e "\n${BOLD}wrapweb installer${RESET}"
+echo -e "\n${BOLD}voltage installer${RESET}"
 echo    "  https://github.com/db0x/wrapweb"
 
 MODE=install
@@ -282,12 +282,12 @@ check_node
 check_npm
 check_optional
 
-header "Installing wrapweb …"
+header "Installing voltage …"
 install_or_update "$DEST"
 
 header "Setting up launcher …"
 install_desktop_entry "$DEST"
 
-echo -e "\n${GREEN}${BOLD}Done.${RESET} Launch wrapweb from your application menu, or run:\n"
+echo -e "\n${GREEN}${BOLD}Done.${RESET} Launch voltage from your application menu, or run:\n"
 echo    "    cd \"$DEST\" && npm start"
 echo

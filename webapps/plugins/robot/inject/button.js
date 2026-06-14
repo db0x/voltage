@@ -2,7 +2,7 @@
 // This file is a TEMPLATE: the {{ariaLabel}} placeholder is filled per-app with the configured
 // matcher (JSON-encoded to a string literal) before injection, so it is NOT valid standalone JS.
 (function () {
-    if (window.__wrapwebRobotClicked) {
+    if (window.__voltageRobotClicked) {
         return;
     }
 
@@ -34,7 +34,7 @@
 
         clearInterval(timer);
 
-        window.__wrapwebRobotClicked = true;
+        window.__voltageRobotClicked = true;
         button.click();
     }, 500);
 })();
