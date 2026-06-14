@@ -2,9 +2,9 @@ const { test, expect } = require('./fixtures')
 
 // Setup:    Manager launched with standard test configs (5 apps: public, private, MS, Google, mail).
 // Action:   (none — reads window title attribute)
-// Expected: Title starts with "voltage Manager" followed by the version string.
+// Expected: Title starts with "Voltage" followed by the version string (no "Manager").
 test('manager window has correct title', async ({ managerPage }) => {
-  await expect(managerPage).toHaveTitle(/^voltage Manager \d+\.\d+\.\d+/)
+  await expect(managerPage).toHaveTitle(/^Voltage \d+\.\d+\.\d+/)
 })
 
 // Setup:    Manager launched with standard test configs.

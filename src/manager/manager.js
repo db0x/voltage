@@ -52,7 +52,7 @@ const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates
   window.managerAPI.getObsidianAvailable(),
 ])
 
-document.title = `voltage Manager ${version}`
+document.title = `Voltage ${version}`
 
 // String interpolation for i18n keys — falls back to the key name if missing.
 const tr = (key, params = {}) =>

@@ -64,7 +64,7 @@ function openManager() {
     width, height,
     minWidth:  400,
     minHeight: 400,
-    title: 'voltage Manager',
+    title: 'Voltage',
     backgroundColor: dark ? BG_DARK : BG_LIGHT,
     webPreferences: {
       preload: path.join(APP_ROOT, 'src', 'manager', 'preload.js'),
