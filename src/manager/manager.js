@@ -14,6 +14,7 @@ import { initGlobalSettingsDialog } from './dialogs/global-settings.js'
 import { initMailHandlerDialog }  from './dialogs/mail-handler.js'
 import { initRcloneDialog }      from './dialogs/rclone.js'
 import { initObsidianDialog }    from './dialogs/obsidian.js'
+import { initGnomeDialog }       from './dialogs/gnome.js'
 import { initSafeBrowsingDialog } from './dialogs/safe-browsing.js'
 import { initCards }           from './cards.js'
 import { initTooltip }         from './tooltip.js'
@@ -39,7 +40,7 @@ initColorPicker(dark)
 // seeds the persisted flag without requiring an explicit toggle.
 window.managerAPI.setDark(dark)
 
-const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates, globalSettings, obsidianAvailable] = await Promise.all([
+const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates, globalSettings, obsidianAvailable, gnomeAvailable] = await Promise.all([
   window.managerAPI.getApps(),
   window.managerAPI.getVersion(),
   window.managerAPI.getUiIcons(),
@@ -50,6 +51,7 @@ const [apps, version, uiIcons, i18n, uaPresets, plugins, rcloneStatus, templates
   window.managerAPI.getTemplates(),
   window.managerAPI.loadGlobalSettings(),
   window.managerAPI.getObsidianAvailable(),
+  window.managerAPI.getGnomeAvailable(),
 ])
 
 document.title = `Voltage ${version}`
@@ -111,13 +113,15 @@ const ctx = {
     minus:          s('minus'),
     obsidianMenu:   s('obsidianMenu'),
     obsidian:       s('obsidian'),
+    gnomeMenu:      s('gnomeMenu'),
+    gnome:          s('gnome'),
     rclonePlugin:   s('rclonePlugin'),
     pluginBadge:    s('pluginBadge'),
     shadow:         s('shadow'),
   },
 }
 
-const drawer       = initDrawer({ ...ctx, obsidianAvailable })
+const drawer       = initDrawer({ ...ctx, obsidianAvailable, gnomeAvailable })
 const buildOverlay = initBuildOverlay(ctx)
 const confirm      = initConfirmDialog(ctx)
 const info         = initInfoDialog(ctx)
@@ -146,6 +150,7 @@ const rcloneDialog      = initRcloneDialog(ctx)
 onRcloneFromAbout   = () => rcloneDialog.openRcloneDialog()
 const obsidianDialog    = initObsidianDialog(ctx)
 onObsidianFromAbout = () => obsidianDialog.openObsidianDialog()
+const gnomeDialog       = initGnomeDialog(ctx)
 const safeBrowsingDialog = initSafeBrowsingDialog(ctx)
 // Per-plugin config dialogs (the markup is shipped by each configurable plugin). Opened from the
 // configure button on a plugin chip in the create/edit dialogs.
@@ -253,6 +258,15 @@ if (obsidianBtn) {
   obsidianBtn.addEventListener('click', () => {
     drawer.closeDrawer()
     obsidianDialog.openObsidianDialog()
+  })
+}
+
+// Only rendered under a GNOME Shell session — guard against missing element on startup.
+const gnomeBtn = document.getElementById('menu-gnome')
+if (gnomeBtn) {
+  gnomeBtn.addEventListener('click', () => {
+    drawer.closeDrawer()
+    gnomeDialog.openGnomeDialog()
   })
 }
 

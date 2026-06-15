@@ -6,7 +6,7 @@ import { applyTemplate } from './template.js'
 import { OverlayScrollbars } from '../../node_modules/overlayscrollbars/overlayscrollbars.mjs'
 import { setColorPickerTheme } from './color-picker.js'
 
-export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, mailHandlerAvailable, templates }) {
+export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, gnomeAvailable, mailHandlerAvailable, templates }) {
   const { sun: sunSrc, moon: moonSrc, menu: menuSrc } = icons
 
   const menuBtn  = document.getElementById('menu-btn')
@@ -24,6 +24,7 @@ export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, ma
   if (!mailHandlerAvailable) wrapper.querySelector('#menu-mail-handler')?.remove()
   if (!rcloneAvailable)    wrapper.querySelector('#menu-rclone')?.remove()
   if (!obsidianAvailable)  wrapper.querySelector('#menu-obsidian')?.remove()
+  if (!gnomeAvailable)     wrapper.querySelector('#menu-gnome')?.remove()
   // Wrap the menu in a dedicated scroll surface: .drawer stays the fixed
   // slide-in host, .drawer-scroll is what OverlayScrollbars takes over, and the
   // item spacing moves onto .drawer-list — OS wraps only the scroll element's

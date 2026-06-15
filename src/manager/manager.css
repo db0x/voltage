@@ -1849,11 +1849,13 @@ body.dark .rclone-fieldset {
 
 /* ── Obsidian dialog ── */
 
-.obsidian-dialog {
+.obsidian-dialog,
+.gnome-dialog {
   width: 460px;
 }
 
-.obsidian-dialog .dialog-fields {
+.obsidian-dialog .dialog-fields,
+.gnome-dialog .dialog-fields {
   display: flex;
   flex-direction: column;
   gap: 12px;

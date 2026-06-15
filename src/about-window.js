@@ -15,6 +15,7 @@ const os   = require('node:os')
 const pkg      = require(app.getAppPath() + '/package.json')
 const APP_ROOT = app.getAppPath()
 const { appName } = require('./app-naming')
+const { t }       = require('./i18n')
 
 // Reads an SVG asset as a base64 data URL for inline embedding; null if missing.
 function svgDataUrl(absPath) {
@@ -56,129 +57,59 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 }
 
-// Builds the complete About HTML document loaded into the overlay view. Because this runs in
-// our own context (no foreign CSP), plain innerHTML/inline styles are safe here.
+// Mustache-style {{key}} substitution for the about template (no DOM in Node). Mirrors the
+// rclone-sync plugin's data:-URL pages: structure/CSS live in the .html file, JS fills the holes.
+function fillHtml(html, vars) {
+  return html.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '')
+}
+
+// The about overlay's markup ships as a sibling .html file (structure + CSS + the small inline
+// script) so no HTML lives in this module. Read once — stable for the process lifetime.
+const aboutTemplate = fs.readFileSync(path.join(__dirname, 'about-window.html'), 'utf8')
+
+// Fills the About template for the current app/locale. Strings come from src/i18n/*.json via the
+// shared i18n module (no UI text in this file). Runs in our own context (no foreign CSP); the
+// *Html vars are pre-built markup fragments, the rest are escaped text.
 function buildAboutHtml(info) {
+  const i18n = t()
   const de = app.getLocale().split('-')[0].toLowerCase() === 'de'
   const displayName = pkg.displayName || pkg.profile
-  const t = de
-    ? { titlePrefix: 'Über ', subtitle: 'voltage-AppImage', domain: 'Aktuelle Domain', appName: 'App', plugins: 'Geladene Plugins',
-        versions: 'Versionen', voltageHint: 'Stand der AppImage-Erstellung',
-        electronHint: 'zugrundeliegendes Electron-Framework', chromiumHint: 'Render-Engine / Browser-Kern',
-        builtWith: 'Erstellt mit voltage', electron: 'Electron', close: 'Schließen',
-        sbSafe: 'Google Safe Browsing: keine Bedrohung bekannt', sbUnsafe: 'Google Safe Browsing: als gefährlich gemeldet' }
-    : { titlePrefix: 'About ', subtitle: 'voltage AppImage', domain: 'Current domain', appName: 'App', plugins: 'Loaded plugins',
-        versions: 'Versions', voltageHint: 'when this AppImage was built',
-        electronHint: 'underlying Electron framework', chromiumHint: 'render engine / browser core',
-        builtWith: 'Built with voltage', electron: 'Electron', close: 'Close',
-        sbSafe: 'Google Safe Browsing: no known threat', sbUnsafe: 'Google Safe Browsing: flagged as dangerous' }
 
   const appIcon = appIconDataUrl()
   const plugins = (pkg.plugins ?? []).map(pluginDisplay)
 
-  const headerIcon = appIcon ? `<img src="${appIcon}" alt="">` : ''
-
-  const pluginsField = plugins.length ? `
-    <div class="wa-field"><div class="wa-label">${esc(t.plugins)}</div>
+  const pluginsFieldHtml = plugins.length ? `
+    <div class="wa-field"><div class="wa-label">${esc(i18n.aboutPanelPlugins)}</div>
       <ul class="wa-plugins">${plugins.map(p =>
         `<li>${p.icon ? `<img src="${p.icon}" alt="">` : ''}<span>${esc(p.label)}</span></li>`).join('')}</ul>
     </div>` : ''
 
   const ver = (name, hint) =>
     `<div class="wa-ver"><span class="wa-ver-name">${esc(name)}</span><span class="wa-ver-hint">${esc(hint)}</span></div>`
+  const versionRowsHtml =
+    ver('voltage ' + pkg.version, i18n.aboutPanelVoltageHint) +
+    ver('Electron ' + process.versions.electron, i18n.aboutPanelElectronHint) +
+    ver('Chromium ' + process.versions.chrome, i18n.aboutPanelChromiumHint)
 
-  return `<!doctype html><html lang="${de ? 'de' : 'en'}"><head><meta charset="utf-8"><style>
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    :root{--wa-card-bg:#fff;--wa-card-fg:#1e1e1e;--wa-label:#888;--wa-div:#e4e4e4}
-    @media (prefers-color-scheme: dark){
-      :root{--wa-card-bg:#2c2c2c;--wa-card-fg:#f0f0f0;--wa-label:#aaa;--wa-div:#444}
-    }
-    /* Transparent html/body + a semi-transparent backdrop so the app shows through, dimmed.
-       The view itself is set transparent in main; if the compositor ignores that, this still
-       degrades to a darker (but not fully opaque) overlay. */
-    html,body{height:100%;background:transparent}
-    body{display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);
-      font-family:'Ubuntu',system-ui,sans-serif;color-scheme:light dark}
-    .wa-card{background:var(--wa-card-bg);color:var(--wa-card-fg);border-radius:12px;width:440px;
-      max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.5);overflow:hidden}
-    .wa-header{background:linear-gradient(135deg,#5ab4f0 0%,#1a7bc4 100%);
-      padding:12px 20px;display:flex;align-items:center;gap:12px}
-    .wa-icon-wrap{width:32px;height:32px;flex-shrink:0}
-    .wa-icon-wrap>img{width:32px;height:32px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.25))}
-    .wa-htitles{display:flex;flex-direction:column;line-height:1.2}
-    .wa-htitle{color:#fff;font-size:15px;font-weight:600}
-    .wa-hsub{color:rgba(255,255,255,0.8);font-size:11px}
-    .wa-body{padding:18px 24px 20px;display:flex;flex-direction:column;gap:14px}
-    .wa-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--wa-label)}
-    .wa-val{font-size:13px;margin-top:2px;word-break:break-all;padding-left:10px}
-    .wa-domain{display:flex;align-items:center;gap:6px}
-    .wa-domain img{width:15px;height:15px;flex-shrink:0}
-    .wa-vers{display:flex;flex-direction:column;gap:6px;margin-top:3px;padding-left:10px}
-    .wa-ver{display:flex;flex-direction:column;line-height:1.25}
-    .wa-ver-name{font-size:13px}
-    .wa-ver-hint{font-size:11px;color:var(--wa-label)}
-    .wa-plugins{list-style:none;margin:4px 0 0;padding:0 0 0 10px;display:flex;flex-direction:column;gap:5px}
-    .wa-plugins li{display:flex;align-items:center;gap:8px;font-size:13px}
-    .wa-plugins img{width:18px;height:18px;flex-shrink:0;object-fit:contain}
-    .wa-branding{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:4px;
-      padding-top:12px;border-top:1px solid var(--wa-div)}
-    .wa-branding a{display:flex;align-items:center;gap:6px;font-size:12px;color:#3584e4;
-      text-decoration:none;cursor:pointer}
-    .wa-branding a:hover span{text-decoration:underline}
-    .wa-branding img{width:20px;height:20px;flex-shrink:0}
-    .wa-actions{display:flex;justify-content:flex-end;margin-top:2px}
-    .wa-actions button{padding:7px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;
-      font-weight:500;font-family:inherit;background:#1a73e8;color:#fff;transition:opacity .15s}
-    .wa-actions button:hover{opacity:.85}
-  </style></head><body>
-    <div class="wa-card">
-      <div class="wa-header"><div class="wa-icon-wrap">${headerIcon}</div>
-        <div class="wa-htitles">
-          <span class="wa-htitle">${esc(t.titlePrefix + displayName)}</span>
-          <span class="wa-hsub">${esc(t.subtitle)}</span>
-        </div></div>
-      <div class="wa-body">
-        <div class="wa-field"><div class="wa-label">${esc(t.domain)}</div>
-          <div class="wa-val wa-domain"><img id="wa-sb" alt="" hidden><span>${esc(info.domain)}</span></div></div>
-        <div class="wa-field"><div class="wa-label">${esc(t.appName)}</div><div class="wa-val">${esc(pkg.name || pkg.profile)}</div></div>
-        <div class="wa-field"><div class="wa-label">${esc(t.versions)}</div>
-          <div class="wa-vers">
-            ${ver('voltage ' + pkg.version, t.voltageHint)}
-            ${ver('Electron ' + process.versions.electron, t.electronHint)}
-            ${ver('Chromium ' + process.versions.chrome, t.chromiumHint)}
-          </div></div>
-        ${pluginsField}
-        <div class="wa-branding">
-          <a href="https://github.com/db0x/voltage" target="_blank" rel="noreferrer">
-            ${githubIcon ? `<img src="${githubIcon}" alt="">` : ''}<span>${esc(t.builtWith)}</span></a>
-          <a href="https://www.electronjs.org/" target="_blank" rel="noreferrer"><span>${esc(t.electron)}</span></a>
-        </div>
-        <div class="wa-actions"><button id="wa-close">${esc(t.close)}</button></div>
-      </div>
-    </div>
-    <script>
-      const close = () => window.aboutAPI.close();
-      document.getElementById('wa-close').addEventListener('click', close);
-      // Backdrop click (outside the card) closes.
-      document.body.addEventListener('click', e => { if (e.target === document.body) close(); });
-      // F12 (toggle) and Esc close from within the overlay; the main process also intercepts
-      // F12 globally, but the focused overlay needs its own handler to react.
-      document.addEventListener('keydown', e => { if (e.key === 'Escape' || e.key === 'F12') { e.preventDefault(); close(); } });
-      // External links: hand off to the system browser via the host's default handling.
-      for (const a of document.querySelectorAll('a[target="_blank"]')) {
-        a.addEventListener('click', e => { e.preventDefault(); window.open(a.href, '_blank'); });
-      }
-      // Safe Browsing badge — async; only shown for a definite verdict.
-      const sb = document.getElementById('wa-sb');
-      const D = ${JSON.stringify({ fullUrl: info.fullUrl, safeIcon, unsafeIcon, sbSafe: t.sbSafe, sbUnsafe: t.sbUnsafe })};
-      if (window.aboutAPI && window.aboutAPI.checkSafeBrowsing) {
-        window.aboutAPI.checkSafeBrowsing(D.fullUrl).then(r => {
-          if (r === 'safe'   && D.safeIcon)   { sb.src = D.safeIcon;   sb.title = D.sbSafe;   sb.hidden = false; }
-          if (r === 'unsafe' && D.unsafeIcon) { sb.src = D.unsafeIcon; sb.title = D.sbUnsafe; sb.hidden = false; }
-        }).catch(() => {});
-      }
-    </script>
-  </body></html>`
+  return fillHtml(aboutTemplate, {
+    lang: de ? 'de' : 'en',
+    headerIconHtml: appIcon ? `<img src="${appIcon}" alt="">` : '',
+    title:         esc(i18n.aboutPanelTitle.replace(/\{name\}/g, displayName)),
+    subtitle:      esc(i18n.aboutPanelSubtitle),
+    domainLabel:   esc(i18n.aboutPanelDomain),
+    domain:        esc(info.domain),
+    appLabel:      esc(i18n.aboutPanelApp),
+    appName:       esc(pkg.name || pkg.profile),
+    versionsLabel: esc(i18n.aboutPanelVersions),
+    versionRowsHtml,
+    pluginsFieldHtml,
+    githubIconHtml: githubIcon ? `<img src="${githubIcon}" alt="">` : '',
+    builtWith:     esc(i18n.aboutPanelBuiltWith),
+    electron:      esc(i18n.aboutPanelElectron),
+    close:         esc(i18n.aboutPanelClose),
+    // Embedded in the inline <script> as a JS object literal (parsed by the renderer).
+    safeBrowsingData: JSON.stringify({ fullUrl: info.fullUrl, safeIcon, unsafeIcon, sbSafe: i18n.aboutPanelSbSafe, sbUnsafe: i18n.aboutPanelSbUnsafe }),
+  })
 }
 
 // Toggles the About overlay view on a window: present → remove (F12 again closes), else create.

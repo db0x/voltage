@@ -296,4 +296,41 @@ const obsidianTest = base.extend({
   },
 })
 
-module.exports = { test, expect, FAKE_ICON_PATH, base, rcloneTest, mailHandlerTest, globalSettingsTest, obsidianTest }
+// ── GNOME-extension dialog test helpers ──────────────────────────────────────
+
+// VOLTAGE_TEST_GNOME_AVAILABLE turns the drawer entry on without a real GNOME session.
+// VOLTAGE_TEST_GNOME_EXT_DIR points the install target at a temp dir so the install
+// handler copies the extension there instead of the user's real extensions directory.
+// VOLTAGE_TEST_GNOME_ENABLED / _AFTER and _WAYLAND drive the status/relog-hint branches.
+async function launchAppWithGnome(extraEnv = {}) {
+  const gnomeExtDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-gnome-test-'))
+  const { app, userDataDir } = await launchApp({
+    VOLTAGE_TEST_GNOME_AVAILABLE: '1',
+    VOLTAGE_TEST_GNOME_EXT_DIR:   gnomeExtDir,
+    ...extraEnv,
+  })
+  return { app, userDataDir, gnomeExtDir }
+}
+
+async function closeAppWithGnome(app, userDataDir, gnomeExtDir) {
+  await closeApp(app, userDataDir)
+  fs.rmSync(gnomeExtDir, { recursive: true, force: true })
+}
+
+const gnomeTest = base.extend({
+  // GNOME session detected, extension not yet installed, Wayland (so a relog is required
+  // after install — the dialog's relog hint should appear).
+  electronAppGnomeWayland: [async ({}, use) => {
+    const { app, userDataDir, gnomeExtDir } = await launchAppWithGnome({ VOLTAGE_TEST_GNOME_WAYLAND: '1' })
+    await use({ app, gnomeExtDir })
+    await closeAppWithGnome(app, userDataDir, gnomeExtDir)
+  }, { scope: 'test' }],
+
+  managerPageGnomeWayland: async ({ electronAppGnomeWayland }, use) => {
+    const page = await electronAppGnomeWayland.app.firstWindow()
+    await page.waitForSelector('.card-add', { timeout: 30_000 })
+    await use({ page, gnomeExtDir: electronAppGnomeWayland.gnomeExtDir })
+  },
+})
+
+module.exports = { test, expect, FAKE_ICON_PATH, base, rcloneTest, mailHandlerTest, globalSettingsTest, obsidianTest, gnomeTest }

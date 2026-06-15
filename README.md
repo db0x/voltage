@@ -17,7 +17,7 @@ Turn any *web app* into a standalone Linux *desktop application* — packaged as
 Built on [Electron](https://www.electronjs.org/). Each app gets an isolated browser profile so WhatsApp, Teams, Google Earth and your own internal tools can all run side by side without interfering.
 
 > **Target environment: Linux🐧**
-> voltage is built and tested on GNOME and KDE Plasma (Wayland). Features like correct WM class, taskbar grouping, window management, and the Manager's native icon integration work well on both desktops. X11 may work but is not actively tested.
+> Voltage is built and tested on GNOME and KDE Plasma (Wayland). Features like correct WM class, taskbar grouping, window management, and the Manager's native icon integration work well on both desktops. X11 may work but is not actively tested.
 
 ## Installation
 
@@ -64,9 +64,9 @@ npm start
 - **Context menu** — a single self-rendered in-page **layer** (no native menu anywhere); both variants share one design:
   - **Plain right-click** → the slim menu: spelling suggestions (Electron's spellchecker, falling back to `aspell`) + Cut / Copy / Paste (enabled per the field's edit flags). Driven by the native `context-menu` event as its data source (the only place the misspelled word is exposed), then rendered as the overlay. Apps that handle `contextmenu` themselves still show their own.
   - **Ctrl+right-click** → the full menu: Cut / Copy / Paste, **Open with [App]** / **Open in browser** for links, **Save image as** for images, and plugin actions (the widget's Move/Quit, the zoom submenu). Triggered on the raw right mouse button so it works in *every* app at any spot — even where the native menu fails: apps that suppress `contextmenu` (Teams/Office), Word's canvas editor (in a cross-origin iframe; the preload loads in all frames), app-region drag zones, and Wayland's popup-grab quirks
-- **Cross-app link routing** — links to URLs handled by another installed voltage app open directly in that app instead of the system browser; a `routing.json` plugin file (written by `install-app`, read at runtime) maps hostnames to AppImages — no rebuild required when routing changes. The file is split into `base` claims (each app's primary URL) and `routing` claims (extra URLs apps opt into via the `routingUrls` config field, with `*` wildcards, editable in the create/edit dialog); when both match a link, the `routing` claim wins
+- **Cross-app link routing** — links to URLs handled by another installed Voltage app open directly in that app instead of the system browser; a `routing.json` plugin file (written by `install-app`, read at runtime) maps hostnames to AppImages — no rebuild required when routing changes. The file is split into `base` claims (each app's primary URL) and `routing` claims (extra URLs apps opt into via the `routingUrls` config field, with `*` wildcards, editable in the create/edit dialog); when both match a link, the `routing` claim wins
 - **Per-app plugins** — main-process modules shipped under `webapps/plugins/` that extend a single app's behaviour (e.g. routing OneDrive document opens to the Word/Excel/PowerPoint app, or driving a webmail app's compose UI for `mailto:` links). Selected per app in the create/edit dialog; a change takes effect after rebuilding the AppImage. A plugin can be **configurable** — it ships its own settings dialog (`config.html`) opened from a gear button on its chip, and its values are stored per app in `pluginConfig` (e.g. the widget plugin's window corner radius)
-- **About panel** — `F12` toggles an in-app About overlay showing the current domain (with a Google Safe Browsing badge when active), the app, the build versions (voltage / Electron / Chromium), and the loaded plugins
+- **About panel** — `F12` toggles an in-app About overlay showing the current domain (with a Google Safe Browsing badge when active), the app, the build versions (Voltage / Electron / Chromium), and the loaded plugins
 - **Zoom** — `Ctrl+Scroll` zooms the page, provided per app by the configurable **zoom** plugin (step size and the min/max zoom factor are set in its config dialog); a centred on-screen panel shows the current zoom percentage while zooming and auto-hides 1s after the last change (it keeps a constant size, so it always reads at 100% regardless of the page zoom). The plugin also adds a **Zoom** submenu to the context menu (zoom in / out / reset). Add it to an app in the create/edit dialog to enable zoom for that app
 - **Screen sharing** — WebRTC / PipeWire capture works out of the box
 - **DevTools** — `Shift+F12` to toggle
@@ -77,7 +77,7 @@ npm start
 
 ## Manager
 
-Running `npm start` (without a profile) opens the **voltage Manager** — a graphical overview of all configured apps. The Manager is the primary interface for adding, configuring, building, installing, and launching apps. The UI language follows the system locale (German and English supported).
+Running `npm start` (without a profile) opens the **Voltage UI** — a graphical overview of all configured apps. The Manager is the primary interface for adding, configuring, building, installing, and launching apps. The UI language follows the system locale (German and English supported).
 
 ![Manager UI](assets/manager.png)
 
@@ -130,10 +130,11 @@ The menu (top right) offers:
 - **Light / Dark mode** toggle — preference is saved across sessions
 - **Visibility filter** — All Apps / Embedded Apps / User Apps
 - **Hide uninstalled** — suppress apps that haven't been installed yet
+- **GNOME Integration** — install the Shell extension that hides widget windows from the dash/dock (only under a GNOME session; see [GNOME Integration](#gnome-integration))
 
 ## System mail handler
 
-voltage can register any web mail app as the system-wide default handler for `mailto:` links. Once registered, clicking a `mailto:` link in any application — browser, PDF viewer, terminal, Teams, … — opens a compose window in the configured web app. No native mail client required.
+Voltage can register any web mail app as the system-wide default handler for `mailto:` links. Once registered, clicking a `mailto:` link in any application — browser, PDF viewer, terminal, Teams, … — opens a compose window in the configured web app. No native mail client required.
 
 ### How it works
 
@@ -170,14 +171,14 @@ After installing, double-clicking any of these files in the file manager opens i
 
 ## rclone Integration (Google Drive)
 
-voltage can act as a system file handler for Office formats and route them through **Google Drive** via [rclone](https://rclone.org/). Double-clicking a `.docx`, `.xlsx`, or `.pptx` file in the file manager uploads it to your Drive and opens it directly in Google Docs, Sheets, or Slides. When you close the app window, the edited file is automatically synced back to its original local path.
+Voltage can act as a system file handler for Office formats and route them through **Google Drive** via [rclone](https://rclone.org/). Double-clicking a `.docx`, `.xlsx`, or `.pptx` file in the file manager uploads it to your Drive and opens it directly in Google Docs, Sheets, or Slides. When you close the app window, the edited file is automatically synced back to its original local path.
 
 ### Prerequisites
 
 - **rclone** installed — see [rclone.org/install](https://rclone.org/install/)
 - A **Google Drive remote** configured in rclone — see [rclone Google Drive docs](https://rclone.org/drive/) for the one-time setup
 
-### Setup in voltage
+### Setup in Voltage
 
 1. Build and install the relevant app(s) — **Google Docs**, **Google Spreadsheets**, and/or **Google Presentation** — via the Manager
 2. Open the Manager side menu → **rclone Integration**
@@ -189,12 +190,12 @@ voltage can act as a system file handler for Office formats and route them throu
 
 | Step | What happens |
 |---|---|
-| Double-click `.docx` / `.xlsx` / `.pptx` in the file manager | voltage checks whether a file with that name already exists on Drive |
+| Double-click `.docx` / `.xlsx` / `.pptx` in the file manager | Voltage checks whether a file with that name already exists on Drive |
 | File already on Drive, identical to local | Opens directly — no upload needed |
 | File already on Drive, different content | Shows a comparison dialog (size, last modified) — choose to overwrite or open the Drive version |
 | New file | Uploads to the configured Drive folder |
 | Editing in the browser | File is open in Google Docs / Sheets / Slides |
-| Close the app window | voltage syncs the Drive version back to the original local path |
+| Close the app window | Voltage syncs the Drive version back to the original local path |
 
 > Uploaded files land in the configured Drive folder (e.g. `google-docs/` in your Drive root). The folder is created automatically on first use.
 
@@ -223,25 +224,25 @@ No AppImage rebuild is required — the key and enabled state are read at runtim
 
 ## Obsidian Plugin
 
-voltage ships a plugin for [Obsidian](https://obsidian.md/). Once installed, external links in your notes that match a voltage-routed app open directly in that app instead of the system browser. All external links show a **link tooltip** at the bottom of the screen — identical in style to the tooltips in voltage app windows: the app icon and URL for voltage targets, the browser icon and URL for everything else.
+voltage ships a plugin for [Obsidian](https://obsidian.md/). Once installed, external links in your notes that match a Voltage-routed app open directly in that app instead of the system browser. All external links show a **link tooltip** at the bottom of the screen — identical in style to the tooltips in Voltage app windows: the app icon and URL for Voltage targets, the browser icon and URL for everything else.
 
 ### Prerequisites
 
 - Obsidian ≥ 1.12.7 installed with at least one vault
-- At least one voltage app built and installed (so `routing.json` exists)
+- At least one Voltage app built and installed (so `routing.json` exists)
 
 ### Setup
 
 1. Open the Manager side menu → **Obsidian Integration**
 2. The dialog lists all known vaults with their current plugin status
 3. Click **Plugin installieren** — the plugin files are copied into every vault's `.obsidian/plugins/voltage/` directory
-4. In Obsidian: **Settings → Community Plugins → voltage** → enable
+4. In Obsidian: **Settings → Community Plugins → Voltage** → enable
 
 When voltage is updated and ships a newer plugin version, the dialog shows **Update verfügbar** per vault and an **Plugin aktualisieren** button.
 
 ### Obsidian via Flatpak
 
-If Obsidian is installed as a Flatpak, the dialog shows an extra section with the one-time command required to grant the sandbox access to your home directory — otherwise it cannot spawn the voltage AppImages. The command is offered with a one-click copy button:
+If Obsidian is installed as a Flatpak, the dialog shows an extra section with the one-time command required to grant the sandbox access to your home directory — otherwise it cannot spawn the Voltage AppImages. The command is offered with a one-click copy button:
 
 ```
 flatpak override --user --filesystem=home md.obsidian.Obsidian
@@ -251,9 +252,30 @@ Run it once in a terminal and restart Obsidian. The hint is only displayed when 
 
 ### How it works
 
-The plugin reads `~/.config/voltage/plugins/routing/routing.json` at runtime — the same file that is written automatically whenever you install a voltage app. No rebuild and no Obsidian restart are required when routing changes.
+The plugin reads `~/.config/voltage/plugins/routing/routing.json` at runtime — the same file that is written automatically whenever you install a Voltage app. No rebuild and no Obsidian restart are required when routing changes.
 
 The plugin works in both **Reading Mode** and **Live Preview** (CodeMirror 6). Routing and icon data are cached in memory; the routing file is re-read at most once per second to pick up changes without measurable overhead.
+
+
+## GNOME Integration
+
+Under Wayland an AppImage cannot control its own window state, so a frameless **widget** app cannot remove itself from the taskbar. Voltage ships a small GNOME Shell extension that does it from the shell side: while active it hides the marked Voltage widget windows from the GNOME **dash** and from **dash-to-dock**. The window stays focusable and alt-tabbable — it just no longer earns a dash/dock icon.
+
+Per app this is controlled by the widget plugin's **Show in taskbar** toggle (widget config dialog). It is **off by default** — a widget is normally kept out of the dock — so a freshly created widget app is hidden automatically; enable the toggle for the rare widget you want to keep in the dock.
+
+### Prerequisites
+
+- A GNOME Shell session (GNOME 46–50)
+
+### Setup
+
+1. Open the Manager side menu → **GNOME Integration** (only shown under a GNOME session)
+2. Click **Install extension** — `extension.js` and `metadata.json` are copied into `~/.local/share/gnome-shell/extensions/voltage@db0x.de/` and the extension is enabled
+3. On **Wayland**, log out and back in once so GNOME loads the freshly installed extension — the dialog shows a hint when this is required
+
+### How it works
+
+The Manager writes a per-app `.desktop` launcher into `~/.local/share/applications`, adding the line `X-Voltage-Widget=true` for a widget app **unless** its **Show in taskbar** toggle is on. The extension is that marker's only consumer: it scans the launchers (and watches the directory), collects the marked app ids, and wraps `Shell.AppSystem.get_running()` to drop them — the one seam both the stock dash and dash-to-dock read from. Installing, editing or deleting a Voltage app rewrites/removes its launcher, so the hidden set stays correct automatically.
 
 
 ## Included app configs
