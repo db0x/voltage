@@ -1,6 +1,36 @@
-const { gnomeTest: test, expect } = require('./fixtures')
+const { test: baseTest, gnomeTest: test, expect } = require('./fixtures')
 const fs   = require('node:fs')
 const path = require('node:path')
+
+// Opens the side menu in a layout-agnostic way. Below 875px the drawer is a slide-in overlay
+// reached via the hamburger; at/above 875px it is a persistent panel and the hamburger is
+// display:none. Some desktops force new windows wide (persistent layout), so clicking the
+// hamburger unconditionally would fail there — only click it when it is actually visible.
+async function openDrawer(page) {
+  const hamburger = page.locator('#menu-btn')
+  if (await hamburger.isVisible()) await hamburger.click()
+}
+
+// ── Drawer entry gating (GNOME-only) ──────────────────────────────────────────
+
+// Setup:    Standard Manager launch — VOLTAGE_TEST_GNOME_AVAILABLE is unset, so the integration
+//           reports "not a GNOME session" (the same outcome as running under KDE/others).
+// Action:   Inspect the side menu.
+// Expected: The GNOME Integration entry is absent from the DOM — the feature only makes sense
+//           under GNOME, where its Shell extension can actually run. (Layout-independent: the
+//           drawer removes the node entirely, so no need to open the overlay.)
+baseTest('GNOME entry is hidden when not under a GNOME session', async ({ managerPage }) => {
+  await expect(managerPage.locator('#menu-gnome')).toHaveCount(0)
+})
+
+// Setup:    Manager launched under a (faked) GNOME session.
+// Action:   Open the drawer.
+// Expected: The GNOME Integration entry is present — the gate lets it through only on GNOME.
+test('GNOME entry is shown under a GNOME session', async ({ managerPageGnomeWayland }) => {
+  const { page } = managerPageGnomeWayland
+  await openDrawer(page)
+  await expect(page.locator('#menu-gnome')).toBeVisible()
+})
 
 // ── Availability + initial status ─────────────────────────────────────────────
 
@@ -11,7 +41,7 @@ const path = require('node:path')
 //           under GNOME and the status reflects the empty install target.
 test('shows not-installed status under a GNOME session', async ({ managerPageGnomeWayland }) => {
   const { page } = managerPageGnomeWayland
-  await page.click('#menu-btn')
+  await openDrawer(page)
   await page.click('#menu-gnome')
   await expect(page.locator('.gnome-dialog')).toBeVisible()
   await expect(page.locator('#gnome-status-badge')).toHaveText('Not installed')
@@ -28,7 +58,7 @@ test('shows not-installed status under a GNOME session', async ({ managerPageGno
 //           on Wayland GNOME only loads the extension after a re-login.
 test('install copies files and surfaces the relog hint on Wayland', async ({ managerPageGnomeWayland }) => {
   const { page, gnomeExtDir } = managerPageGnomeWayland
-  await page.click('#menu-btn')
+  await openDrawer(page)
   await page.click('#menu-gnome')
   await page.click('#gnome-install')
 

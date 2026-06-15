@@ -89,7 +89,7 @@ module.exports = function registerMetaHandlers() {
       obsidianMenu:       a('obsidian.svg'),
       obsidian:           a('plugins/obsidian.svg'),
       gnomeMenu:          a('gnome.svg'),
-      gnome:              a('gnome.svg'),
+      gnome:              a('webapps/gnome.svg'),
       rclonePlugin:       a('plugins/rclone.svg'),
       pluginBadge:        a('plugins/plugin.svg'),
       shadow:             a('shadow.svg'),

@@ -34,12 +34,21 @@ function readMetadataVersion(metadataPath) {
   try { return JSON.parse(fs.readFileSync(metadataPath, 'utf8')).version ?? null } catch { return null }
 }
 
-// Pre-warm GNOME Shell availability at module load. We treat the integration as available
-// when the current desktop is GNOME (the only place the extension can run). In test mode,
-// VOLTAGE_TEST_GNOME_AVAILABLE forces the drawer entry on without a real GNOME session.
+// True when the current desktop session is GNOME — the only place this Shell extension can run,
+// so it gates the whole integration (drawer entry + dialog). XDG_CURRENT_DESKTOP is a colon-
+// separated list (e.g. "ubuntu:GNOME"); we match the GNOME token exactly rather than a loose
+// substring so unrelated values can't trip it. Under KDE/others the token is absent → hidden.
+function isGnomeSession() {
+  return (process.env.XDG_CURRENT_DESKTOP || '')
+    .split(':')
+    .some(token => token.trim().toLowerCase() === 'gnome')
+}
+
+// Pre-warm GNOME Shell availability at module load. In test mode, VOLTAGE_TEST_GNOME_AVAILABLE
+// forces the drawer entry on/off without a real GNOME session.
 const prefetchedGnomeAvailable = process.env.VOLTAGE_TEST
   ? Promise.resolve(process.env.VOLTAGE_TEST_GNOME_AVAILABLE === '1')
-  : Promise.resolve(/gnome/i.test(process.env.XDG_CURRENT_DESKTOP || ''))
+  : Promise.resolve(isGnomeSession())
 
 module.exports = function registerGnomeHandlers() {
   ipcMain.handle('manager:gnome-available', () => prefetchedGnomeAvailable)

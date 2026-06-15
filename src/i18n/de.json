@@ -177,9 +177,9 @@
 
   "infoCopyToPrivate": "Als private Config kopieren",
 
-  "drawerAbout":   "Über voltage",
-  "aboutLicense":  "MIT-Lizenz",
-  "aboutGithub":   "voltage bei GitHub",
+  "drawerAbout":   "Über Voltage",
+  "aboutLicense":  "GPL-3.0-Lizenz",
+  "aboutGithub":   "Voltage bei GitHub",
   "aboutObsidianAvailable": "Obsidian-Plugin verfügbar",
   "aboutRclonePlugin":      "rclone-Plugin verfügbar",
 

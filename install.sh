@@ -196,8 +196,8 @@ install_desktop_entry() {
   cat > "$desktop_file" <<EOF
 [Desktop Entry]
 Version=1.0
-Name=voltage
-Comment=Web App Manager (voltage)
+Name=Voltage
+Comment=Web App Manager (Voltage)
 Exec=bash -c 'cd "$dest" && npm start'
 Terminal=false
 Type=Application
