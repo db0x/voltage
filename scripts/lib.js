@@ -153,6 +153,15 @@ function installDesktop(app) {
     // not match and GNOME would show the raw lowercase id instead.
     `StartupWMClass=${wmClass(app.profile)}`,
   ]
+  // Marker read by the Voltage GNOME Shell extension: a frameless widget app must be kept out of
+  // the dash/dock, which an AppImage cannot arrange for itself under Wayland. The launcher is the
+  // extension's single source of truth, so the flag lives here. The widget plugin's per-app
+  // `showInTaskbar` toggle controls it: absent/false (the default) hides the app; only an explicit
+  // `true` keeps it in the taskbar (then no marker is written).
+  const widgetPlugin = (app.plugins ?? []).find(p => /(^|\/)widget\//.test(p))
+  if (widgetPlugin && app.pluginConfig?.[widgetPlugin]?.showInTaskbar !== true) {
+    lines.push('X-Voltage-Widget=true')
+  }
   if (mimeTypes) lines.push(`MimeType=${mimeTypes}`)
   lines.push('')
 

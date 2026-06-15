@@ -1,0 +1,32 @@
+<div class="dialog-overlay hidden">
+  <div class="dialog gnome-dialog">
+    <div class="dialog-header">
+      <img data-icon="gnome" width="20" height="20" alt="">
+      <span class="dialog-title">{{gnomeDialogTitle}}</span>
+      <button class="dialog-close" id="gnome-close">✕</button>
+    </div>
+    <div class="dialog-fields">
+      <fieldset class="obsidian-fieldset">
+        <legend class="obsidian-fieldset-legend">
+          {{gnomeDialogExtension}}
+          <span class="obsidian-legend-spacer"></span>
+          <span id="gnome-bundled-version" class="obsidian-bundled-version"></span>
+        </legend>
+        <p class="obsidian-hint">{{gnomeDialogDescription}}</p>
+        <div class="obsidian-vault-row">
+          <span class="obsidian-vault-name">{{gnomeDialogStatus}}</span>
+          <span id="gnome-installed-version" class="obsidian-vault-version"></span>
+          <span id="gnome-status-badge" class="badge"></span>
+        </div>
+      </fieldset>
+      <fieldset class="obsidian-fieldset obsidian-flatpak-fieldset" id="gnome-relog-hint" style="display:none">
+        <legend class="obsidian-fieldset-legend">{{gnomeDialogRelogTitle}}</legend>
+        <p class="obsidian-hint">{{gnomeDialogRelogBody}}</p>
+      </fieldset>
+    </div>
+    <div class="confirm-actions">
+      <button class="btn-cancel" id="gnome-cancel">{{confirmCancel}}</button>
+      <button class="btn-secondary" id="gnome-install" disabled>{{gnomeDialogInstall}}</button>
+    </div>
+  </div>
+</div>

@@ -28,6 +28,14 @@
         <span class="toggle-switch"></span>
         <span>{{widgetConfigResizable}}</span>
       </button>
+      <!-- OFF by default: a widget normally belongs out of the taskbar/dock. This toggle drives the
+           X-Voltage-Widget marker in the app's .desktop launcher (see scripts/lib.js) and only takes
+           effect with the Voltage GNOME Shell extension installed — under Wayland the app cannot
+           exclude itself from the dock on its own. The "?" hint spells that dependency out. -->
+      <button type="button" class="dialog-field-toggle" data-config-key="showInTaskbar" data-config-default="false">
+        <span class="toggle-switch"></span>
+        <span>{{widgetConfigShowInTaskbar}}<span class="field-help" data-tooltip="{{widgetConfigShowInTaskbarHint}}">?</span></span>
+      </button>
       <button type="button" class="dialog-field-toggle" data-config-key="hideScrollbars" data-config-default="true">
         <span class="toggle-switch"></span>
         <span>{{widgetConfigHideScrollbars}}</span>

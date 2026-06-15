@@ -1,0 +1,14 @@
+{
+  "description": "Keeps Voltage widget windows out of the GNOME dash and dash-to-dock. Voltage AppImages running with the widget plugin cannot exclude themselves from the taskbar under Wayland, so this extension does it for them.",
+  "name": "Voltage Integration",
+  "shell-version": [
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
+  ],
+  "url": "https://github.com/db0x/voltage",
+  "uuid": "voltage@db0x.de",
+  "version": 1
+}
