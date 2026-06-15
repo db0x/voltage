@@ -12,12 +12,11 @@
 
 ***Wrap any web app. Make it feel native.***
 
-Turn any *web app* into a standalone Linux *desktop application* — packaged as an AppImage, with its own window, session, and taskbar entry.
+Turn any *web app* into a standalone Linux *desktop application* — packaged as an AppImage with its own window, session, and taskbar entry.
 
-Built on [Electron](https://www.electronjs.org/). Each app gets an isolated browser profile so WhatsApp, Teams, Google Earth and your own internal tools can all run side by side without interfering.
+Built on [Electron](https://www.electronjs.org/). Each app gets an isolated browser profile, so WhatsApp, Teams, Google Earth and your own internal tools run side by side without interfering.
 
-> **Target environment: Linux🐧**
-> Voltage is built and tested on GNOME and KDE Plasma (Wayland). Features like correct WM class, taskbar grouping, window management, and the Manager's native icon integration work well on both desktops. X11 may work but is not actively tested.
+> **Target: Linux 🐧** — built and tested on GNOME and KDE Plasma under Wayland. Correct WM class, taskbar grouping, window management and the Manager's native icon integration work on both. X11 may work but is not actively tested.
 
 ## Installation
 
@@ -27,18 +26,9 @@ The quickest way to get started is the install script:
 bash <(curl -fsSL https://raw.githubusercontent.com/db0x/voltage/main/install.sh)
 ```
 
-> **curl not installed?** On Ubuntu 24.04 and newer, curl is no longer pre-installed.
-> Install it first: `sudo apt install curl`
+> **No curl?** Ubuntu 24.04+ no longer ships it pre-installed: `sudo apt install curl`.
 
-The script:
-- checks for **Node.js ≥ 20** — if missing, offers to install it automatically via [nvm](https://github.com/nvm-sh/nvm)
-- checks for **npm** — if missing, offers to install it via the system package manager
-- checks for optional dependencies (FUSE, python3-gi, aspell) and prints install hints if any are absent
-- clones the repository to `~/.local/share/voltage` (or a custom path passed as the first argument)
-- runs `npm install`
-- creates a `voltage` launcher entry in the application menu
-
-Re-running the script on an existing installation does a `git pull` and reinstalls dependencies.
+The script checks for **Node.js ≥ 20** (offering to install it via [nvm](https://github.com/nvm-sh/nvm) if missing) and **npm**, warns about missing optional dependencies (FUSE, python3-gi, aspell), clones the repository to `~/.local/share/voltage` (or a path passed as the first argument), runs `npm install`, and creates a **Voltage** launcher entry. Re-running it on an existing install does a `git pull` and reinstalls dependencies.
 
 ### Uninstall
 
@@ -46,7 +36,7 @@ Re-running the script on an existing installation does a `git pull` and reinstal
 ~/.local/share/voltage/install.sh --uninstall
 ```
 
-The script removes the desktop entry and icon, then asks interactively whether to also delete the installation directory and the app profile data (`~/.config/voltage/`).
+Removes the launcher entry and icon, then asks whether to also delete the installation directory and the app profile data (`~/.config/voltage/`).
 
 ### Manual setup
 
@@ -59,224 +49,120 @@ npm start
 
 ## Features
 
-- **Isolated sessions** — each app has its own persistent profile; cookies, storage and login state never bleed across apps
-- **Native feel** — no browser chrome, correct WM class for taskbar grouping and window management
-- **Context menu** — a single self-rendered in-page **layer** (no native menu anywhere); both variants share one design:
-  - **Plain right-click** → the slim menu: spelling suggestions (Electron's spellchecker, falling back to `aspell`) + Cut / Copy / Paste (enabled per the field's edit flags). Driven by the native `context-menu` event as its data source (the only place the misspelled word is exposed), then rendered as the overlay. Apps that handle `contextmenu` themselves still show their own.
-  - **Ctrl+right-click** → the full menu: Cut / Copy / Paste, **Open with [App]** / **Open in browser** for links, **Save image as** for images, and plugin actions (the widget's Move/Quit, the zoom submenu). Triggered on the raw right mouse button so it works in *every* app at any spot — even where the native menu fails: apps that suppress `contextmenu` (Teams/Office), Word's canvas editor (in a cross-origin iframe; the preload loads in all frames), app-region drag zones, and Wayland's popup-grab quirks
-- **Cross-app link routing** — links to URLs handled by another installed Voltage app open directly in that app instead of the system browser; a `routing.json` plugin file (written by `install-app`, read at runtime) maps hostnames to AppImages — no rebuild required when routing changes. The file is split into `base` claims (each app's primary URL) and `routing` claims (extra URLs apps opt into via the `routingUrls` config field, with `*` wildcards, editable in the create/edit dialog); when both match a link, the `routing` claim wins
-- **Per-app plugins** — main-process modules shipped under `webapps/plugins/` that extend a single app's behaviour (e.g. routing OneDrive document opens to the Word/Excel/PowerPoint app, or driving a webmail app's compose UI for `mailto:` links). Selected per app in the create/edit dialog; a change takes effect after rebuilding the AppImage. A plugin can be **configurable** — it ships its own settings dialog (`config.html`) opened from a gear button on its chip, and its values are stored per app in `pluginConfig` (e.g. the widget plugin's window corner radius)
-- **About panel** — `F12` toggles an in-app About overlay showing the current domain (with a Google Safe Browsing badge when active), the app, the build versions (Voltage / Electron / Chromium), and the loaded plugins
-- **Zoom** — `Ctrl+Scroll` zooms the page, provided per app by the configurable **zoom** plugin (step size and the min/max zoom factor are set in its config dialog); a centred on-screen panel shows the current zoom percentage while zooming and auto-hides 1s after the last change (it keeps a constant size, so it always reads at 100% regardless of the page zoom). The plugin also adds a **Zoom** submenu to the context menu (zoom in / out / reset). Add it to an app in the create/edit dialog to enable zoom for that app
-- **Screen sharing** — WebRTC / PipeWire capture works out of the box
-- **DevTools** — `Shift+F12` to toggle
-- **Fullscreen** — `F11` toggles fullscreen (and back)
-- **Single-instance enforcement** — optionally prevent a second window from opening; the existing window is focused and raised instead
-- **System-wide protocol handlers** — register any app as the system's default `mailto:` handler; clicking a mail link anywhere on the desktop opens a compose window in the configured web app (Outlook, Gmail, …) — with no external mail client required
-- **Private builds** — configs matching `webapps/build.private.*.json` are gitignored
+- **Isolated sessions** — each app has its own persistent profile; cookies, storage and login state never bleed across apps.
+- **Native feel** — no browser chrome, correct WM class for taskbar grouping and window management.
+- **Context menu** — a single self-rendered overlay (no native menus). Plain right-click shows spell-check suggestions (Electron's checker, falling back to `aspell`) plus Cut / Copy / Paste; **Ctrl+right-click** opens the full menu (Cut / Copy / Paste, **Open with [App]** / **Open in browser** for links, **Save image as**, and plugin actions). The Ctrl variant fires on the raw mouse button, so it works even where apps suppress `contextmenu` (Teams/Office), inside cross-origin iframes, and over window-drag regions.
+- **Cross-app link routing** — a link handled by another installed Voltage app opens in that app instead of the browser. A `routing.json` file (written on install, read at runtime) maps URLs to apps, so no rebuild is needed when routing changes. Apps opt into extra URLs via `routingUrls` (with `*` wildcards) in the create/edit dialog.
+- **Per-app plugins** — main-process modules under `webapps/plugins/` that extend a single app (e.g. routing OneDrive opens to Word/Excel/PowerPoint, or driving a webmail compose UI for `mailto:`). Selected per app in the dialog; a configurable plugin ships its own settings dialog (`config.html`) and stores values per app in `pluginConfig`. Changes take effect after a rebuild.
+- **Widget mode** — the **widget** plugin renders an app as a frameless, rounded window (optional drop shadow, tint, hidden scrollbars). Combined with the [GNOME integration](#gnome-integration) it can be kept out of the dock entirely.
+- **About panel** — `F12` toggles an in-app overlay with the current domain (plus a Google Safe Browsing badge when enabled), the app, the build versions (Voltage / Electron / Chromium), and the loaded plugins.
+- **Zoom** — the optional **zoom** plugin adds `Ctrl+Scroll` zoom with an on-screen percentage panel and a context-menu submenu (in / out / reset); step size and bounds are set in its config dialog.
+- **System integration** — register an app as the default `mailto:` handler or as a file-type handler (see below).
+- **Screen sharing** — WebRTC / PipeWire capture works out of the box.
+- **Shortcuts** — `Shift+F12` toggles DevTools, `F11` toggles fullscreen.
+- **Single-instance enforcement** — optionally focus the existing window instead of opening a second one.
+- **Private builds** — configs matching `webapps/build.private.*.json` are gitignored.
 
 ## Manager
 
-Running `npm start` (without a profile) opens the **Voltage UI** — a graphical overview of all configured apps. The Manager is the primary interface for adding, configuring, building, installing, and launching apps. The UI language follows the system locale (German and English supported).
+Running `npm start` without a profile opens the **Voltage UI** — a graphical overview of all configured apps and the primary interface for adding, configuring, building, installing and launching them. The UI language follows the system locale (German and English supported).
 
 ![Manager UI](assets/manager.png)
 
 ### App cards
 
-Each app is shown as a card with its icon, name, URL, and status badges. Hovering a card reveals a toolbar:
+Each app is a card showing its icon, name, URL and status badges. Hovering reveals a three-button toolbar:
 
-| Button | Action | Active when |
+| Button | Action | Shown / enabled |
 |---|---|---|
-| Info | Shows all config values and filesystem paths | always |
-| Build / Rebuild | Builds (or rebuilds) the AppImage | always |
-| Install / Reinstall | Creates or overwrites the `.desktop` launcher entry — no rebuild required | built |
-| Delete | Removes AppImage and `.desktop` file; profile data is kept | built |
+| Info / Edit | Opens the read-only info dialog (embedded apps) or the edit dialog (user apps) | always — one or the other, depending on the app type |
+| Build & Install | Builds the AppImage and installs its launcher in a single step (label becomes **Rebuild & Install** once built) | always |
+| Delete | Removes the AppImage and `.desktop` file; profile data is kept (user apps can also drop the config) | when built, or for any user app |
 
-Clicking the app icon directly **launches** the app — only if it is installed. Uninstalled apps show a grayed-out icon.
-
-Only one build can run at a time; a full-screen overlay blocks other actions while a build is in progress.
-
-### Info dialog
-
-The info button opens a dialog showing every configured value for that app: URL, profile, icon, window geometry, user-agent, internal domains, and Cross-Origin Isolation. If the app is built, the AppImage path and profile directory are shown with **Open in file manager** buttons.
-
-### Delete
-
-For **user apps** (added via the Manager or private JSON configs), the delete dialog offers an additional toggle to also remove the configuration file. Without it, the card reappears on next launch and the app can be rebuilt.
+Clicking the icon launches the app (only when built and installed; otherwise the icon appears greyed out). Only one build runs at a time; a full-screen overlay blocks other actions while it runs.
 
 ### Adding a new app
 
-Click the **+** card at the end of the grid to open the **Create App** dialog. All configuration options are available from within the Manager:
+The **+** card opens the **Create App** dialog. All options are available from the Manager:
 
 | Field | Notes |
 |---|---|
 | Profile | Unique identifier — lowercase letters, digits and hyphens; checked for uniqueness live |
-| Name | Optional display name (derived from profile if left empty) |
+| Name | Optional display name (derived from the profile if empty) |
 | URL | The URL loaded on startup |
-| Icon | Opens a searchable icon picker showing all icons available in the system icon theme |
+| Icon | A searchable picker over the system icon theme |
 | Width / Height | Initial window size (optional) |
-| User-Agent | Choose from presets or leave empty for the default Electron UA |
-| Internal domains | Extra domains that open inside the app window (e.g. OAuth redirects) — added one by one via the list widget |
-| Routing URLs | Extra URLs that other apps (and Obsidian) route to this one — added one by one via the list widget; supports `*` wildcards and is checked for overlap with other apps |
-| Cross-Origin Isolation | Enables `SharedArrayBuffer` — required for multi-threaded WASM |
-| Single instance | Prevent more than one window of this app from opening at the same time |
+| User-Agent | A preset, or empty for the default Electron UA |
+| Internal domains | Extra domains that open inside the app window (e.g. OAuth redirects) |
+| Routing URLs | Extra URLs other apps (and Obsidian) route here — supports `*` wildcards, checked for overlap |
+| Cross-Origin Isolation | Enables `SharedArrayBuffer` (multi-threaded WASM) |
+| Single instance | Allow only one window at a time |
 
-New apps are saved as `webapps/build.private.<profile>.json` and are gitignored automatically.
+New apps are saved as `webapps/build.private.<profile>.json` and are gitignored automatically. The **Info** dialog shows every configured value and the filesystem paths; the **Delete** dialog for user apps can optionally remove the config file too (otherwise the card returns on next launch).
 
 ### Side menu
 
-The menu (top right) offers:
-
-- **Light / Dark mode** toggle — preference is saved across sessions
-- **Visibility filter** — All Apps / Embedded Apps / User Apps
-- **Hide uninstalled** — suppress apps that haven't been installed yet
-- **GNOME Integration** — install the Shell extension that hides widget windows from the dash/dock (only under a GNOME session; see [GNOME Integration](#gnome-integration))
+The menu offers light/dark mode, the visibility filters (all / embedded / user / Google / Microsoft), **Hide uninstalled**, **Profiles**, and the integration dialogs — **Mail handler**, **Google Safe Browsing**, **rclone**, **Obsidian** and **GNOME** — each shown only when relevant to your system.
 
 ## System mail handler
 
-Voltage can register any web mail app as the system-wide default handler for `mailto:` links. Once registered, clicking a `mailto:` link in any application — browser, PDF viewer, terminal, Teams, … — opens a compose window in the configured web app. No native mail client required.
+Voltage can register a web mail app as the system-wide default for `mailto:` links. Once set, clicking a `mailto:` link anywhere — browser, PDF viewer, terminal, Teams — opens a compose window in the configured app. No native mail client required.
 
-### How it works
+The app's `.desktop` file declares `MimeType=x-scheme-handler/mailto`; installing it via the Manager prompts whether it should also become the **active default** (`xdg-mime default`). The `mailto:` URL is converted to the provider's compose URL via `mailtoTemplate` and an optional `mailtoParamMap` (see [Config reference](#config-reference)). The Manager shows a **Mail handler** badge on every capable app and marks the active default with **✓**.
 
-The app's `.desktop` file declares `MimeType=x-scheme-handler/mailto`, which makes it available as a handler. When the app is installed via the Manager, a prompt asks whether it should also become the **active default**. Confirming sets the system preference via `xdg-mime default`.
-
-The `mailto:` URL is converted to the web app's compose URL before loading. Each provider uses its own format — this is configured via `mailtoTemplate` and an optional `mailtoParamMap` in the app config (see [Config reference](#config-reference)).
-
-The Manager displays a **Mail handler** badge on every app capable of handling `mailto:` links. The currently active default is highlighted with a **✓**. Installing any other mail-capable app and choosing to set it as default automatically transfers the role.
-
-### Included mail-capable apps
-
-| Config | App | Compose URL base |
-|---|---|---|
-| `build.outlook.json` | Microsoft Outlook | `https://outlook.cloud.microsoft/mail/deeplink/compose` |
-| `build.google-mail.json` | Google Mail | `https://mail.google.com/mail/?view=cm&fs=1` |
-
-`mailtoParamMap` is optional — use it when the provider expects different query parameter names than the standard `mailto:` fields (`to`, `subject`, `body`, `cc`, `bcc`).
+Included mail-capable apps: **Microsoft Outlook** (`build.outlook.json`) and **Google Mail** (`build.google-mail.json`).
 
 ## File handler apps
 
-Some web apps can act as the system-wide handler for a file type — so double-clicking a file in the file manager opens it directly in the wrapped app.
+A web app can act as the system handler for a file type, so double-clicking a file opens it in the wrapped app.
 
-### draw.io
-
-`build.drawio.json` wraps [app.diagrams.net](https://app.diagrams.net) and registers itself as the handler for `.drawio`, `.drawio.svg`, and `.drawio.png` files.
-
-After installing, double-clicking any of these files in the file manager opens it directly in the app with the correct filename shown in the title bar. **Save** (`Ctrl+S`) and **Save As** work natively through the system file dialog — the file is written to disk just like in a native app.
-
-| Format | MIME type | Notes |
-|---|---|---|
-| `.drawio` | `application/x-drawio` | Native XML diagram format |
-| `.drawio.svg` | `application/x-drawio-svg` | SVG export with embedded diagram XML |
-| `.drawio.png` | `application/x-drawio-png` | PNG export with embedded diagram XML |
+**draw.io** (`build.drawio.json`) wraps [app.diagrams.net](https://app.diagrams.net) and registers as the handler for `.drawio`, `.drawio.svg` and `.drawio.png`. After installing, double-clicking such a file opens it with the correct title; **Save** (`Ctrl+S`) and **Save As** write to disk through the system file dialog, just like a native app.
 
 ## rclone Integration (Google Drive)
 
-Voltage can act as a system file handler for Office formats and route them through **Google Drive** via [rclone](https://rclone.org/). Double-clicking a `.docx`, `.xlsx`, or `.pptx` file in the file manager uploads it to your Drive and opens it directly in Google Docs, Sheets, or Slides. When you close the app window, the edited file is automatically synced back to its original local path.
+Voltage can handle Office formats through **Google Drive** via [rclone](https://rclone.org/): double-clicking a `.docx`, `.xlsx` or `.pptx` uploads it to Drive and opens it in Google Docs, Sheets or Slides. Closing the window syncs the edited file back to its original local path.
 
-### Prerequisites
+**Prerequisites:** [rclone installed](https://rclone.org/install/) with a configured [Google Drive remote](https://rclone.org/drive/).
 
-- **rclone** installed — see [rclone.org/install](https://rclone.org/install/)
-- A **Google Drive remote** configured in rclone — see [rclone Google Drive docs](https://rclone.org/drive/) for the one-time setup
+**Setup:** build and install the relevant app(s) — **Google Docs**, **Google Spreadsheets**, **Google Presentation** — then open the side menu → **rclone Integration**, pick your remote, set a target Drive folder per app (default: the profile name), and save.
 
-### Setup in Voltage
-
-1. Build and install the relevant app(s) — **Google Docs**, **Google Spreadsheets**, and/or **Google Presentation** — via the Manager
-2. Open the Manager side menu → **rclone Integration**
-3. Select your Google Drive remote from the dropdown
-4. Set the target folder in Drive for each app (default: the app profile name, e.g. `google-docs`)
-5. Click **Save**
-
-### Workflow
-
-| Step | What happens |
-|---|---|
-| Double-click `.docx` / `.xlsx` / `.pptx` in the file manager | Voltage checks whether a file with that name already exists on Drive |
-| File already on Drive, identical to local | Opens directly — no upload needed |
-| File already on Drive, different content | Shows a comparison dialog (size, last modified) — choose to overwrite or open the Drive version |
-| New file | Uploads to the configured Drive folder |
-| Editing in the browser | File is open in Google Docs / Sheets / Slides |
-| Close the app window | Voltage syncs the Drive version back to the original local path |
-
-> Uploaded files land in the configured Drive folder (e.g. `google-docs/` in your Drive root). The folder is created automatically on first use.
+When you open a file, Voltage checks whether a same-named file already exists on Drive: identical files open directly, differing ones show a comparison dialog (overwrite vs. open the Drive version), new ones are uploaded to the configured folder (created automatically on first use). On close, the Drive version is synced back to the local path.
 
 ## Google Safe Browsing
 
-voltage can check every external link you hover over against the **Google Safe Browsing** database. A small shield icon appears in the link tooltip — green for known-safe, red for a known threat.
+Voltage can check every external link you hover against the **Google Safe Browsing** database, showing a shield in the link tooltip — green for safe, red for a known threat.
 
-### Privacy
+**Privacy:** only the URL **origin** (`https://example.com`) is ever involved, and never in plain text — it is hashed with SHA-256, only the first 4 bytes of the hash are sent (`fullHashes:find`), Google returns all matches for that prefix, and the final comparison happens locally. Results are cached per origin (5 min safe / 30 min flagged).
 
-Only the **origin** of the URL (`https://example.com`) is ever sent anywhere. Even then, the actual URL is never transmitted in plain text:
-
-1. The origin is hashed with SHA-256
-2. Only the first 4 bytes of the hash are sent to Google (`fullHashes:find` API)
-3. Google returns all full hashes that match that prefix
-4. The comparison happens locally — Google never learns the actual URL or which sites you hover over
-
-Results are cached per origin (5 minutes for safe, 30 minutes for flagged) to keep API calls to a minimum.
-
-### Setup
-
-1. Create an API key in the [Google Cloud Console](https://console.cloud.google.com/) — Project → APIs & Services → Credentials → Create credentials → API key. Enable the **Safe Browsing API** for the project.
-2. Open the Manager side menu → **Google Safe Browsing**
-3. Enable the toggle, paste your API key, click **Save**
-
-No AppImage rebuild is required — the key and enabled state are read at runtime from `~/.config/voltage/safe-browsing.json`.
+**Setup:** create an API key in the [Google Cloud Console](https://console.cloud.google.com/) (enable the **Safe Browsing API**), then open the side menu → **Google Safe Browsing**, enable the toggle, paste the key and save. No rebuild needed — the key and state are read at runtime from `~/.config/voltage/safe-browsing.json`.
 
 ## Obsidian Plugin
 
-voltage ships a plugin for [Obsidian](https://obsidian.md/). Once installed, external links in your notes that match a Voltage-routed app open directly in that app instead of the system browser. All external links show a **link tooltip** at the bottom of the screen — identical in style to the tooltips in Voltage app windows: the app icon and URL for Voltage targets, the browser icon and URL for everything else.
+Voltage ships a plugin for [Obsidian](https://obsidian.md/). Once installed, external links in your notes that match a Voltage-routed app open directly in that app; all external links show a **link tooltip** (app icon + URL for Voltage targets, browser icon + URL otherwise), matching the tooltips in Voltage app windows.
 
-### Prerequisites
+**Prerequisites:** Obsidian ≥ 1.12.7 with at least one vault, and at least one Voltage app installed (so `routing.json` exists).
 
-- Obsidian ≥ 1.12.7 installed with at least one vault
-- At least one Voltage app built and installed (so `routing.json` exists)
+**Setup:** open the side menu → **Obsidian Integration**. The dialog lists all known vaults with their plugin status; **Install plugin** copies the plugin into each vault's `.obsidian/plugins/voltage/`. Then enable it in Obsidian under **Settings → Community Plugins → Voltage**. When a newer plugin version ships, the dialog shows **Update available** per vault with an **Update plugin** button.
 
-### Setup
-
-1. Open the Manager side menu → **Obsidian Integration**
-2. The dialog lists all known vaults with their current plugin status
-3. Click **Plugin installieren** — the plugin files are copied into every vault's `.obsidian/plugins/voltage/` directory
-4. In Obsidian: **Settings → Community Plugins → Voltage** → enable
-
-When voltage is updated and ships a newer plugin version, the dialog shows **Update verfügbar** per vault and an **Plugin aktualisieren** button.
-
-### Obsidian via Flatpak
-
-If Obsidian is installed as a Flatpak, the dialog shows an extra section with the one-time command required to grant the sandbox access to your home directory — otherwise it cannot spawn the Voltage AppImages. The command is offered with a one-click copy button:
+**Obsidian via Flatpak:** a sandboxed Obsidian cannot spawn AppImages from your home directory without an extra permission. The dialog detects this and offers the one-time command (with a copy button):
 
 ```
 flatpak override --user --filesystem=home md.obsidian.Obsidian
 ```
 
-Run it once in a terminal and restart Obsidian. The hint is only displayed when a Flatpak Obsidian install is detected.
+Run it once and restart Obsidian.
 
-### How it works
-
-The plugin reads `~/.config/voltage/plugins/routing/routing.json` at runtime — the same file that is written automatically whenever you install a Voltage app. No rebuild and no Obsidian restart are required when routing changes.
-
-The plugin works in both **Reading Mode** and **Live Preview** (CodeMirror 6). Routing and icon data are cached in memory; the routing file is re-read at most once per second to pick up changes without measurable overhead.
-
+The plugin reads `~/.config/voltage/plugins/routing/routing.json` at runtime (the same file written on every app install) and works in both **Reading Mode** and **Live Preview**, so no rebuild or Obsidian restart is needed when routing changes.
 
 ## GNOME Integration
 
-Under Wayland an AppImage cannot control its own window state, so a frameless **widget** app cannot remove itself from the taskbar. Voltage ships a small GNOME Shell extension that does it from the shell side: while active it hides the marked Voltage widget windows from the GNOME **dash** and from **dash-to-dock**. The window stays focusable and alt-tabbable — it just no longer earns a dash/dock icon.
+Under Wayland an AppImage cannot control its own window state, so a frameless **widget** app cannot remove itself from the taskbar. Voltage ships a small GNOME Shell extension that does it from the shell side: while active, it hides the marked Voltage widget windows from the GNOME **dash** and **dash-to-dock**. The window stays focusable and alt-tabbable — it just no longer gets a dock icon.
 
-Per app this is controlled by the widget plugin's **Show in taskbar** toggle (widget config dialog). It is **off by default** — a widget is normally kept out of the dock — so a freshly created widget app is hidden automatically; enable the toggle for the rare widget you want to keep in the dock.
+This is controlled per app by the widget plugin's **Show in taskbar** toggle (widget config dialog). It is **off by default** — a widget is normally kept out of the dock — so a new widget app is hidden automatically; enable the toggle for the rare widget you want to keep in the dock.
 
-### Prerequisites
+**Setup** (requires a GNOME Shell session, GNOME 46–50): open the side menu → **GNOME Integration** (only shown under GNOME) → **Install extension**. The files are copied into `~/.local/share/gnome-shell/extensions/voltage@db0x.de/` and enabled. On **Wayland** you must log out and back in once so GNOME loads the new extension — the dialog shows a hint when this is required.
 
-- A GNOME Shell session (GNOME 46–50)
-
-### Setup
-
-1. Open the Manager side menu → **GNOME Integration** (only shown under a GNOME session)
-2. Click **Install extension** — `extension.js` and `metadata.json` are copied into `~/.local/share/gnome-shell/extensions/voltage@db0x.de/` and the extension is enabled
-3. On **Wayland**, log out and back in once so GNOME loads the freshly installed extension — the dialog shows a hint when this is required
-
-### How it works
-
-The Manager writes a per-app `.desktop` launcher into `~/.local/share/applications`, adding the line `X-Voltage-Widget=true` for a widget app **unless** its **Show in taskbar** toggle is on. The extension is that marker's only consumer: it scans the launchers (and watches the directory), collects the marked app ids, and wraps `Shell.AppSystem.get_running()` to drop them — the one seam both the stock dash and dash-to-dock read from. Installing, editing or deleting a Voltage app rewrites/removes its launcher, so the hidden set stays correct automatically.
-
+**How it works:** the Manager adds `X-Voltage-Widget=true` to a widget app's `.desktop` launcher unless its **Show in taskbar** toggle is on. The extension scans those launchers (and watches the directory), collects the marked app IDs, and wraps `Shell.AppSystem.get_running()` to drop them — the one seam both the stock dash and dash-to-dock read from. Installing, editing or deleting an app updates its launcher, so the hidden set stays correct automatically.
 
 ## Included app configs
 
@@ -303,17 +189,15 @@ The Manager writes a per-app `.desktop` launcher into `~/.local/share/applicatio
 
 ## Requirements
 
-- **git** — required by `install.sh` to clone and update the repository
+- **git** — used by `install.sh` to clone and update the repository
 - **Node.js ≥ 20**
-- **Linux** (Wayland recommended — see note above)
-- **libfuse2** — required to run AppImages. FUSE 3 alone is not sufficient; AppImages need `libfuse.so.2`.
-  - Ubuntu 24.04+: `sudo apt install libfuse2t64`
-  - Ubuntu 22.04 / Debian: `sudo apt install libfuse2`
-  - Fedora: `sudo dnf install fuse-libs`
-  - Arch: `sudo pacman -S fuse2`
-- **python3-gi** — GTK bindings used by the Manager to resolve and enumerate system icon theme icons (`sudo apt install python3-gi`)
-- **gtk-update-icon-cache** and **update-desktop-database** — called after installing an app; usually already present via `libgtk-3-bin` and `desktop-file-utils`
-- **aspell** — spell-check suggestions in text fields (optional; `sudo apt install aspell-de` for German, etc.)
+- **Linux** (Wayland recommended)
+- **libfuse2** — required to run AppImages (FUSE 3 alone is not enough; AppImages need `libfuse.so.2`):
+  - Ubuntu 24.04+: `sudo apt install libfuse2t64` · Ubuntu 22.04 / Debian: `sudo apt install libfuse2`
+  - Fedora: `sudo dnf install fuse-libs` · Arch: `sudo pacman -S fuse2`
+- **python3-gi** — GTK bindings the Manager uses to resolve system icon-theme icons (`sudo apt install python3-gi`)
+- **gtk-update-icon-cache** / **update-desktop-database** — run after installing an app; usually present via `libgtk-3-bin` and `desktop-file-utils`
+- **aspell** — spell-check suggestions (optional; e.g. `sudo apt install aspell-de`)
 
 ## Libraries
 
@@ -322,75 +206,71 @@ The Manager writes a per-app `.desktop` launcher into `~/.local/share/applicatio
 | [Electron](https://www.electronjs.org/) | App shell, renderer, IPC |
 | [electron-builder](https://www.electron.build/) | AppImage packaging |
 | [OverlayScrollbars](https://github.com/KingSora/OverlayScrollbars) | Native-style overlay scrollbars in the Manager |
-| [Coloris](https://github.com/mdbassit/Coloris) | Colour picker (with alpha) for plugin settings, e.g. the widget tint — via the [@melloware/coloris](https://github.com/melloware/coloris-npm) npm build |
-| [Papirus Icon Theme](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme) | Some icons in the Manager. |
+| [Coloris](https://github.com/mdbassit/Coloris) | Colour picker (with alpha) for plugin settings, via [@melloware/coloris](https://github.com/melloware/coloris-npm) |
+| [Papirus Icon Theme](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme) | Some Manager icons |
 
 ## Building AppImages via CLI
 
-The Manager handles build and install for most cases. For scripted or headless workflows, the CLI scripts remain available:
+The Manager covers build and install for most cases. For scripted or headless workflows, the CLI scripts remain:
 
 ```bash
 npm run build                        # build all configs
 npm run build -- whatsapp            # build a single app
 npm run build -- private.myapp
 
-npm run install-app -- whatsapp      # (re-)install launcher entry without rebuilding
+npm run install-app -- whatsapp      # (re-)install the launcher without rebuilding
 npm run install-app                  # all configs
 ```
 
-Output lands in `dist/` as a self-contained AppImage. The artifact is named after the profile with a leading `v` and an upper-cased first letter — e.g. profile `teams` builds `dist/vTeams`, installs the launcher entry `vTeams.desktop`, and registers its icon as `vTeams.svg`. The build profile itself stays lowercase and remains the stable identity for the app's session/config directory under `~/.config/voltage/<profile>/`.
+Output lands in `dist/` as a self-contained AppImage, named after the profile with a leading `v` and an upper-cased first letter — e.g. profile `teams` builds `dist/vTeams`, installs `vTeams.desktop`, and registers the icon `vTeams.svg`. The profile itself stays lowercase and is the stable identity for the app's session directory under `~/.config/voltage/<profile>/`.
 
 ## Manual config (advanced)
 
-Apps can also be configured by placing a JSON file in the project root. This is useful for bulk setup, version-controlled shared configs, or options not yet exposed in the Manager UI.
-
-App configs live in the `webapps/` directory. For apps you don't want to commit, use `webapps/build.private.<name>.json` — it is gitignored automatically.
+Apps can also be configured by hand — useful for bulk setup, version-controlled shared configs, or options not yet exposed in the UI. Configs live in `webapps/`; use `webapps/build.private.<name>.json` for ones you don't want to commit (gitignored automatically).
 
 ### Config reference
 
 | Field | Type | Description |
 |---|---|---|
-| `profile` | string | **Required.** Unique identifier — used for the session, userData path, and app IDs |
+| `profile` | string | **Required.** Unique identifier — used for the session, userData path and app IDs |
 | `url` | string | **Required.** URL to load on startup |
-| `name` | string | Human-readable display name (default: derived from `profile`) |
+| `name` | string | Display name (default: derived from `profile`) |
 | `icon` | string | Icon name resolved from the system icon theme |
 | `userAgent` | string | Override the user-agent string |
 | `geometry.width/height` | number | Initial window size (default: 1280 × 1024) |
 | `geometry.x/y` | number | Initial window position — _deprecated, X11 only_ |
 | `internalDomains` | string \| array | Extra domains allowed to open inside the app window (e.g. OAuth providers) |
-| `routingUrls` | array | Extra URLs that route to this app from other apps and Obsidian, in addition to the primary `url`. Each entry is `host[/path]` and may use `*` as a greedy wildcard (matches any characters, including `/`), e.g. `"*.example.com"` or `"docs.example.com/d/*"`. Matching runs against the path **and query string**, and a pattern may carry **negative clauses** — see [Advanced routing patterns](#advanced-routing-patterns) below. A routing URL may overlap another app's **base** URL (the routing URL then wins at resolution time), but the Manager blocks entries that overlap another app's **routing** URL. Base URLs must not overlap each other |
+| `routingUrls` | array | Extra URLs that route to this app, in addition to `url`. Each entry is `host[/path]` and may use `*` as a greedy wildcard. Matching runs against path **and** query string and may carry **negative clauses** — see [Advanced routing patterns](#advanced-routing-patterns). A routing URL may overlap another app's **base** URL (the routing URL wins), but not another app's **routing** URL |
 | `crossOriginIsolation` | boolean | Enable `SharedArrayBuffer` — required for multi-threaded WASM (Google Earth) |
-| `singleInstance` | boolean | Allow only one running instance; a second launch focuses the existing window instead |
-| `blockWindowClose` | boolean | Neutralise the page's own `window.close()` (a no-op). Needed by apps like Teams that call `window.close()` in their fresh-login / auth-redirect path and would otherwise close themselves right after launch. The WM/title-bar close and the context-menu Quit still work. Widget-mode apps get this automatically |
-| `mimeTypes` | array | Protocol schemes or MIME types this app can handle (e.g. `["x-scheme-handler/mailto"]` or `["application/x-drawio"]`) |
-| `mimeExtensions` | object | Maps MIME types to file extensions for system registration (e.g. `{ "application/x-drawio": ["drawio"] }`) — triggers `update-mime-database` on install |
-| `mimeIcons` | object | Maps MIME types to SVG asset filenames (from `assets/`) installed as system file-type icons (e.g. `{ "application/x-drawio": "application-vnd.x-drawio.svg" }`) |
-| `fileHandler` | boolean | Enable local file handling — files passed via the system (e.g. double-click in the file manager) are read and passed to the app; also grants the `fileSystem` permission required for the File System Access API |
-| `acceptsFileArg` | boolean | Allow a bare local file path as a launch argument (in addition to URLs). Needed by file-opening plugins such as `rclone-sync`; the built-in `fileHandler` implies it |
-| `rcloneEditUrlBase` | string | Editor URL base used by the `rclone-sync` plugin, e.g. `"https://docs.google.com/document/d"` — the opened file's editor URL is `<base>/<id>/edit`. rclone file handling is a plugin (`plugins/rclone-sync/rclone-sync.js`); a file is uploaded to the configured Google Drive remote (Manager's rclone Integration dialog) and synced back on close |
-| `mailtoTemplate` | string | Base URL for the compose window — `mailto:` parameters are appended as a query string |
+| `singleInstance` | boolean | Allow only one instance; a second launch focuses the existing window |
+| `blockWindowClose` | boolean | Neutralise the page's own `window.close()`. Needed by apps like Teams that call it during login and would otherwise close themselves. The WM close and context-menu Quit still work; widget apps get this automatically |
+| `mimeTypes` | array | Schemes or MIME types this app handles (e.g. `["x-scheme-handler/mailto"]`, `["application/x-drawio"]`) |
+| `mimeExtensions` | object | Maps MIME types to file extensions for system registration (e.g. `{ "application/x-drawio": ["drawio"] }`) |
+| `mimeIcons` | object | Maps MIME types to SVG asset filenames (from `assets/`) installed as file-type icons |
+| `fileHandler` | boolean | Enable local file handling (files passed by the system are read and handed to the app); also grants the File System Access permission |
+| `acceptsFileArg` | boolean | Allow a bare local file path as a launch argument. Needed by plugins such as `rclone-sync`; implied by `fileHandler` |
+| `rcloneEditUrlBase` | string | Editor URL base for the `rclone-sync` plugin (e.g. `"https://docs.google.com/document/d"`); the editor URL becomes `<base>/<id>/edit` |
+| `mailtoTemplate` | string | Compose-window base URL; `mailto:` parameters are appended as a query string |
 | `mailtoParamMap` | object | Rename `mailto:` parameters before appending (e.g. `{ "subject": "su" }` for Gmail) |
-| `plugins` | array | Main-process plugins shipped under `webapps/plugins/` that this app loads, each as a webapps-relative path (e.g. `"plugins/onedrive/onedrive.js"`). Selectable in the create/edit dialog. A plugin module exports `attachPlugin(win, api)` and extends the app's behaviour — e.g. routing OneDrive document opens to Word/Excel/PowerPoint, or driving a webmail app's compose UI on a `mailto:` launch. Changing the selection requires rebuilding the AppImage |
-| `pluginConfig` | object | Per-plugin settings for this app, keyed by the plugin's webapps-relative path (e.g. `{ "plugins/widget/widget.js": { "radius": 20 } }`). A plugin that exports `configurable: true` and ships a `config.html` next to its entry file gets a gear button on its chip in the create/edit dialog; the values are passed to the plugin at runtime as `api.config`. The widget plugin uses it for the window corner radius (`radius`, 0–24, default 14), a drop shadow (`shadow`, default true; `shadowWidth` 2–8, default 8), whether the window is resizable (`resizable`, default true), whether the app's scrollbars are hidden (`hideScrollbars`, default true — wheel/touchpad scrolling stays), whether the app's own title bar / drag-zone is suppressed (`suppressAppTitlebar`, default false — neutralises any `-webkit-app-region: drag` region the app declares, so a top strip like Teams' can't move/maximise the window, and tries to stop the app drawing the strip at all by masking the standalone/window-controls-overlay signals; use the context-menu Move instead), and the background transparency: `tintBackground` (default false) is the master switch — off leaves the page untouched, on lets the desktop show through by clearing the app's root backgrounds and applying `tint` (a `#RRGGBB`/`#RRGGBBAA` hex colour, default `#000000a6` — black at ~0.65 alpha; the alpha is capped just below fully opaque so the rounded corners survive). It defaults off because it only works on pages whose own background is transparent (e.g. Home Assistant) and can strip backgrounds some apps need (e.g. draw.io's menus). The widget renders the app in an inset child view so the host window can draw the shadow + rounded corners while the page scrolls natively. The zoom plugin uses it for the `Ctrl+Scroll` zoom step (`step`, 0.05–0.5, default 0.1) and the zoom bounds (`min`, 0.3–1.0, default 0.5; `max`, 1.5–5.0, default 3.0). Changing a value requires rebuilding the AppImage |
+| `plugins` | array | Plugins this app loads, each a webapps-relative path (e.g. `"plugins/onedrive/onedrive.js"`). A plugin exports `attachPlugin(win, api)`. Changing the selection requires a rebuild |
+| `pluginConfig` | object | Per-plugin settings keyed by the plugin's webapps-relative path (e.g. `{ "plugins/widget/widget.js": { "radius": 20 } }`). Configurable plugins expose a gear button in the dialog and receive these as `api.config` at runtime. The **widget** plugin offers corner radius, drop shadow, resizable, hidden scrollbars, suppressed title bar, background tint and *Show in taskbar*; the **zoom** plugin offers step size and min/max bounds. Changing a value requires a rebuild |
 
 ### Advanced routing patterns
 
-> ⚠️ **Uncommon mechanics — only reach for these when a plain `host/path*` pattern genuinely cannot tell two apps apart.** They add real complexity to `routingUrls`; most apps never need them. They exist for one specific case: Microsoft 365 documents on SharePoint.
+> ⚠️ **Rarely needed** — only reach for these when a plain `host/path*` pattern genuinely cannot tell two apps apart. They exist for one case: Microsoft 365 documents on SharePoint.
 
-A routing pattern is matched against the **path *and* query string** of the target URL, and may contain **negative clauses**. Two non-obvious rules:
+A routing pattern is matched against the **path *and* query string** and may contain **negative clauses**:
 
-**1. The query string is part of the match.** Unlike most routers, the matcher tests `pathname + "?" + search`, not just the path. This is necessary because SharePoint opens every Office document through the *same* generic endpoint and only the query distinguishes them:
+**1. The query string is part of the match.** The matcher tests `pathname + "?" + search`, because SharePoint opens every Office document through the *same* endpoint and only the query differs:
 
 ```
 https://contoso.sharepoint.com/sites/X/_layouts/15/Doc.aspx?sourcedoc=…&file=Report.docx
-                               └──────────── path (identical for all apps) ──┘ └─ only the query differs ─┘
+                               └────────── path (identical for all) ──────┘ └─ only query differs ─┘
 ```
 
-So Word claims `"https://*.sharepoint.com/*.docx*"`, Excel `"*.xlsx*"`, PowerPoint `"*.pptx*"` — the `.docx`/`.xlsx`/`.pptx` lives in the query. (Share-style links instead carry a scheme token in the path — `:w:` Word, `:x:` Excel, `:p:` PowerPoint, `:o:` OneNote — which each app also claims, e.g. `"https://*.sharepoint.com/:w:/*"`.)
+So Word claims `"https://*.sharepoint.com/*.docx*"`, Excel `"*.xlsx*"`, PowerPoint `"*.pptx*"`. (Share-style links instead carry a scheme token in the path — `:w:`/`:x:`/`:p:`/`:o:` — which each app also claims.)
 
-**2. A `!` adds negative clauses: `positive!not-this!not-that`.** The pattern matches only if the positive part matches **and none** of the `!`-separated path/query globs match. A glob can say "contains X" but not "does *not* contain X", so this fills that gap.
-
-The one place this is actually used is **OneNote**: a OneNote notebook opens through the same `Doc.aspx` as Word, but its link carries **no file extension** (a notebook is a folder, so `file=` is just its name). There is no positive token to match on, so OneNote claims "a `Doc.aspx` link that is *not* one of the other three Office types":
+**2. `!` adds negative clauses: `positive!not-this!not-that`.** The pattern matches only if the positive part matches **and none** of the `!`-separated globs do. The only real use is **OneNote**, whose link goes through the same `Doc.aspx` as Word but carries no file extension, so it claims "a `Doc.aspx` link that is *not* one of the other three Office types":
 
 ```json
 "routingUrls": [
@@ -399,9 +279,7 @@ The one place this is actually used is **OneNote**: a OneNote notebook opens thr
 ]
 ```
 
-The second pattern reads: *match a `Doc.aspx` URL, but not if it contains `.docx`, `.xlsx` or `.pptx`.* Because `findRoute` tries the longest key first, a `Report.docx` URL hits this OneNote key first, its negation rejects it, and resolution falls through to Word's `*.docx*` — so OneNote never steals a Word/Excel/PowerPoint document.
-
-The same matcher (`src/routing-match.js`) is shared by the app windows, the Obsidian plugin, and the build-time table generator, so these rules behave identically everywhere.
+Because `findRoute` tries the longest key first, a `Report.docx` URL hits this OneNote key, its negation rejects it, and resolution falls through to Word. The same matcher (`src/routing-match.js`) is shared by app windows, the Obsidian plugin and the build-time table generator, so the rules behave identically everywhere.
 
 ### Examples
 
@@ -430,10 +308,4 @@ The same matcher (`src/routing-match.js`) is shared by the app windows, the Obsi
 
 ## Session data
 
-Each app stores cookies, localStorage and cache under:
-
-```
-~/.config/voltage/<profile>/
-```
-
-Profiles are fully isolated and persist across restarts.
+Each app stores cookies, localStorage and cache under `~/.config/voltage/<profile>/`. Profiles are fully isolated and persist across restarts.
