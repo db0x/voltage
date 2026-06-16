@@ -87,7 +87,7 @@ function buildAboutHtml(info) {
   const ver = (name, hint) =>
     `<div class="wa-ver"><span class="wa-ver-name">${esc(name)}</span><span class="wa-ver-hint">${esc(hint)}</span></div>`
   const versionRowsHtml =
-    ver('voltage ' + pkg.version, i18n.aboutPanelVoltageHint) +
+    ver('Voltage ' + pkg.version, i18n.aboutPanelVoltageHint) +
     ver('Electron ' + process.versions.electron, i18n.aboutPanelElectronHint) +
     ver('Chromium ' + process.versions.chrome, i18n.aboutPanelChromiumHint)
 
