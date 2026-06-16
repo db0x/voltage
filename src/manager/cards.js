@@ -1,4 +1,5 @@
 import { renderCard } from './cards.tpl.js'
+import { normalizeCategories } from './category-list.js'
 
 export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons, hiddenProfiles }, { showConfirm, openInfoDialog, showBuildOverlay, hideBuildOverlay, openEditDialog }) {
   // Card icons are consumed by cards.tpl.js via the icons object; cards.js itself only needs
@@ -43,7 +44,9 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
     card.dataset.profile   = app.profile
     card.dataset.private   = app.isPrivate ? 'true' : 'false'
     card.dataset.installed = app.installed ? 'true' : 'false'
-    card.dataset.category  = app.category || ''
+    // An app can belong to multiple categories; store the normalised list as JSON so the drawer
+    // filter can test membership (and names may contain spaces).
+    card.dataset.categories = JSON.stringify(normalizeCategories(app.category))
     card.dataset.sortname  = name.toLowerCase()
     const iconSrc = app.iconPath ? `file://${app.iconPath}` : appDefaultSrc
 
@@ -63,6 +66,9 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
         const newName = app.name || toDisplayName(app.profile)
         const newHostname = (() => { try { return new URL(app.url).hostname } catch { return app.url } })()
         card.dataset.sortname = newName.toLowerCase()
+        // Keep the category dataset in sync so the drawer's category filters (which read it) reflect
+        // an edit that added/removed categories.
+        card.dataset.categories = JSON.stringify(normalizeCategories(app.category))
         card.querySelector('.name').textContent = newName
         card.querySelector('.url').textContent  = newHostname
         iconEl.alt = newName
@@ -164,12 +170,16 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
       return result.success
     }
 
-    async function doInstall() {
+    // opts.silent skips the interactive mail-handler prompt — used by the category bulk rebuild,
+    // where prompting per app would be unbearable; it then installs without touching the default
+    // mailto handler.
+    async function doInstall(opts = {}) {
+      const { silent = false } = opts
       const btn = card.querySelector('[data-action="build-install"]')
       if (!btn) return false
 
       let setAsMailHandler = false
-      if (app.mimeTypes?.includes('x-scheme-handler/mailto')) {
+      if (!silent && app.mimeTypes?.includes('x-scheme-handler/mailto')) {
         const { confirmed, setMailHandler } = await showConfirm(
           tr('installConfirmMsg', { name }),
           {
@@ -211,7 +221,34 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
       return result.success
     }
 
+    // Expose this card's build/install steps on the element so the drawer's per-category bulk
+    // rebuild can drive them without a separate registry to keep in sync (they vanish with the card).
+    card._voltageOps = { doBuild, doInstall }
+
     return card
+  }
+
+  // Returns the rendered cards whose category list contains `category`.
+  function cardsInCategory(category) {
+    return [...grid.querySelectorAll('.card[data-private]')].filter(card => {
+      try { return JSON.parse(card.dataset.categories || '[]').includes(category) } catch { return false }
+    })
+  }
+
+  function categoryAppCount(category) {
+    return cardsInCategory(category).length
+  }
+
+  // Rebuilds and installs every app in a category, sequentially (AppImage builds are mutually
+  // exclusive). Skips the per-app mail-handler prompt. No-op if a build is already running.
+  async function rebuildInstallCategory(category) {
+    if (isBuildRunning) return
+    for (const card of cardsInCategory(category)) {
+      const ops = card._voltageOps
+      if (!ops) continue
+      const built = await ops.doBuild(true)
+      if (built) await ops.doInstall({ silent: true })
+    }
   }
 
   function insertCard(card) {
@@ -260,5 +297,7 @@ export function initCards({ i18n, tr, apps, toDisplayName, appDefaultSrc, icons,
     setBuildRunning: v  => { isBuildRunning = v },
     setDefaultMailHandler,
     applyHiddenProfiles,
+    categoryAppCount,
+    rebuildInstallCategory,
   }
 }

@@ -83,6 +83,9 @@
   "drawerMicrosoft":       "Microsoft Apps",
   "drawerGoogle":          "Google Apps",
   "drawerHideUninstalled": "Nicht installierte ausblenden",
+  "drawerRebuildCategory": "Alle Apps dieser Kategorie neu erstellen & installieren",
+  "rebuildCategoryMsg":    "Alle {count} Apps in „{category}“ neu erstellen und installieren?",
+  "rebuildCategoryOk":     "Neu erstellen & installieren",
 
   "badgeBuilt":       "Erstellt",
   "badgeNotBuilt":    "Nicht erstellt",
@@ -150,6 +153,8 @@
   "createMailHandler":    "Als Mail-Handler registrieren",
   "createPlugins":        "Plugins",
   "createPluginChoose":   "— Plugin wählen —",
+  "createCategories":     "Kategorien",
+  "createCategoryPlaceholder": "Kategorie hinzufügen oder wählen…",
   "createCancel":         "Abbrechen",
   "createSave":           "Speichern",
   "createUaDefault":      "— Standard (nicht gesetzt) —",
@@ -161,6 +166,7 @@
   "tooltipCoi":            "Ermöglicht SharedArrayBuffer und WASM-Threads. Nur aktivieren, wenn die Webseite es ausdrücklich benötigt – kann Cross-Origin-Requests einschränken.",
   "tooltipMailHandler":    "Registriert diese App systemweit als Standard für mailto:-Links. Ein Klick auf eine E-Mail-Adresse öffnet direkt das Compose-Fenster dieser App.",
   "tooltipPlugins":        "Zusätzliche, mit dieser App ausgelieferte Skripte, die ihr Verhalten erweitern – z. B. das Routen von OneDrive-Dokumenten an Word/Excel oder das automatische Öffnen des Compose-Dialogs einer Webmail-App. Eine Änderung der Auswahl erfordert ein Neu-Erstellen des AppImage.",
+  "tooltipCategories":     "Ordne diese App einer oder mehreren Kategorien zu. Wähle aus vorhandenen oder tippe einen neuen Namen, um eine Kategorie zu erstellen. Kategorien dienen zum Filtern der App-Liste.",
 
   "validPattern":  "Nur Kleinbuchstaben, Ziffern und Bindestriche",
   "validExists":   "Profil existiert bereits",

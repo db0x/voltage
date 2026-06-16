@@ -23,14 +23,10 @@
     <img data-icon="filterPrivate" alt="">
     <span>{{drawerUserApps}}</span>
   </button>
-  <button class="menu-item" data-filter="google">
-    <img data-icon="filterGoogle" alt="">
-    <span>{{drawerGoogle}}</span>
-  </button>
-  <button class="menu-item" data-filter="microsoft">
-    <img data-icon="filterMicrosoft" alt="">
-    <span>{{drawerMicrosoft}}</span>
-  </button>
+  <!-- Category filter buttons are generated here at runtime from the categories actually in use
+       (see drawer.js syncCategoryFilters). microsoft/google are just categories like any other,
+       only with a nicer label/icon; user-created categories appear automatically. -->
+  <div id="drawer-category-filters"></div>
   <button class="menu-item menu-toggle" id="menu-hide-uninstalled">
     <span class="toggle-switch"></span>
     <span>{{drawerHideUninstalled}}</span>

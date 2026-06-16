@@ -144,11 +144,11 @@ test('deleting private config with deleteConfig restores embedded card', async (
 
 // Setup:    Embedded "Test MS App" (category: microsoft) is copied to a private config,
 //           then its edit dialog is opened.
-// Action:   Change the name and save.
-// Expected: The written private config still carries category="microsoft" — the edit
-//           merges over the existing config instead of rebuilding it from form fields
-//           only, so fields the form cannot represent are not dropped.
-test('editing a copied private app preserves non-form fields (category)', async ({ managerPage }) => {
+// Action:   Change the name and save (the category chip is left untouched).
+// Expected: The written private config keeps the category — now form-managed, it round-trips
+//           through the edit dialog and is normalised to an array (["microsoft"]) rather than
+//           being dropped when other fields change.
+test('editing a copied private app keeps its category', async ({ managerPage }) => {
   const card = managerPage.locator('.card', { hasText: 'Test MS App' })
   await card.hover()
   await card.locator('[data-action="info"]').click()
@@ -163,8 +163,8 @@ test('editing a copied private app preserves non-form fields (category)', async 
   await managerPage.fill('#edit-name', 'Renamed MS App')
   await managerPage.click('#edit-save')
 
-  // The saved config must keep the renamed value AND the untouched category.
+  // The saved config must keep the renamed value AND the untouched category (as an array).
   await expect.poll(() => {
     try { return JSON.parse(fs.readFileSync(PRIVATE_MS_FILE, 'utf8')) } catch { return {} }
-  }).toMatchObject({ name: 'Renamed MS App', category: 'microsoft' })
+  }).toMatchObject({ name: 'Renamed MS App', category: ['microsoft'] })
 })

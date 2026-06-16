@@ -3,6 +3,7 @@ import { applyTemplate }     from '../template.js'
 import { initDomainList }    from '../domain-list.js'
 import { initRoutingUrlList } from '../routing-url-field.js'
 import { initPluginList }    from '../plugin-list.js'
+import { initCategoryList, collectCategories } from '../category-list.js'
 
 export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, icons, templates }, { iconPicker, showConfirm, openPluginConfig }) {
   const overlay = applyTemplate(templates.edit, { i18n, vars: { appDefaultSrc } })
@@ -23,6 +24,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
   refreshUaPresets(uaPresets)
 
   const domainList    = initDomainList('edit-domain-list', 'edit-domain-input', 'edit-domain-add', () => updateSaveBtn())
+  // Category picker: chips + suggestion dropdown of existing categories, plus free-text creation.
+  const categoryList  = initCategoryList('edit-category-list', 'edit-category-input', 'edit-category-add', () => updateSaveBtn())
   // currentProfile is read live (set in openEditDialog) so the overlap check excludes this app.
   const routingList   = initRoutingUrlList('edit', () => currentProfile, { tr, onChange: () => updateSaveBtn() })
 
@@ -73,6 +76,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
       userAgent:          uaSelect.value.trim(),
       internalDomains:    domainList.get().join(','),
       routingUrls:        routingList.get().join(','),
+      // Sorted join so the dirty check reacts only to which categories are chosen, not order.
+      categories:         categoryList.get().slice().sort().join(','),
       crossOriginIsolation: document.getElementById('edit-coi').classList.contains('active'),
       singleInstance:       document.getElementById('edit-single-instance').classList.contains('active'),
       mailHandler:          document.getElementById('edit-mail-handler').classList.contains('active'),
@@ -281,6 +286,9 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     uaSelect.value = app.userAgent || ''
     domainList.set(app.internalDomains || [])
     routingList.set(app.routingUrls || [])
+    categoryList.set(app.category || [])
+    // Suggest every category in use (read live from the cards), beyond this app's own.
+    categoryList.setSuggestions(collectCategories())
 
     const coiBtn = document.getElementById('edit-coi')
     if (app.crossOriginIsolation) coiBtn.classList.add('active')
@@ -324,7 +332,7 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     saveBtn.disabled = true
     // snapshot() stringifies routingUrls/plugins/pluginConfig for dirty-detection; buildAppCfg
     // wants the real arrays/object.
-    const result = await window.managerAPI.updateApp({ profile: currentProfile, ...cur, routingUrls: routingList.get(), plugins: pluginList.get(), pluginConfig })
+    const result = await window.managerAPI.updateApp({ profile: currentProfile, ...cur, routingUrls: routingList.get(), plugins: pluginList.get(), pluginConfig, categories: categoryList.get() })
     if (!result.success) { updateSaveBtn(); return }
 
     closeEditDialog()

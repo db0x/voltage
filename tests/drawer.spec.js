@@ -1,5 +1,14 @@
 const { test, expect } = require('./fixtures')
 
+// Opens the side menu in a layout-agnostic way: below 875px the drawer is a slide-in overlay
+// reached via the hamburger; at/above 875px it is a persistent panel and the hamburger is
+// display:none (so its filter buttons are clickable directly). Some desktops force new windows
+// wide, so the hamburger may never be visible.
+async function openDrawer(page) {
+  const hamburger = page.locator('#menu-btn')
+  if (await hamburger.isVisible()) await hamburger.click()
+}
+
 // Filter button visibility and layout
 // ------------------------------------
 // The Microsoft and Google filter buttons must always show a text label,
@@ -101,31 +110,31 @@ test('theme switch is icon-only with a tooltip label', async ({ managerPage }) =
 // Action:   Open the drawer and click the Microsoft filter.
 // Expected: Only microsoft-category cards are visible; google and uncategorized cards are hidden.
 test('microsoft filter shows only microsoft-category cards', async ({ managerPage }) => {
-  await managerPage.click('#menu-btn')
+  await openDrawer(managerPage)
   await managerPage.click('[data-filter="microsoft"]')
 
-  await expect(managerPage.locator('.card[data-category="microsoft"]').first()).toBeVisible()
-  await expect(managerPage.locator('.card[data-category="google"]').first()).not.toBeVisible()
-  await expect(managerPage.locator('.card[data-category=""]').first()).not.toBeVisible()
+  await expect(managerPage.locator('.card[data-profile="test-ms-app"]')).toBeVisible()
+  await expect(managerPage.locator('.card[data-profile="test-google-app"]')).not.toBeVisible()
+  await expect(managerPage.locator('.card[data-profile="test-app"]')).not.toBeVisible()
 })
 
 // Setup:    Manager open with cards for microsoft, google, and uncategorized apps.
 // Action:   Open the drawer and click the Google filter.
 // Expected: Only google-category cards are visible; microsoft and uncategorized cards are hidden.
 test('google filter shows only google-category cards', async ({ managerPage }) => {
-  await managerPage.click('#menu-btn')
+  await openDrawer(managerPage)
   await managerPage.click('[data-filter="google"]')
 
-  await expect(managerPage.locator('.card[data-category="google"]').first()).toBeVisible()
-  await expect(managerPage.locator('.card[data-category="microsoft"]').first()).not.toBeVisible()
-  await expect(managerPage.locator('.card[data-category=""]').first()).not.toBeVisible()
+  await expect(managerPage.locator('.card[data-profile="test-google-app"]')).toBeVisible()
+  await expect(managerPage.locator('.card[data-profile="test-ms-app"]')).not.toBeVisible()
+  await expect(managerPage.locator('.card[data-profile="test-app"]')).not.toBeVisible()
 })
 
 // Setup:    Manager open; add-card button is visible in the "all" view.
 // Action:   Switch to the Microsoft filter.
 // Expected: The add-card button is hidden (creating apps is only allowed in the "all" view).
 test('microsoft filter hides the add-card', async ({ managerPage }) => {
-  await managerPage.click('#menu-btn')
+  await openDrawer(managerPage)
   await managerPage.click('[data-filter="microsoft"]')
   await expect(managerPage.locator('.card-add')).not.toBeVisible()
 })
@@ -134,7 +143,7 @@ test('microsoft filter hides the add-card', async ({ managerPage }) => {
 // Action:   Switch to the Google filter.
 // Expected: The add-card button is hidden.
 test('google filter hides the add-card', async ({ managerPage }) => {
-  await managerPage.click('#menu-btn')
+  await openDrawer(managerPage)
   await managerPage.click('[data-filter="google"]')
   await expect(managerPage.locator('.card-add')).not.toBeVisible()
 })
@@ -144,13 +153,13 @@ test('google filter hides the add-card', async ({ managerPage }) => {
 // Expected: All category cards (microsoft, google, uncategorized) and the add-card button
 //           are visible again, confirming the filter is fully reset.
 test('"all" filter restores all cards after category filter', async ({ managerPage }) => {
-  await managerPage.click('#menu-btn')
+  await openDrawer(managerPage)
   await managerPage.click('[data-filter="microsoft"]')
-  await managerPage.click('#menu-btn')
+  await openDrawer(managerPage)
   await managerPage.click('[data-filter="all"]')
 
-  await expect(managerPage.locator('.card[data-category="microsoft"]').first()).toBeVisible()
-  await expect(managerPage.locator('.card[data-category="google"]').first()).toBeVisible()
+  await expect(managerPage.locator('.card[data-profile="test-ms-app"]')).toBeVisible()
+  await expect(managerPage.locator('.card[data-profile="test-google-app"]')).toBeVisible()
   await expect(managerPage.locator('.card-add')).toBeVisible()
 })
 

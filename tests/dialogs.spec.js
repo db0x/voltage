@@ -89,7 +89,8 @@ test('create dialog scrolls when the window is too short to fit it', async ({ el
 // Expected: The viewport has no scroll range — the scrollbar appears only when
 //           needed, never when the form already fits.
 test('create dialog does not scroll when the window is tall enough', async ({ electronApp, managerPage }) => {
-  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(560, 1000))
+  // Height comfortably exceeds the full create form (which grew as more fields were added).
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(560, 1200))
   await managerPage.click('.card-add')
 
   await expect.poll(() => createOverflow(managerPage)).toBe(0)

@@ -135,6 +135,35 @@ header img {
   gap: 4px;
 }
 
+/* A category filter button with its rebuild-all button laid OVER its right edge (absolute), so the
+   filter button keeps full width instead of being squeezed. */
+.drawer-category-row {
+  position: relative;
+}
+
+.drawer-category-row .menu-item {
+  width: 100%;
+}
+
+/* The rebuild button is revealed only while the row is hovered AND its category is the active
+   filter — same reveal-on-hover idiom as the card toolbar icons, but scoped to the selected
+   category so the menu stays uncluttered. pointer-events is gated so the hidden button can't be
+   clicked by accident. (The active class sits on the sibling filter button, see applyFilter.) */
+.drawer-category-row .drawer-icon-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.drawer-category-row:hover .menu-item.active ~ .drawer-icon-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .drawer-appearance-row #menu-settings {
   flex: 1;
 }

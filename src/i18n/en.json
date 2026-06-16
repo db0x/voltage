@@ -83,6 +83,9 @@
   "drawerMicrosoft":       "Microsoft Apps",
   "drawerGoogle":          "Google Apps",
   "drawerHideUninstalled": "Hide uninstalled",
+  "drawerRebuildCategory": "Rebuild & install all apps in this category",
+  "rebuildCategoryMsg":    "Rebuild and install all {count} apps in “{category}”?",
+  "rebuildCategoryOk":     "Rebuild & install",
 
   "badgeBuilt":       "Built",
   "badgeNotBuilt":    "Not built",
@@ -150,6 +153,8 @@
   "createMailHandler":    "Register as mail handler",
   "createPlugins":        "Plugins",
   "createPluginChoose":   "— Choose plugin —",
+  "createCategories":     "Categories",
+  "createCategoryPlaceholder": "Add or pick a category…",
   "createCancel":         "Cancel",
   "createSave":           "Save",
   "createUaDefault":      "— Default (not set) —",
@@ -161,6 +166,7 @@
   "tooltipCoi":            "Enables SharedArrayBuffer and WASM threads. Only turn on if the website explicitly requires it — may restrict cross-origin requests.",
   "tooltipMailHandler":    "Registers this app system-wide as the default for mailto: links. Clicking an email address anywhere opens the compose window directly in this app.",
   "tooltipPlugins":        "Extra scripts shipped with this app that extend its behaviour — e.g. routing OneDrive documents to Word/Excel, or auto-opening a webmail app's compose dialog. Changing the selection requires rebuilding the AppImage.",
+  "tooltipCategories":     "Group this app under one or more categories. Pick from existing ones or type a new name to create it. Categories are used to filter the app list.",
 
   "validPattern":  "Only lowercase letters, digits and hyphens",
   "validExists":   "Profile already exists",

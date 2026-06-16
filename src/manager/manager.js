@@ -121,7 +121,10 @@ const ctx = {
   },
 }
 
-const drawer       = initDrawer({ ...ctx, obsidianAvailable, gnomeAvailable })
+// Late-bound: the per-category rebuild needs `cards` (created below) and the confirm dialog.
+let rebuildCategoryHandler = null
+const drawer       = initDrawer({ ...ctx, obsidianAvailable, gnomeAvailable,
+  onRebuildCategory: (category) => rebuildCategoryHandler?.(category) })
 const buildOverlay = initBuildOverlay(ctx)
 const confirm      = initConfirmDialog(ctx)
 const info         = initInfoDialog(ctx)
@@ -166,6 +169,18 @@ const cards = initCards(ctx, {
   hideBuildOverlay: buildOverlay.hideBuildOverlay,
   openEditDialog:   editDialog.openEditDialog,
 })
+
+// Rebuild + install every app in a category, after a confirm. Sequential build is handled in cards.
+rebuildCategoryHandler = async (category) => {
+  drawer.closeDrawer()
+  const count = cards.categoryAppCount(category)
+  if (!count) return
+  const { confirmed } = await confirm.showConfirm(
+    tr('rebuildCategoryMsg', { category, count }),
+    { okLabel: i18n.rebuildCategoryOk, okClass: 'btn-save' }
+  )
+  if (confirmed) await cards.rebuildInstallCategory(category)
+}
 
 onMailHandlerSave    = profile  => cards.setDefaultMailHandler(profile)
 onGlobalSettingsSave = ({ hiddenProfiles: hp, customUaPresets: custom }) => {
@@ -276,6 +291,8 @@ document.getElementById('menu-safe-browsing').addEventListener('click', () => {
 })
 
 OverlayScrollbars(document.getElementById('grid-wrapper'), { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
+// Build the category filter buttons from the just-rendered cards, then restore the saved filter.
+drawer.syncCategoryFilters()
 drawer.applyInitialFilter()
 initTooltip()
 

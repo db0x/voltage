@@ -5,8 +5,9 @@ import { applyTemplate } from './template.js'
 // stays reachable when the window is too short to show the whole menu at once.
 import { OverlayScrollbars } from '../../node_modules/overlayscrollbars/overlayscrollbars.mjs'
 import { setColorPickerTheme } from './color-picker.js'
+import { collectCategories } from './category-list.js'
 
-export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, gnomeAvailable, mailHandlerAvailable, templates }) {
+export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, gnomeAvailable, mailHandlerAvailable, templates, onRebuildCategory }) {
   const { sun: sunSrc, moon: moonSrc, menu: menuSrc } = icons
 
   const menuBtn  = document.getElementById('menu-btn')
@@ -102,22 +103,91 @@ export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, gn
   let currentFilter   = localStorage.getItem('filter') ?? 'all'
   let hideUninstalled = localStorage.getItem('hideUninstalled') === '1'
 
+  // Filters that aren't a category: the structural views. Anything else is a category name and
+  // matches a card when that card's category list contains it.
+  const STRUCTURAL = new Set(['all', 'public', 'private'])
+
   function applyVisibility() {
     document.querySelectorAll('.card[data-private]').forEach(card => {
       const isPrivate   = card.dataset.private   === 'true'
       const isInstalled = card.dataset.installed === 'true'
-      const category    = card.dataset.category  || ''
+      // An app can carry multiple categories (stored as a JSON list in data-categories); a
+      // category filter matches when that list contains the active filter name.
+      let categories = []
+      try { categories = JSON.parse(card.dataset.categories || '[]') } catch {}
       const passesFilter =
         currentFilter === 'all' ||
-        (currentFilter === 'public'    && !isPrivate) ||
-        (currentFilter === 'private'   &&  isPrivate) ||
-        (currentFilter === 'microsoft' && category === 'microsoft') ||
-        (currentFilter === 'google'    && category === 'google')
+        (currentFilter === 'public'  && !isPrivate) ||
+        (currentFilter === 'private' &&  isPrivate) ||
+        (!STRUCTURAL.has(currentFilter) && categories.includes(currentFilter))
       card.style.display = (passesFilter && (!hideUninstalled || isInstalled)) ? '' : 'none'
     })
+    // The add-card only makes sense in the "all" and user views; a category/embedded view hides it.
     const addCardEl = document.querySelector('.card-add')
-    const hideAdd = ['public', 'microsoft', 'google'].includes(currentFilter)
-    if (addCardEl) addCardEl.style.display = hideAdd ? 'none' : ''
+    if (addCardEl) addCardEl.style.display = (currentFilter === 'all' || currentFilter === 'private') ? '' : 'none'
+  }
+
+  // Known categories keep their familiar localised label; user-created ones use their raw name.
+  // Every category filter shares one icon — the same grid glyph the Microsoft/Google entries used
+  // before — so the menu stays visually consistent regardless of how a category was created.
+  const KNOWN_LABELS = { microsoft: i18n.drawerMicrosoft, google: i18n.drawerGoogle }
+  const categoryIcon  = icons.filterMicrosoft
+  const categoryFiltersEl = document.getElementById('drawer-category-filters')
+
+  // Rebuilds the category filter buttons from the categories currently in use (read live from the
+  // cards). Called at startup and whenever the cards change, so a freshly created category shows up
+  // in the menu — and a category nobody uses any more disappears. Falls back to the "all" filter if
+  // the active one was a category that no longer exists.
+  function syncCategoryFilters() {
+    if (!categoryFiltersEl) return
+    const cats = collectCategories()
+    categoryFiltersEl.innerHTML = ''
+    for (const cat of cats) {
+      // A row holds the filter button (left, grows) and a rebuild button (right) that recreates +
+      // installs every app in the category — mirrors the appearance row's button+icon layout.
+      const row = document.createElement('div')
+      row.className = 'drawer-category-row'
+
+      const btn = document.createElement('button')
+      btn.className = 'menu-item'
+      btn.dataset.filter = cat
+      const img = document.createElement('img')
+      if (categoryIcon) img.src = categoryIcon
+      img.alt = ''
+      const span = document.createElement('span')
+      span.textContent = KNOWN_LABELS[cat] ?? cat
+      btn.append(img, span)
+      btn.addEventListener('click', () => { applyFilter(cat); closeDrawer() })
+
+      const rebuildBtn = document.createElement('button')
+      rebuildBtn.className = 'drawer-icon-btn'
+      rebuildBtn.dataset.rebuildCategory = cat
+      rebuildBtn.dataset.tooltip = i18n.drawerRebuildCategory
+      const rebuildImg = document.createElement('img')
+      if (icons.install) rebuildImg.src = icons.install
+      rebuildImg.alt = i18n.drawerRebuildCategory
+      rebuildBtn.appendChild(rebuildImg)
+      rebuildBtn.addEventListener('click', e => { e.stopPropagation(); onRebuildCategory?.(cat) })
+
+      row.append(btn, rebuildBtn)
+      categoryFiltersEl.appendChild(row)
+    }
+    // Re-apply the active filter: keep it if still valid, otherwise reset to "all". This also
+    // restores the active highlight on the freshly recreated buttons and re-runs visibility.
+    applyFilter(STRUCTURAL.has(currentFilter) || cats.includes(currentFilter) ? currentFilter : 'all')
+  }
+
+  // Watch the card grid so the category filters track live changes (apps created/edited/deleted).
+  // Debounced to one rebuild per microtask, coalescing the bulk card append at startup. Only
+  // data-categories attribute changes are observed, so toggling card visibility can't loop back.
+  const gridEl = document.getElementById('grid')
+  if (gridEl) {
+    let queued = false
+    new MutationObserver(() => {
+      if (queued) return
+      queued = true
+      queueMicrotask(() => { queued = false; syncCategoryFilters() })
+    }).observe(gridEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-categories'] })
   }
 
   function applyFilter(filter) {
@@ -145,7 +215,7 @@ export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, gn
 
   return {
     openDrawer, closeDrawer,
-    applyFilter, applyVisibility,
+    applyFilter, applyVisibility, syncCategoryFilters,
     applyInitialFilter: () => applyFilter(currentFilter),
   }
 }

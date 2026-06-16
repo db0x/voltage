@@ -107,13 +107,13 @@ function buildSingleApp(configFile, defaultMailDesktop) {
 const FORM_MANAGED_KEYS = new Set([
   'profile', 'url', 'name', 'icon', 'geometry', 'userAgent',
   'internalDomains', 'routingUrls', 'crossOriginIsolation', 'singleInstance',
-  'mimeTypes', 'plugins', 'pluginConfig',
+  'mimeTypes', 'plugins', 'pluginConfig', 'category',
 ])
 
 // Builds a config object from create/edit form data, omitting falsy/default fields.
 // `existing` is the config currently on disk (empty for create): its non-form-managed
 // keys are preserved, and its mimeTypes are kept (the form only toggles the mailto entry).
-function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig }, existing = {}) {
+function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig, categories }, existing = {}) {
   const cfg = { profile, url }
   if (name)  cfg.name = name
   if (icon)  cfg.icon = icon
@@ -161,7 +161,14 @@ function buildAppCfg({ profile, name, url, icon, width, height, userAgent, inter
     if (Object.keys(pruned).length) cfg.pluginConfig = pruned
   }
 
-  // Carry over every field the form does not manage (category, rclone*, mime icons, …).
+  // User-assigned categories, stored as an array (the legacy single-string form, e.g. embedded
+  // "microsoft", is still read everywhere via normalizeCategories). Empty selection omits the key.
+  if (Array.isArray(categories)) {
+    const list = categories.map(c => c.trim()).filter(Boolean)
+    if (list.length) cfg.category = list
+  }
+
+  // Carry over every field the form does not manage (rclone*, mime icons, …).
   for (const [k, v] of Object.entries(existing)) {
     if (!FORM_MANAGED_KEYS.has(k)) cfg[k] = v
   }

@@ -3,6 +3,7 @@ import { applyTemplate } from '../template.js'
 import { initDomainList } from '../domain-list.js'
 import { initRoutingUrlList } from '../routing-url-field.js'
 import { initPluginList } from '../plugin-list.js'
+import { initCategoryList, collectCategories } from '../category-list.js'
 
 export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, icons, templates }, { iconPicker, applyVisibility, createCard, insertCard, openPluginConfig }) {
   const overlay = applyTemplate(templates.create, { i18n, vars: { appDefaultSrc } })
@@ -23,6 +24,8 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
   refreshUaPresets(uaPresets)
 
   const domainList = initDomainList('create-domain-list', 'create-domain-input', 'create-domain-add', () => {})
+  // Category picker: chips + suggestion dropdown of existing categories, plus free-text creation.
+  const categoryList = initCategoryList('create-category-list', 'create-category-input', 'create-category-add', () => {})
   // getProfile reads the profile input live: the overlap check excludes the app's own
   // profile, and the field may change while the dialog is open.
   const routingList = initRoutingUrlList(
@@ -233,6 +236,9 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     document.getElementById('create-useragent').value = ''
     domainList.reset()
     routingList.reset()
+    categoryList.reset()
+    // Refresh suggestions from the live cards so categories created earlier this session show up.
+    categoryList.setSuggestions(collectCategories())
     document.getElementById('create-coi').classList.remove('active')
     document.getElementById('create-single-instance').classList.remove('active')
     document.getElementById('create-mail-handler').classList.remove('active')
@@ -281,8 +287,9 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     const singleInstance       = document.getElementById('create-single-instance').classList.contains('active')
     const mailHandler          = document.getElementById('create-mail-handler').classList.contains('active')
     const plugins              = pluginList.get()
+    const categories           = categoryList.get()
     saveBtn.disabled = true
-    const result = await window.managerAPI.createApp({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig })
+    const result = await window.managerAPI.createApp({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig, categories })
     if (result.success) {
       closeCreateDialog()
       insertCard(createCard(result.app))

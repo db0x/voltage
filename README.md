@@ -91,6 +91,7 @@ The **+** card opens the **Create App** dialog. All options are available from t
 | Name | Optional display name (derived from the profile if empty) |
 | URL | The URL loaded on startup |
 | Icon | A searchable picker over the system icon theme |
+| Categories | Group the app under one or more categories — pick existing ones from the dropdown or type a new name to create it |
 | Width / Height | Initial window size (optional) |
 | User-Agent | A preset, or empty for the default Electron UA |
 | Internal domains | Extra domains that open inside the app window (e.g. OAuth redirects) |
@@ -102,7 +103,7 @@ New apps are saved as `webapps/build.private.<profile>.json` and are gitignored 
 
 ### Side menu
 
-The menu offers light/dark mode, the visibility filters (all / embedded / user / Google / Microsoft), **Hide uninstalled**, **Profiles**, and the integration dialogs — **Mail handler**, **Google Safe Browsing**, **rclone**, **Obsidian** and **GNOME** — each shown only when relevant to your system.
+The menu offers light/dark mode, the visibility filters (all / embedded / user, plus one button per category in use — see [categories](#adding-a-new-app)), **Hide uninstalled**, **Profiles**, and the integration dialogs — **Mail handler**, **Google Safe Browsing**, **rclone**, **Obsidian** and **GNOME** — each shown only when relevant to your system. Each category filter carries a rebuild button on the right that recreates and installs every app in that category in one go (after a confirmation).
 
 ## System mail handler
 
@@ -236,6 +237,7 @@ Apps can also be configured by hand — useful for bulk setup, version-controlle
 | `url` | string | **Required.** URL to load on startup |
 | `name` | string | Display name (default: derived from `profile`) |
 | `icon` | string | Icon name resolved from the system icon theme |
+| `category` | string \| array | One or more categories the app belongs to, used by the drawer filters. Assigned via the create/edit dialog's category picker; a single string (e.g. `"microsoft"`) is also accepted |
 | `userAgent` | string | Override the user-agent string |
 | `geometry.width/height` | number | Initial window size (default: 1280 × 1024) |
 | `geometry.x/y` | number | Initial window position — _deprecated, X11 only_ |
