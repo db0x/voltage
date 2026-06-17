@@ -95,28 +95,38 @@ test('a freshly built AppImage launches and shows correct About content', async 
       env: { ...process.env, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_ENABLE_LOGGING: '1', ELECTRON_RUN_AS_NODE: undefined },
     })
 
-    // Capture the packaged app's own stdout/stderr so a failure to open a window (seen only on CI)
-    // surfaces the real reason — a main-process exception or a Chromium startup error — instead of a
-    // bare Playwright timeout.
-    const appLog = []
-    app.process().stdout?.on('data', d => appLog.push(`[out] ${d}`))
-    app.process().stderr?.on('data', d => appLog.push(`[err] ${d}`))
+    // Drive everything through the main process via app.evaluate instead of Playwright page objects.
+    // On CI, Playwright's page/firstWindow does not surface this packaged app's window (works
+    // locally), but the main process is reachable — so we observe the app through Electron's own API.
+    const windowInfo = () => app.evaluate(({ app: a, BrowserWindow }) => {
+      const w = BrowserWindow.getAllWindows()[0]
+      return {
+        count:   BrowserWindow.getAllWindows().length,
+        title:   w ? w.webContents.getTitle() : null,
+        loading: w ? w.webContents.isLoading() : null,
+      }
+    })
 
-    // A cold-extracted binary plus software rendering is slow to first paint on CI runners.
-    let page
+    // Wait for the app to open its window. If it never does, dump main-process diagnostics (is the
+    // app ready? can it create a BrowserWindow at all?) so the CI log shows the real cause.
     try {
-      page = await app.firstWindow({ timeout: 60_000 })
+      await expect.poll(async () => (await windowInfo()).count, { timeout: 60_000 }).toBeGreaterThan(0)
     } catch (err) {
-      console.log('--- packaged app output (no window appeared) ---\n' + appLog.join('') + '\n--- end ---')
+      const diag = await app.evaluate(({ app: a, BrowserWindow }) => {
+        let manualWindow = 'ok'
+        try { const w = new BrowserWindow({ show: false }); w.destroy() }
+        catch (e) { manualWindow = String(e && e.stack || e) }
+        return { ready: a.isReady(), windows: BrowserWindow.getAllWindows().length, manualWindow }
+      }).catch(e => ({ evalError: String(e) }))
+      console.log('--- main-process diagnostic ---\n' + JSON.stringify(diag, null, 2) + '\n--- end ---')
       throw err
     }
-    await page.waitForLoadState('domcontentloaded')
-    // The static page actually loaded inside the packaged app.
-    await expect(page).toHaveTitle('E2E Static Test Page')
+
+    // The static page actually loaded inside the packaged app (title is set once it finishes).
+    await expect.poll(async () => (await windowInfo()).title, { timeout: 30_000 }).toBe('E2E Static Test Page')
 
     // Toggle the About overlay. F12 is intercepted in window.js via before-input-event; injecting it
-    // with sendInputEvent from the main process is more reliable than a Playwright keypress, which
-    // depends on the window holding OS keyboard focus on a live desktop.
+    // with sendInputEvent from the main process is reliable regardless of OS keyboard focus.
     await app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0]
       win.focus()
