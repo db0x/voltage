@@ -86,7 +86,10 @@ async function buildOne(configFile) {
   const app = JSON.parse(fs.readFileSync(path.join(CONFIGS_DIR, configFile), 'utf8'))
   const label = configFile.replace(/^build\.(.+)\.json$/, '$1')
   console.log(`\n=== Building ${label} ===`)
-  await build({ config: expandConfig(app), projectDir: process.cwd() })
+  // publish: 'never' — this is a local AppImage build script, never a release. Without it,
+  // electron-builder auto-detects CI (e.g. a push to main) and tries to publish to GitHub Releases,
+  // which fails with "GH_TOKEN is not set". Make the intent explicit (as electron-builder advises).
+  await build({ config: expandConfig(app), projectDir: process.cwd(), publish: 'never' })
   // Write build metadata alongside the AppImage so the Manager can detect
   // outdated builds and query capabilities (e.g. rclone binding) without
   // mounting or inspecting the AppImage itself.
