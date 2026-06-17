@@ -49,9 +49,11 @@ jobs:
           eval $(dbus-launch --sh-syntax)
           echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> $GITHUB_ENV
 
-      # The fast Manager-UI suite (no AppImage build) — keep it on a tight budget.
+      # The Manager-UI suite. Runs serially (workers: 1 — the fixtures share on-disk config/state),
+      # so it cannot be sped up by parallelism without isolating per-test state. ~4 min today; the
+      # budget keeps headroom so normal runner variance doesn't trip a false timeout.
       - name: Run UI tests
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: npm test
 
       # The heavy integration test: builds a real AppImage (downloads the Electron dist on a cold
