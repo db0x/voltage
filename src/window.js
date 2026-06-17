@@ -513,11 +513,17 @@ function createWindow(pkg, opts = {}) {
 
   const viewMode = collectPluginViewMode(pkg)
 
+  // Human-readable name the WM shows (title bar, Alt+Tab, window lists). The runtime app name is the
+  // lowercased artifact id ("vteams" — required for the Wayland app_id ↔ launcher match), so without
+  // an explicit title the WM falls back to that id instead of "Microsoft Teams".
+  const displayName = pkg.displayName || pkg.profile
+
   const mainWindow = new BrowserWindow({
     width:  pkg.geometry?.width  ?? saved?.width  ?? 1280,
     height: pkg.geometry?.height ?? saved?.height ?? 1024,
     x:      pkg.geometry?.x,
     y:      pkg.geometry?.y,
+    title:  displayName,
     // Plugin-contributed constructor options (e.g. frame:false from the widget plugin).
     // Spread before webPreferences so a plugin can't clobber it.
     ...collectPluginWindowOptions(pkg),
@@ -553,6 +559,11 @@ function createWindow(pkg, opts = {}) {
     mainWindow.on('resize', layoutView)
     // The host page draws the shadow in the gutter behind the view.
     mainWindow.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(viewMode.hostHtml))
+    // Keep the WM title fixed to the app's display name: the host shadow page has no <title>, and the
+    // real app's title lives in the inset view (not this window), so block any title change here —
+    // otherwise the WM/Alt+Tab would show the artifact id instead of "Microsoft Teams".
+    mainWindow.webContents.on('page-title-updated', e => e.preventDefault())
+    mainWindow.setTitle(displayName)
     // Let overlays (e.g. the About panel) match the inset app view exactly — without this they fill
     // the whole window including the transparent shadow gutter / rounded corners, so their backdrop
     // spills into the "invisible" frame.
@@ -572,7 +583,7 @@ function createWindow(pkg, opts = {}) {
   mainWindow.on('closed', () => windowProfiles.delete(webContentsId))
 
   // Context for the custom context-menu's shared ipcMain handlers (see appMenuRegistry).
-  const displayName = pkg.displayName || pkg.profile
+  // displayName is computed once near the top of createWindow (also used for the window title).
   appMenuRegistry.set(webContentsId, {
     appContents, mainWindow, profile: pkg.profile, customSession, actions: {},
     displayName, appIcon: appIconDataUrl(pkg),
