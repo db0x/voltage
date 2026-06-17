@@ -89,11 +89,14 @@ test('a freshly built AppImage launches and shows correct About content', async 
     // packaged Electron binary run as plain Node (rejecting --no-sandbox → "Process failed to launch").
     app = await electron.launch({
       executablePath: innerExe,
-      args: ['--no-sandbox', '--disable-gpu', `--user-data-dir=${tmpUserData}`],
+      // --disable-dev-shm-usage: CI containers give /dev/shm only a few MB, which makes Chromium
+      // abort at startup (no window) — the Manager fixture passes it for the same reason.
+      args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${tmpUserData}`],
       env: { ...process.env, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined },
     })
 
-    const page = await app.firstWindow()
+    // A cold-extracted binary plus software rendering is slow to first paint on CI runners.
+    const page = await app.firstWindow({ timeout: 60_000 })
     await page.waitForLoadState('domcontentloaded')
     // The static page actually loaded inside the packaged app.
     await expect(page).toHaveTitle('E2E Static Test Page')

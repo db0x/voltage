@@ -10,6 +10,11 @@ jobs:
   test:
     runs-on: ubuntu-22.04
 
+    # Shared by every test step so both the UI suite and the AppImage launch see the virtual display.
+    env:
+      DISPLAY: ':99'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+
     steps:
       - uses: actions/checkout@v4
 
@@ -44,9 +49,14 @@ jobs:
           eval $(dbus-launch --sh-syntax)
           echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> $GITHUB_ENV
 
-      - name: Run tests
+      # The fast Manager-UI suite (no AppImage build) — keep it on a tight budget.
+      - name: Run UI tests
         timeout-minutes: 5
-        env:
-          DISPLAY: ':99'
-          LIBGL_ALWAYS_SOFTWARE: '1'
         run: npm test
+
+      # The heavy integration test: builds a real AppImage (downloads the Electron dist on a cold
+      # runner) then launches it, so it gets its own, larger budget and no retries (the project
+      # config disables them — a retried build would be far too expensive).
+      - name: Run AppImage integration test
+        timeout-minutes: 20
+        run: npm run test:appimage
