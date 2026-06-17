@@ -14,7 +14,8 @@
     "start": "node scripts/start.js",
     "build": "node scripts/build.js",
     "install-app": "node scripts/install.js",
-    "test": "playwright test",
+    "test": "playwright test --project=ui",
+    "test:appimage": "playwright test --project=appimage",
     "build:obsidian": "node src/plugins/obsidian/esbuild.config.mjs production"
   },
   "devDependencies": {
