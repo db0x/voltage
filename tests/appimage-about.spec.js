@@ -92,11 +92,24 @@ test('a freshly built AppImage launches and shows correct About content', async 
       // --disable-dev-shm-usage: CI containers give /dev/shm only a few MB, which makes Chromium
       // abort at startup (no window) — the Manager fixture passes it for the same reason.
       args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${tmpUserData}`],
-      env: { ...process.env, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined },
+      env: { ...process.env, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_ENABLE_LOGGING: '1', ELECTRON_RUN_AS_NODE: undefined },
     })
 
+    // Capture the packaged app's own stdout/stderr so a failure to open a window (seen only on CI)
+    // surfaces the real reason — a main-process exception or a Chromium startup error — instead of a
+    // bare Playwright timeout.
+    const appLog = []
+    app.process().stdout?.on('data', d => appLog.push(`[out] ${d}`))
+    app.process().stderr?.on('data', d => appLog.push(`[err] ${d}`))
+
     // A cold-extracted binary plus software rendering is slow to first paint on CI runners.
-    const page = await app.firstWindow({ timeout: 60_000 })
+    let page
+    try {
+      page = await app.firstWindow({ timeout: 60_000 })
+    } catch (err) {
+      console.log('--- packaged app output (no window appeared) ---\n' + appLog.join('') + '\n--- end ---')
+      throw err
+    }
     await page.waitForLoadState('domcontentloaded')
     // The static page actually loaded inside the packaged app.
     await expect(page).toHaveTitle('E2E Static Test Page')
