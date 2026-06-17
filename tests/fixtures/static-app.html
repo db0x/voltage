@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Static target page for the AppImage integration test (appimage-about.spec.js). It is served
+     over a local http server and wrapped into a real, freshly built AppImage; the test then opens
+     the About panel and checks its contents. Keep the <title> stable — the test asserts on it. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>E2E Static Test Page</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 2rem; }
+  </style>
+</head>
+<body>
+  <h1 id="heading">Voltage E2E Static Page</h1>
+  <p>This minimal page is served locally and wrapped into an AppImage for the integration test.</p>
+</body>
+</html>
