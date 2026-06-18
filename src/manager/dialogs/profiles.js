@@ -55,8 +55,12 @@ export function initProfilesDialog({ i18n, tr, apps, appDefaultSrc, icons, templ
       const row = document.createElement('div')
       row.className = 'profile-size-row'
       row.dataset.profile = p.profile
+      // A folder badge marks profiles stored outside the default location; its tooltip shows where.
+      const customBadge = p.custom && icons.folderOpen
+        ? `<img src="${icons.folderOpen}" class="profile-custom-badge" width="13" height="13" alt="" data-tooltip="${tr('profilesCustomPath', { path: p.dir })}">`
+        : ''
       row.innerHTML = `
-        <div class="profile-size-name">${iconHtml}<span data-tooltip="${label}">${label}</span></div>
+        <div class="profile-size-name">${iconHtml}<span data-tooltip="${label}">${label}</span>${customBadge}</div>
         <div class="profile-size-bar-wrap">
           <div class="profile-size-bar" style="width:${pct}%"></div>
         </div>

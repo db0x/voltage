@@ -90,7 +90,7 @@ test('create dialog scrolls when the window is too short to fit it', async ({ el
 //           needed, never when the form already fits.
 test('create dialog does not scroll when the window is tall enough', async ({ electronApp, managerPage }) => {
   // Height comfortably exceeds the full create form (which grew as more fields were added).
-  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(560, 1200))
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(560, 1500))
   await managerPage.click('.card-add')
 
   await expect.poll(() => createOverflow(managerPage)).toBe(0)

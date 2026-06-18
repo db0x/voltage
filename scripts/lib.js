@@ -4,6 +4,7 @@ const path = require('node:path')
 const { execSync } = require('node:child_process')
 const { primaryKeyFromUrl, routingUrlKeys } = require('../src/routing-match')
 const { appName, wmClass } = require('../src/app-naming')
+const { appImagePath }     = require('../src/app-paths')
 
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 
@@ -134,7 +135,7 @@ function installDesktop(app) {
   const desktopsDir = path.join(os.homedir(), '.local', 'share', 'applications')
   const desktopFile = path.join(desktopsDir, `${desktopName}.desktop`)
 
-  const appImagePath = path.resolve('dist', appName(app.profile))
+  const appImageFile = appImagePath(app, path.resolve('dist'))
   const displayName = escapeDesktop(app.name || toDisplayName(app.profile))
   const icon = resolveIconToHicolor(app.icon || 'voltage', desktopName)
   const mimeTypes = app.mimeTypes?.length ? app.mimeTypes.join(';') + ';' : null
@@ -144,7 +145,7 @@ function installDesktop(app) {
     'Version=1.0',
     `Name=${displayName}`,
     `Comment=${displayName}`,
-    `Exec=${appImagePath} --no-sandbox %u`,
+    `Exec=${appImageFile} --no-sandbox %u`,
     'Terminal=false',
     'Type=Application',
     `Icon=${icon}`,

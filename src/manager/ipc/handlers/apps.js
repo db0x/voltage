@@ -1,7 +1,7 @@
 // App catalog and per-app CRUD: list configs, copy embedded → private, create / edit / delete,
 // plus the small reveal-in-folder and profile-existence checks the cards use.
 
-const { ipcMain, app, shell } = require('electron')
+const { ipcMain, app, shell, dialog, BrowserWindow } = require('electron')
 const path = require('node:path')
 const fs   = require('node:fs')
 const os   = require('node:os')
@@ -12,6 +12,19 @@ const { readVersionSidecar, needsRebuild, buildSingleApp, buildAppCfg, usesRclon
 const { getDefaultMailDesktop }                            = require('./mail')
 const { urlToRoutingKey, keyOverlaps, primaryKeyFromUrl, routingUrlKeys } = require('../../../routing-match')
 const { appName }                                          = require('../../../app-naming')
+const { appImagePath, profileDir }                         = require('../../../app-paths')
+
+// Default locations the per-app overrides fall back to.
+const DIST_DIR     = path.join(APP_ROOT, 'dist')
+const VOLTAGE_DATA = path.join(app.getPath('appData'), 'voltage')
+
+// Moves a file or directory, falling back to copy+remove across filesystems (a custom output/
+// profile folder may sit on a different mount, where rename() fails with EXDEV).
+function movePath(src, dest) {
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  try { fs.renameSync(src, dest) }
+  catch { fs.cpSync(src, dest, { recursive: true }); fs.rmSync(src, { recursive: true, force: true }) }
+}
 
 module.exports = function registerAppHandlers() {
   ipcMain.handle('manager:apps', () => {
@@ -25,7 +38,7 @@ module.exports = function registerAppHandlers() {
       .map(f => {
         const cfg          = JSON.parse(fs.readFileSync(path.join(CONFIGS_DIR, f), 'utf8'))
         const configLabel  = f.replace(/^build\.(.+)\.json$/, '$1')
-        const built        = fs.existsSync(path.join(APP_ROOT, 'dist', appName(cfg.profile)))
+        const built        = fs.existsSync(appImagePath(cfg, DIST_DIR))
         const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(cfg.profile)}.desktop`)
         const installed    = fs.existsSync(desktopFile)
         let iconValue      = cfg.icon || null
@@ -33,12 +46,13 @@ module.exports = function registerAppHandlers() {
           const m = fs.readFileSync(desktopFile, 'utf8').match(/^Icon=(.+)$/m)
           if (m) iconValue = m[1].trim()
         }
-        const { builtVersion, builtRclone } = readVersionSidecar(cfg.profile)
+        const { builtVersion, builtRclone } = readVersionSidecar(cfg)
         return {
           profile: cfg.profile, configLabel, name: cfg.name, url: cfg.url,
           built, installed, isPrivate: f.startsWith('build.private.'), iconValue,
-          appImagePath: path.join(APP_ROOT, 'dist', appName(cfg.profile)),
-          profilePath:  path.join(app.getPath('appData'), 'voltage', cfg.profile),
+          appImagePath: appImagePath(cfg, DIST_DIR),
+          profilePath:  profileDir(cfg, VOLTAGE_DATA),
+          outputDir: cfg.outputDir || null, profileDir: cfg.profileDir || null,
           icon: cfg.icon || null, geometry: cfg.geometry || null,
           userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
           singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
@@ -127,6 +141,24 @@ module.exports = function registerAppHandlers() {
     return { conflict: null }
   })
 
+  // Native folder picker for the create/edit dialogs' output- and profile-folder fields.
+  // Returns the chosen absolute path, or null when the user cancels. The start folder is the
+  // nearest EXISTING ancestor of the current value — a non-existent defaultPath (e.g. a profile
+  // folder that hasn't been created yet) leaves the GTK chooser in a state where nothing can be
+  // confirmed, so we never hand it a path that doesn't exist.
+  ipcMain.handle('manager:pick-folder', async (event, currentPath) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    let defaultPath = currentPath
+    while (defaultPath && !fs.existsSync(defaultPath) && defaultPath !== path.dirname(defaultPath)) {
+      defaultPath = path.dirname(defaultPath)
+    }
+    const res = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory', 'createDirectory'],
+      ...(defaultPath && fs.existsSync(defaultPath) ? { defaultPath } : {}),
+    })
+    return res.canceled || !res.filePaths.length ? null : res.filePaths[0]
+  })
+
   ipcMain.handle('manager:reveal-path', (event, targetPath) => {
     const isDir = fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory()
     isDir ? shell.openPath(targetPath) : shell.showItemInFolder(targetPath)
@@ -138,15 +170,19 @@ module.exports = function registerAppHandlers() {
   })
 
   ipcMain.handle('manager:delete', (event, { profile, configLabel, deleteConfig, deleteProfileData }) => {
-    const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(profile)}.desktop`)
-    const appImageFile = path.join(APP_ROOT, 'dist', appName(profile))
     const configFile   = configLabel ? path.join(CONFIGS_DIR, `build.${configLabel}.json`) : null
-    const profileDir   = path.join(app.getPath('appData'), 'voltage', profile)
+    // Read the config so the AppImage/profile overrides are honoured when removing files.
+    let cfg = { profile }
+    try { if (configFile && fs.existsSync(configFile)) cfg = JSON.parse(fs.readFileSync(configFile, 'utf8')) } catch {}
+    const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(profile)}.desktop`)
+    const appImageFile = appImagePath(cfg, DIST_DIR)
+    const profileData  = profileDir(cfg, VOLTAGE_DATA)
     try {
       if (fs.existsSync(desktopFile))                                  fs.rmSync(desktopFile)
       if (fs.existsSync(appImageFile))                                 fs.rmSync(appImageFile)
+      fs.rmSync(`${appImageFile}.version`, { force: true })
       if (deleteConfig     && configFile && fs.existsSync(configFile)) fs.rmSync(configFile)
-      if (deleteProfileData && fs.existsSync(profileDir))              fs.rmSync(profileDir, { recursive: true })
+      if (deleteProfileData && fs.existsSync(profileData))             fs.rmSync(profileData, { recursive: true })
 
       // When a private config is deleted, check if an embedded config for the same
       // profile exists so the client can restore the (now visible again) embedded card.
@@ -200,6 +236,10 @@ module.exports = function registerAppHandlers() {
         plugins:              cfg.plugins   || null,
         pluginConfig:         cfg.pluginConfig || null,
         category:             cfg.category  || null,
+        outputDir:            cfg.outputDir || null,
+        profileDir:           cfg.profileDir || null,
+        appImagePath:         appImagePath(cfg, DIST_DIR),
+        profilePath:          profileDir(cfg, VOLTAGE_DATA),
       },
     }
   })
@@ -212,6 +252,29 @@ module.exports = function registerAppHandlers() {
     let existing = {}
     try { existing = JSON.parse(fs.readFileSync(filePath, 'utf8')) } catch {}
     const cfg = buildAppCfg(data, existing)
+
+    // The output/profile folder changed: move the existing AppImage (+ its .version sidecar) and
+    // the existing profile data to the new locations, and keep the installed launcher pointing at
+    // the moved AppImage. Done before persisting so a failed move leaves config and files in sync.
+    try {
+      const oldImg = appImagePath(existing, DIST_DIR)
+      const newImg = appImagePath(cfg, DIST_DIR)
+      if (oldImg !== newImg && fs.existsSync(oldImg)) {
+        movePath(oldImg, newImg)
+        if (fs.existsSync(`${oldImg}.version`)) movePath(`${oldImg}.version`, `${newImg}.version`)
+        const desktopFile = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(data.profile)}.desktop`)
+        if (fs.existsSync(desktopFile)) {
+          const patched = fs.readFileSync(desktopFile, 'utf8').replace(/^Exec=.*$/m, `Exec=${newImg} --no-sandbox %u`)
+          fs.writeFileSync(desktopFile, patched, 'utf8')
+        }
+      }
+      const oldProfile = profileDir(existing, VOLTAGE_DATA)
+      const newProfile = profileDir(cfg, VOLTAGE_DATA)
+      if (oldProfile !== newProfile && fs.existsSync(oldProfile)) movePath(oldProfile, newProfile)
+    } catch (err) {
+      return { success: false, error: `Failed to move files: ${err.message}` }
+    }
+
     try {
       fs.writeFileSync(filePath, JSON.stringify(cfg, null, 4), 'utf8')
     } catch (err) {
@@ -240,6 +303,10 @@ module.exports = function registerAppHandlers() {
         plugins:              cfg.plugins   || null,
         pluginConfig:         cfg.pluginConfig || null,
         category:             cfg.category  || null,
+        outputDir:            cfg.outputDir || null,
+        profileDir:           cfg.profileDir || null,
+        appImagePath:         appImagePath(cfg, DIST_DIR),
+        profilePath:          profileDir(cfg, VOLTAGE_DATA),
       },
     }
   })

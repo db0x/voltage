@@ -9,6 +9,11 @@ const os      = require('node:os')
 const { APP_ROOT, CONFIGS_DIR, pkg } = require('./paths')
 const { resolveIconsByGtk }          = require('./icons')
 const { appName }                    = require('../../../app-naming')
+const { appImagePath, profileDir }   = require('../../../app-paths')
+
+// Default locations the per-app overrides fall back to.
+const DIST_DIR      = path.join(APP_ROOT, 'dist')
+const VOLTAGE_DATA  = path.join(app.getPath('appData'), 'voltage')
 
 // Inline semver comparison — avoids pulling in a dedicated package just for this.
 function semverLt(a, b) {
@@ -23,9 +28,9 @@ function semverLt(a, b) {
 
 // Reads the builtVersion and builtRclone flags from a .version sidecar file.
 // Returns { builtVersion: null, builtRclone: false } when the file is absent or unreadable.
-function readVersionSidecar(profile) {
+function readVersionSidecar(cfg) {
   try {
-    const raw = fs.readFileSync(path.join(APP_ROOT, 'dist', `${appName(profile)}.version`), 'utf8').trim()
+    const raw = fs.readFileSync(`${appImagePath(cfg, DIST_DIR)}.version`, 'utf8').trim()
     try {
       // Current format: JSON with version + optional capability flags.
       const meta = JSON.parse(raw)
@@ -61,7 +66,7 @@ function buildSingleApp(configFile, defaultMailDesktop) {
   const f   = path.basename(configFile)
   const cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'))
   const configLabel  = f.replace(/^build\.(.+)\.json$/, '$1')
-  const built        = fs.existsSync(path.join(APP_ROOT, 'dist', appName(cfg.profile)))
+  const built        = fs.existsSync(appImagePath(cfg, DIST_DIR))
   const desktopFile  = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(cfg.profile)}.desktop`)
   const installed    = fs.existsSync(desktopFile)
   let   iconValue    = cfg.icon || null
@@ -69,7 +74,7 @@ function buildSingleApp(configFile, defaultMailDesktop) {
     const m = fs.readFileSync(desktopFile, 'utf8').match(/^Icon=(.+)$/m)
     if (m) iconValue = m[1].trim()
   }
-  const { builtVersion, builtRclone } = readVersionSidecar(cfg.profile)
+  const { builtVersion, builtRclone } = readVersionSidecar(cfg)
   const minVer = pkg.minAppImageVersion ?? pkg.version
   let iconPath = null
   if (iconValue && iconValue !== 'voltage') {
@@ -85,8 +90,9 @@ function buildSingleApp(configFile, defaultMailDesktop) {
     profile: cfg.profile, configLabel, name: cfg.name, url: cfg.url,
     built, installed, isPrivate: f.startsWith('build.private.'),
     iconPath,
-    appImagePath: path.join(APP_ROOT, 'dist', appName(cfg.profile)),
-    profilePath:  path.join(app.getPath('appData'), 'voltage', cfg.profile),
+    appImagePath: appImagePath(cfg, DIST_DIR),
+    profilePath:  profileDir(cfg, VOLTAGE_DATA),
+    outputDir: cfg.outputDir || null, profileDir: cfg.profileDir || null,
     icon: cfg.icon || null, geometry: cfg.geometry || null,
     userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
     singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
@@ -107,13 +113,13 @@ function buildSingleApp(configFile, defaultMailDesktop) {
 const FORM_MANAGED_KEYS = new Set([
   'profile', 'url', 'name', 'icon', 'geometry', 'userAgent',
   'internalDomains', 'routingUrls', 'crossOriginIsolation', 'singleInstance',
-  'mimeTypes', 'plugins', 'pluginConfig', 'category',
+  'mimeTypes', 'plugins', 'pluginConfig', 'category', 'outputDir', 'profileDir',
 ])
 
 // Builds a config object from create/edit form data, omitting falsy/default fields.
 // `existing` is the config currently on disk (empty for create): its non-form-managed
 // keys are preserved, and its mimeTypes are kept (the form only toggles the mailto entry).
-function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig, categories }, existing = {}) {
+function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig, categories, outputDir, profileDir }, existing = {}) {
   const cfg = { profile, url }
   if (name)  cfg.name = name
   if (icon)  cfg.icon = icon
@@ -167,6 +173,11 @@ function buildAppCfg({ profile, name, url, icon, width, height, userAgent, inter
     const list = categories.map(c => c.trim()).filter(Boolean)
     if (list.length) cfg.category = list
   }
+
+  // Per-app overrides for where the AppImage is built and where its profile/session data lives.
+  // Stored only when non-empty so a default-location app keeps a clean config.
+  if (outputDir && outputDir.trim())  cfg.outputDir  = outputDir.trim()
+  if (profileDir && profileDir.trim()) cfg.profileDir = profileDir.trim()
 
   // Carry over every field the form does not manage (rclone*, mime icons, …).
   for (const [k, v] of Object.entries(existing)) {

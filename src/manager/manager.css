@@ -1213,6 +1213,18 @@ body.dark .domain-add-row select {
   color: #3584e4;
 }
 
+/* The folder "browse" pill carries an SVG icon instead of text — size it and invert in dark mode
+   like the other SVG icons, since the asset is drawn in a dark currentColor. */
+.btn-reveal img {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+body.dark .btn-reveal img {
+  filter: invert(1);
+}
+
 .app-select-trigger {
   flex: 1;
   background: transparent;
@@ -1615,6 +1627,16 @@ body.dark .dialog-field-toggle {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Badge marking a profile that lives outside the default location (tooltip shows the path). */
+.profile-custom-badge {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+body.dark .profile-custom-badge {
+  filter: invert(1);
 }
 
 .profile-size-icon {

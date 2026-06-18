@@ -7,10 +7,23 @@ const fs   = require('node:fs')
 const { spawnSync } = require('node:child_process')
 
 const { CONFIGS_DIR } = require('../lib/paths')
+const { profileDir }  = require('../../../app-paths')
 
 module.exports = function registerProfileHandlers() {
+  const VOLTAGE_DATA = path.join(app.getPath('appData'), 'voltage')
+
+  // Reads an app's config by raw profile (private wins over embedded) so the per-app profileDir
+  // override is honoured. Falls back to a bare {profile} = default location.
+  function readCfgByProfile(profile) {
+    for (const f of [`build.private.${profile}.json`, `build.${profile}.json`]) {
+      const p = path.join(CONFIGS_DIR, f)
+      try { if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8')) } catch {}
+    }
+    return { profile }
+  }
+
   ipcMain.handle('manager:delete-profile-data', (event, profile) => {
-    const dir = path.join(app.getPath('appData'), 'voltage', profile)
+    const dir = profileDir(readCfgByProfile(profile), VOLTAGE_DATA)
     try {
       if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true })
       return { success: true }
@@ -20,21 +33,28 @@ module.exports = function registerProfileHandlers() {
   })
 
   ipcMain.handle('manager:profile-sizes', () => {
-    const all = fs.readdirSync(CONFIGS_DIR)
-      .filter(f => /^build\..+\.json$/.test(f))
-      .map(f => {
-        const cfg = JSON.parse(fs.readFileSync(path.join(CONFIGS_DIR, f), 'utf8'))
-        return { profile: cfg.profile, name: cfg.name || null }
-      })
-    // Deduplicate by profile — private and embedded configs share the same profile dir.
-    // Files are read in alphabetical order, so build.private.* overwrites build.* in the Map.
-    const configs = [...new Map(all.map(c => [c.profile, c])).values()]
-    return configs.map(({ profile, name }) => {
-      const dir = path.join(app.getPath('appData'), 'voltage', profile)
-      if (!fs.existsSync(dir)) return { profile, name, dir, bytes: 0, exists: false }
+    // Deduplicate by profile. A profile can have both an embedded (build.*) and a private
+    // (build.private.*) config; the private one wins because it carries the editable profileDir
+    // override. (readdir order is not guaranteed, so prefer private explicitly rather than relying
+    // on which file is read last.)
+    const byProfile = new Map()
+    for (const f of fs.readdirSync(CONFIGS_DIR).filter(f => /^build\..+\.json$/.test(f))) {
+      let cfg
+      try { cfg = JSON.parse(fs.readFileSync(path.join(CONFIGS_DIR, f), 'utf8')) } catch { continue }
+      const isPrivate = f.startsWith('build.private.')
+      if (!byProfile.has(cfg.profile) || isPrivate) {
+        byProfile.set(cfg.profile, { profile: cfg.profile, name: cfg.name || null, profileDir: cfg.profileDir || null })
+      }
+    }
+    const configs = [...byProfile.values()]
+    return configs.map(({ profile, name, profileDir: override }) => {
+      // Honour the per-app profileDir override so a relocated profile still shows up here.
+      const dir = profileDir({ profile, profileDir: override }, VOLTAGE_DATA)
+      const custom = !!override
+      if (!fs.existsSync(dir)) return { profile, name, dir, bytes: 0, exists: false, custom }
       const r = spawnSync('du', ['-sb', dir], { encoding: 'utf8' })
       const bytes = r.status === 0 ? parseInt((r.stdout || '').split('\t')[0]) || 0 : 0
-      return { profile, name, dir, bytes, exists: true }
+      return { profile, name, dir, bytes, exists: true, custom }
     })
   })
 

@@ -115,6 +115,7 @@ const ctx = {
     obsidian:       s('obsidian'),
     gnomeMenu:      s('gnomeMenu'),
     gnome:          s('gnome'),
+    folderOpen:     s('folderOpen'),
     rclonePlugin:   s('rclonePlugin'),
     pluginBadge:    s('pluginBadge'),
     shadow:         s('shadow'),
