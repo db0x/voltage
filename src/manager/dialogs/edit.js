@@ -4,6 +4,7 @@ import { initDomainList }    from '../domain-list.js'
 import { initRoutingUrlList } from '../routing-url-field.js'
 import { initPluginList }    from '../plugin-list.js'
 import { initCategoryList, collectCategories } from '../category-list.js'
+import { initFolderField } from '../folder-field.js'
 
 export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, icons, templates }, { iconPicker, showConfirm, openPluginConfig }) {
   const overlay = applyTemplate(templates.edit, { i18n, vars: { appDefaultSrc } })
@@ -26,6 +27,9 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
   const domainList    = initDomainList('edit-domain-list', 'edit-domain-input', 'edit-domain-add', () => updateSaveBtn())
   // Category picker: chips + suggestion dropdown of existing categories, plus free-text creation.
   const categoryList  = initCategoryList('edit-category-list', 'edit-category-input', 'edit-category-add', () => updateSaveBtn())
+  // Optional per-app locations: where the AppImage is built and where its profile/session data lives.
+  const outputDirField  = initFolderField('edit-outputdir-btn',  'edit-outputdir-name',  'edit-outputdir-clear',  'edit-outputdir-reveal',  i18n, () => updateSaveBtn())
+  const profileDirField = initFolderField('edit-profiledir-btn', 'edit-profiledir-name', 'edit-profiledir-clear', 'edit-profiledir-reveal', i18n, () => updateSaveBtn())
   // currentProfile is read live (set in openEditDialog) so the overlap check excludes this app.
   const routingList   = initRoutingUrlList('edit', () => currentProfile, { tr, onChange: () => updateSaveBtn() })
 
@@ -78,6 +82,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
       routingUrls:        routingList.get().join(','),
       // Sorted join so the dirty check reacts only to which categories are chosen, not order.
       categories:         categoryList.get().slice().sort().join(','),
+      outputDir:          outputDirField.get(),
+      profileDir:         profileDirField.get(),
       crossOriginIsolation: document.getElementById('edit-coi').classList.contains('active'),
       singleInstance:       document.getElementById('edit-single-instance').classList.contains('active'),
       mailHandler:          document.getElementById('edit-mail-handler').classList.contains('active'),
@@ -215,30 +221,6 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     updateSaveBtn()
   })
 
-  function renderInfoSection(app) {
-    const section = document.getElementById('edit-info-section')
-    const pathField = (label, value) => `
-      <div class="dialog-field">
-        <label>${label}</label>
-        <div class="dialog-field-path">
-          <div class="value">${value}</div>
-          <button class="btn-reveal" data-reveal="${value}" data-tooltip="${i18n.infoReveal}">…</button>
-        </div>
-      </div>`
-
-    if (app.built) {
-      section.innerHTML =
-        pathField(i18n.infoAppImage,   app.appImagePath) +
-        pathField(i18n.infoProfileDir, app.profilePath)
-    } else {
-      section.innerHTML = `<p style="color:var(--card-url);font-size:0.85em;margin:4px 0 8px">${i18n.infoNotBuilt}</p>`
-    }
-
-    section.querySelectorAll('[data-reveal]').forEach(btn =>
-      btn.addEventListener('click', () => window.managerAPI.revealPath(btn.dataset.reveal))
-    )
-  }
-
   function closeEditDialog() {
     clearTimeout(urlCheckTimer)
     overlay.classList.add('hidden')
@@ -289,6 +271,11 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     categoryList.set(app.category || [])
     // Suggest every category in use (read live from the cards), beyond this app's own.
     categoryList.setSuggestions(collectCategories())
+    // Show/reveal the effective folder: the override, or the resolved default (the AppImage's parent
+    // directory and the profile dir) so the field doubles as the old read-only path display.
+    const outputDefault = app.appImagePath ? app.appImagePath.replace(/[/\\][^/\\]*$/, '') : ''
+    outputDirField.set(app.outputDir || '', outputDefault)
+    profileDirField.set(app.profileDir || '', app.profilePath || '')
 
     const coiBtn = document.getElementById('edit-coi')
     if (app.crossOriginIsolation) coiBtn.classList.add('active')
@@ -306,7 +293,6 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     // Deep copy so editing in the config dialog doesn't mutate the app object until save.
     pluginConfig = app.pluginConfig ? JSON.parse(JSON.stringify(app.pluginConfig)) : {}
 
-    renderInfoSection(app)
     initialSnapshot = snapshot()
     saveBtn.disabled = true
 

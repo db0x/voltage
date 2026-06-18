@@ -155,6 +155,9 @@
   "createPluginChoose":   "— Plugin wählen —",
   "createCategories":     "Kategorien",
   "createCategoryPlaceholder": "Kategorie hinzufügen oder wählen…",
+  "createOutputDir":      "AppImage-Ordner",
+  "createProfileDir":     "Profil-Ordner",
+  "createFolderDefault":  "Standardort",
   "createCancel":         "Abbrechen",
   "createSave":           "Speichern",
   "createUaDefault":      "— Standard (nicht gesetzt) —",
@@ -167,6 +170,8 @@
   "tooltipMailHandler":    "Registriert diese App systemweit als Standard für mailto:-Links. Ein Klick auf eine E-Mail-Adresse öffnet direkt das Compose-Fenster dieser App.",
   "tooltipPlugins":        "Zusätzliche, mit dieser App ausgelieferte Skripte, die ihr Verhalten erweitern – z. B. das Routen von OneDrive-Dokumenten an Word/Excel oder das automatische Öffnen des Compose-Dialogs einer Webmail-App. Eine Änderung der Auswahl erfordert ein Neu-Erstellen des AppImage.",
   "tooltipCategories":     "Ordne diese App einer oder mehreren Kategorien zu. Wähle aus vorhandenen oder tippe einen neuen Namen, um eine Kategorie zu erstellen. Kategorien dienen zum Filtern der App-Liste.",
+  "tooltipOutputDir":      "Wohin das erstellte AppImage gelegt wird. Standard = der dist/-Ordner des Projekts. Eine Änderung an einer bestehenden App verschiebt das AppImage in den neuen Ordner.",
+  "tooltipProfileDir":     "Wo diese App ihre Sitzungs-/Profildaten (Cookies, Logins, Cache) speichert. Standard = ~/.config/voltage/<profile>. Eine Änderung wirkt nach dem nächsten Neu-Erstellen; vorhandene Daten werden in den neuen Ordner verschoben.",
 
   "validPattern":  "Nur Kleinbuchstaben, Ziffern und Bindestriche",
   "validExists":   "Profil existiert bereits",

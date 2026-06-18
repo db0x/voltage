@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('managerAPI', {
   deleteApp:    (params)  => ipcRenderer.invoke('manager:delete',       params),
   launchApp:    (profile) => ipcRenderer.invoke('manager:launch',       profile),
   revealPath:   (p)       => ipcRenderer.invoke('manager:reveal-path',    p),
+  pickFolder:   (current) => ipcRenderer.invoke('manager:pick-folder',    current),
   checkProfile: (profile) => ipcRenderer.invoke('manager:check-profile', profile),
   checkRoutingOverlap: (profile, url, kind) => ipcRenderer.invoke('manager:check-routing-overlap', { profile, url, kind }),
   createApp:    (data)    => ipcRenderer.invoke('manager:create-app',    data),

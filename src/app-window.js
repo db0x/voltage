@@ -12,6 +12,7 @@ const pkg = require(app.getAppPath() + '/package.json')
 const { createWindow, dispatchLaunchArg } = require('./window')
 const { parseMailtoFields }         = require('./mailto')
 const { wmClass }                   = require('./app-naming')
+const { profileDir }                = require('./app-paths')
 
 // draw.io SVG files embed the diagram XML as HTML-escaped content= attribute value.
 function extractXmlFromDrawioSvg(content) {
@@ -113,7 +114,9 @@ module.exports = function setupAppWindow() {
   // the rename never migrates a user's stored data.
   app.setName(wmClass(pkg.profile))
   app.commandLine.appendSwitch('wm-class', wmClass(pkg.profile))
-  app.setPath('userData', path.join(app.getPath('appData'), 'voltage', pkg.profile))
+  // Session/profile lives under the per-app profileDir override (baked into the AppImage at build
+  // time) or the default <appData>/voltage/<profile>. The raw profile stays the identity key.
+  app.setPath('userData', profileDir(pkg, path.join(app.getPath('appData'), 'voltage')))
 
   // acceptsFileArg lets an app receive a bare local file path as a launch argument; the file
   // itself is handled either by the built-in draw.io fileHandler (resolveFileUrl) or by a

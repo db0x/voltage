@@ -155,6 +155,9 @@
   "createPluginChoose":   "— Choose plugin —",
   "createCategories":     "Categories",
   "createCategoryPlaceholder": "Add or pick a category…",
+  "createOutputDir":      "AppImage folder",
+  "createProfileDir":     "Profile folder",
+  "createFolderDefault":  "Default location",
   "createCancel":         "Cancel",
   "createSave":           "Save",
   "createUaDefault":      "— Default (not set) —",
@@ -167,6 +170,8 @@
   "tooltipMailHandler":    "Registers this app system-wide as the default for mailto: links. Clicking an email address anywhere opens the compose window directly in this app.",
   "tooltipPlugins":        "Extra scripts shipped with this app that extend its behaviour — e.g. routing OneDrive documents to Word/Excel, or auto-opening a webmail app's compose dialog. Changing the selection requires rebuilding the AppImage.",
   "tooltipCategories":     "Group this app under one or more categories. Pick from existing ones or type a new name to create it. Categories are used to filter the app list.",
+  "tooltipOutputDir":      "Where the built AppImage is placed. Leave at the default to use the project's dist/ folder. Changing it for an existing app moves the AppImage to the new folder.",
+  "tooltipProfileDir":     "Where this app stores its session/profile data (cookies, logins, cache). Default is ~/.config/voltage/<profile>. A change takes effect after the next rebuild; existing data is moved to the new folder.",
 
   "validPattern":  "Only lowercase letters, digits and hyphens",
   "validExists":   "Profile already exists",

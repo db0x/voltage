@@ -6,14 +6,27 @@ const path = require('node:path')
 const fs   = require('node:fs')
 const { spawn, spawnSync } = require('node:child_process')
 
-const { APP_ROOT } = require('../lib/paths')
+const { APP_ROOT, CONFIGS_DIR } = require('../lib/paths')
 const { appName }  = require('../../../app-naming')
+const { appImagePath } = require('../../../app-paths')
+
+const DIST_DIR = path.join(APP_ROOT, 'dist')
+
+// Reads an app's config by raw profile (private config wins over an embedded one), so launch/build
+// can honour the per-app outputDir. Falls back to a bare {profile} (default dist/ location).
+function readCfgByProfile(profile) {
+  for (const f of [`build.private.${profile}.json`, `build.${profile}.json`]) {
+    const p = path.join(CONFIGS_DIR, f)
+    try { if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8')) } catch {}
+  }
+  return { profile }
+}
 
 module.exports = function registerLifecycleHandlers() {
   ipcMain.handle('manager:launch', (event, profile) => {
-    const appImagePath = path.join(APP_ROOT, 'dist', appName(profile))
-    if (!fs.existsSync(appImagePath)) return { success: false }
-    const child = spawn(appImagePath, ['--no-sandbox'], { detached: true, stdio: 'ignore' })
+    const appImageFile = appImagePath(readCfgByProfile(profile), DIST_DIR)
+    if (!fs.existsSync(appImageFile)) return { success: false }
+    const child = spawn(appImageFile, ['--no-sandbox'], { detached: true, stdio: 'ignore' })
     child.unref()
     return { success: true }
   })
@@ -47,8 +60,12 @@ module.exports = function registerLifecycleHandlers() {
         let builtRclone = false
         if (code === 0) {
           try {
-            const raw  = fs.readFileSync(path.join(APP_ROOT, 'dist', `${appName(configLabel)}.version`), 'utf8').trim()
-            const meta = JSON.parse(raw)
+            // Read the sidecar next to the (possibly relocated) AppImage. configLabel is the build
+            // arg ("teams" or "private.teams"), i.e. the config file's name without build./.json.
+            let cfg
+            try { cfg = JSON.parse(fs.readFileSync(path.join(CONFIGS_DIR, `build.${configLabel}.json`), 'utf8')) }
+            catch { cfg = { profile: configLabel.replace(/^private\./, '') } }
+            const meta = JSON.parse(fs.readFileSync(`${appImagePath(cfg, DIST_DIR)}.version`, 'utf8').trim())
             builtRclone = meta.rcloneFileHandler ?? false
           } catch { /* version file missing or old plain-string format */ }
         }

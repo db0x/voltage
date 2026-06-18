@@ -92,6 +92,8 @@ The **+** card opens the **Create App** dialog. All options are available from t
 | URL | The URL loaded on startup |
 | Icon | A searchable picker over the system icon theme |
 | Categories | Group the app under one or more categories — pick existing ones from the dropdown or type a new name to create it |
+| AppImage folder | Where the AppImage is built (native folder picker; empty = the project's `dist/`) |
+| Profile folder | Where the app stores its session/profile data (native folder picker; empty = `~/.config/voltage/<profile>`) |
 | Width / Height | Initial window size (optional) |
 | User-Agent | A preset, or empty for the default Electron UA |
 | Internal domains | Extra domains that open inside the app window (e.g. OAuth redirects) |
@@ -241,6 +243,8 @@ Apps can also be configured by hand — useful for bulk setup, version-controlle
 | `userAgent` | string | Override the user-agent string |
 | `geometry.width/height` | number | Initial window size (default: 1280 × 1024) |
 | `geometry.x/y` | number | Initial window position — _deprecated, X11 only_ |
+| `outputDir` | string | Absolute folder the AppImage (and its `.version` sidecar) is built into. Default: the project's `dist/`. Editing it in the Manager moves an already-built AppImage to the new folder |
+| `profileDir` | string | Absolute folder for the app's session/profile data (cookies, logins, cache). Default: `~/.config/voltage/<profile>`. Baked into the AppImage at build time, so a change takes effect after the next rebuild; editing it in the Manager moves existing data to the new folder |
 | `internalDomains` | string \| array | Extra domains allowed to open inside the app window (e.g. OAuth providers) |
 | `routingUrls` | array | Extra URLs that route to this app, in addition to `url`. Each entry is `host[/path]` and may use `*` as a greedy wildcard. Matching runs against path **and** query string and may carry **negative clauses** — see [Advanced routing patterns](#advanced-routing-patterns). A routing URL may overlap another app's **base** URL (the routing URL wins), but not another app's **routing** URL |
 | `crossOriginIsolation` | boolean | Enable `SharedArrayBuffer` — required for multi-threaded WASM (Google Earth) |

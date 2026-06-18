@@ -4,6 +4,7 @@ import { initDomainList } from '../domain-list.js'
 import { initRoutingUrlList } from '../routing-url-field.js'
 import { initPluginList } from '../plugin-list.js'
 import { initCategoryList, collectCategories } from '../category-list.js'
+import { initFolderField } from '../folder-field.js'
 
 export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, icons, templates }, { iconPicker, applyVisibility, createCard, insertCard, openPluginConfig }) {
   const overlay = applyTemplate(templates.create, { i18n, vars: { appDefaultSrc } })
@@ -26,6 +27,9 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
   const domainList = initDomainList('create-domain-list', 'create-domain-input', 'create-domain-add', () => {})
   // Category picker: chips + suggestion dropdown of existing categories, plus free-text creation.
   const categoryList = initCategoryList('create-category-list', 'create-category-input', 'create-category-add', () => {})
+  // Optional per-app locations: where the AppImage is built and where its profile/session data lives.
+  const outputDirField  = initFolderField('create-outputdir-btn',  'create-outputdir-name',  'create-outputdir-clear',  'create-outputdir-reveal',  i18n)
+  const profileDirField = initFolderField('create-profiledir-btn', 'create-profiledir-name', 'create-profiledir-clear', 'create-profiledir-reveal', i18n)
   // getProfile reads the profile input live: the overlap check excludes the app's own
   // profile, and the field may change while the dialog is open.
   const routingList = initRoutingUrlList(
@@ -239,6 +243,8 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     categoryList.reset()
     // Refresh suggestions from the live cards so categories created earlier this session show up.
     categoryList.setSuggestions(collectCategories())
+    outputDirField.reset()
+    profileDirField.reset()
     document.getElementById('create-coi').classList.remove('active')
     document.getElementById('create-single-instance').classList.remove('active')
     document.getElementById('create-mail-handler').classList.remove('active')
@@ -288,8 +294,10 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     const mailHandler          = document.getElementById('create-mail-handler').classList.contains('active')
     const plugins              = pluginList.get()
     const categories           = categoryList.get()
+    const outputDir            = outputDirField.get()
+    const profileDir           = profileDirField.get()
     saveBtn.disabled = true
-    const result = await window.managerAPI.createApp({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig, categories })
+    const result = await window.managerAPI.createApp({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig, categories, outputDir, profileDir })
     if (result.success) {
       closeCreateDialog()
       insertCard(createCard(result.app))

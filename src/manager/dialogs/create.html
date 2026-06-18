@@ -69,6 +69,30 @@
         </select>
       </div>
       <div class="dialog-field">
+        <label>{{createOutputDir}}
+          <span class="field-help" data-tooltip="{{tooltipOutputDir}}">?</span>
+        </label>
+        <div class="icon-picker-row">
+          <button type="button" id="create-outputdir-btn" class="icon-picker-btn">
+            <span id="create-outputdir-name" class="icon-picker-placeholder">{{createFolderDefault}}</span>
+          </button>
+          <button type="button" id="create-outputdir-reveal" class="btn-reveal" data-tooltip="{{infoReveal}}" style="display:none">…</button>
+          <button type="button" id="create-outputdir-clear" class="icon-clear-btn" style="display:none">✕</button>
+        </div>
+      </div>
+      <div class="dialog-field">
+        <label>{{createProfileDir}}
+          <span class="field-help" data-tooltip="{{tooltipProfileDir}}">?</span>
+        </label>
+        <div class="icon-picker-row">
+          <button type="button" id="create-profiledir-btn" class="icon-picker-btn">
+            <span id="create-profiledir-name" class="icon-picker-placeholder">{{createFolderDefault}}</span>
+          </button>
+          <button type="button" id="create-profiledir-reveal" class="btn-reveal" data-tooltip="{{infoReveal}}" style="display:none">…</button>
+          <button type="button" id="create-profiledir-clear" class="icon-clear-btn" style="display:none">✕</button>
+        </div>
+      </div>
+      <div class="dialog-field">
         <label>{{createDomains}}
           <span class="field-help" data-tooltip="{{tooltipDomains}}">?</span>
         </label>

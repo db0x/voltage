@@ -4,9 +4,17 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { installDesktop, installIcon } = require('./lib')
 const { appName } = require('../src/app-naming')
+const { appImagePath } = require('../src/app-paths')
 
 const APP_ID_BASE = 'de.db0x.voltage'
 const CONFIGS_DIR = path.join(__dirname, '..', 'webapps')
+
+// Move a file, falling back to copy+remove across filesystems (a custom output dir may sit on a
+// different mount than dist/, where rename() would fail with EXDEV).
+function moveFile(src, dest) {
+  try { fs.renameSync(src, dest) }
+  catch { fs.copyFileSync(src, dest); fs.rmSync(src, { force: true }) }
+}
 
 // Validates that each configured plugin path resolves to an existing file under webapps/.
 // The plugin files themselves ship inside the AppImage (the whole webapps/ tree is packaged),
@@ -56,6 +64,9 @@ function expandConfig(app) {
       // the artifact name (e.g. "vTeams"). The human-readable label travels separately as displayName (UI like
       // the About panel); window.js falls back to pkg.profile when a config sets no name.
       ...(app.name                && { displayName: app.name }),
+      // Baked in so the AppImage runtime stores its session under the user's chosen folder
+      // (app-window.js reads pkg.profileDir). outputDir is a build/Manager concern only, not baked.
+      ...(app.profileDir          && { profileDir: app.profileDir }),
       ...(app.userAgent           && { userAgent: app.userAgent }),
       ...(app.geometry            && { geometry:  app.geometry  }),
       ...(app.internalDomains     && { internalDomains: app.internalDomains }),
@@ -98,7 +109,18 @@ async function buildOne(configFile) {
   // whether the app loads the rclone-sync plugin (rclone is a plugin, no longer a base flag).
   const hasRclonePlugin = (app.plugins ?? []).some(p => /(^|\/)rclone-sync\//.test(p))
   const meta = { version, ...(hasRclonePlugin && { rcloneFileHandler: true }) }
-  fs.writeFileSync(path.join('dist', `${appName(app.profile)}.version`), JSON.stringify(meta), 'utf8')
+  // electron-builder always writes into dist/ (build intermediates). Relocate just the finished
+  // AppImage to the per-app outputDir when set, and keep its .version sidecar next to it.
+  const distDir   = path.resolve('dist')
+  const builtFile = path.join(distDir, appName(app.profile))
+  const finalFile = appImagePath(app, distDir)
+  if (finalFile !== builtFile && fs.existsSync(builtFile)) {
+    fs.mkdirSync(path.dirname(finalFile), { recursive: true })
+    fs.rmSync(finalFile, { force: true })
+    moveFile(builtFile, finalFile)
+  }
+  fs.chmodSync(finalFile, 0o755)  // AppImages must stay executable (copy fallback may drop the bit)
+  fs.writeFileSync(`${finalFile}.version`, JSON.stringify(meta), 'utf8')
   installIcon()
   installDesktop(app)
 }
