@@ -7,7 +7,7 @@ import { initCategoryList, collectCategories } from '../category-list.js'
 import { initFolderField } from '../folder-field.js'
 
 export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, icons, templates }, { iconPicker, showConfirm, openPluginConfig }) {
-  const overlay = applyTemplate(templates.edit, { i18n, vars: { appDefaultSrc } })
+  const overlay = applyTemplate(templates.edit, { i18n, vars: { appDefaultSrc, folderOpenSrc: icons?.folderOpen } })
   document.body.appendChild(overlay)
 
   const uaSelect = document.getElementById('edit-useragent')
@@ -28,8 +28,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
   // Category picker: chips + suggestion dropdown of existing categories, plus free-text creation.
   const categoryList  = initCategoryList('edit-category-list', 'edit-category-input', 'edit-category-add', () => updateSaveBtn())
   // Optional per-app locations: where the AppImage is built and where its profile/session data lives.
-  const outputDirField  = initFolderField('edit-outputdir-btn',  'edit-outputdir-name',  'edit-outputdir-clear',  'edit-outputdir-reveal',  i18n, () => updateSaveBtn())
-  const profileDirField = initFolderField('edit-profiledir-btn', 'edit-profiledir-name', 'edit-profiledir-clear', 'edit-profiledir-reveal', i18n, () => updateSaveBtn())
+  const outputDirField  = initFolderField('edit-outputdir-name',  'edit-outputdir-btn',  'edit-outputdir-reveal',  'edit-outputdir-clear',  i18n, () => updateSaveBtn())
+  const profileDirField = initFolderField('edit-profiledir-name', 'edit-profiledir-btn', 'edit-profiledir-reveal', 'edit-profiledir-clear', i18n, () => updateSaveBtn())
   // currentProfile is read live (set in openEditDialog) so the overlap check excludes this app.
   const routingList   = initRoutingUrlList('edit', () => currentProfile, { tr, onChange: () => updateSaveBtn() })
 

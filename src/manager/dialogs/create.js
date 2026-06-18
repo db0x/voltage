@@ -7,7 +7,7 @@ import { initCategoryList, collectCategories } from '../category-list.js'
 import { initFolderField } from '../folder-field.js'
 
 export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, icons, templates }, { iconPicker, applyVisibility, createCard, insertCard, openPluginConfig }) {
-  const overlay = applyTemplate(templates.create, { i18n, vars: { appDefaultSrc } })
+  const overlay = applyTemplate(templates.create, { i18n, vars: { appDefaultSrc, folderOpenSrc: icons?.folderOpen } })
   document.body.appendChild(overlay)
 
   const uaSelect = document.getElementById('create-useragent')
@@ -28,8 +28,8 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
   // Category picker: chips + suggestion dropdown of existing categories, plus free-text creation.
   const categoryList = initCategoryList('create-category-list', 'create-category-input', 'create-category-add', () => {})
   // Optional per-app locations: where the AppImage is built and where its profile/session data lives.
-  const outputDirField  = initFolderField('create-outputdir-btn',  'create-outputdir-name',  'create-outputdir-clear',  'create-outputdir-reveal',  i18n)
-  const profileDirField = initFolderField('create-profiledir-btn', 'create-profiledir-name', 'create-profiledir-clear', 'create-profiledir-reveal', i18n)
+  const outputDirField  = initFolderField('create-outputdir-name',  'create-outputdir-btn',  'create-outputdir-reveal',  'create-outputdir-clear',  i18n)
+  const profileDirField = initFolderField('create-profiledir-name', 'create-profiledir-btn', 'create-profiledir-reveal', 'create-profiledir-clear', i18n)
   // getProfile reads the profile input live: the overlap check excludes the app's own
   // profile, and the field may change while the dialog is open.
   const routingList = initRoutingUrlList(

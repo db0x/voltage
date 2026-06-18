@@ -44,9 +44,9 @@ test('edit dialog: chosen AppImage and profile folders persist to the config', a
 
 // Setup:    Edit dialog for test-user-app, which has no custom folders set.
 // Action:   Open the dialog.
-// Expected: With no override, each field shows the resolved default path (the dist/ output folder
-//           and the profile folder) and hides the clear (✕) button — proving the field doubles as
-//           the path display, and that an unset folder means "use the default location".
+// Expected: Each field shows the resolved default path (the dist/ output folder and the profile
+//           folder) read-only and hides the reset (✕) button — so the field doubles as the path
+//           display and an unset folder means "default location".
 test('edit dialog: folder fields show the resolved default path when unset', async ({ managerPage }) => {
   const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
   await card.hover()

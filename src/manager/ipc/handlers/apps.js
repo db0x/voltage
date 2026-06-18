@@ -142,12 +142,19 @@ module.exports = function registerAppHandlers() {
   })
 
   // Native folder picker for the create/edit dialogs' output- and profile-folder fields.
-  // Returns the chosen absolute path, or null when the user cancels.
+  // Returns the chosen absolute path, or null when the user cancels. The start folder is the
+  // nearest EXISTING ancestor of the current value — a non-existent defaultPath (e.g. a profile
+  // folder that hasn't been created yet) leaves the GTK chooser in a state where nothing can be
+  // confirmed, so we never hand it a path that doesn't exist.
   ipcMain.handle('manager:pick-folder', async (event, currentPath) => {
     const win = BrowserWindow.fromWebContents(event.sender)
+    let defaultPath = currentPath
+    while (defaultPath && !fs.existsSync(defaultPath) && defaultPath !== path.dirname(defaultPath)) {
+      defaultPath = path.dirname(defaultPath)
+    }
     const res = await dialog.showOpenDialog(win, {
       properties: ['openDirectory', 'createDirectory'],
-      ...(currentPath ? { defaultPath: currentPath } : {}),
+      ...(defaultPath && fs.existsSync(defaultPath) ? { defaultPath } : {}),
     })
     return res.canceled || !res.filePaths.length ? null : res.filePaths[0]
   })

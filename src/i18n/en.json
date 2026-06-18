@@ -158,6 +158,8 @@
   "createOutputDir":      "AppImage folder",
   "createProfileDir":     "Profile folder",
   "createFolderDefault":  "Default location",
+  "createFolderBrowse":   "Browse for a folder",
+  "createFolderReset":    "Reset to the default location",
   "createCancel":         "Cancel",
   "createSave":           "Save",
   "createUaDefault":      "— Default (not set) —",
@@ -255,6 +257,7 @@
   "profilesTotal":          "Total",
   "profilesFree":           "Free space",
   "profilesReveal":         "Open in file manager",
+  "profilesCustomPath":     "Custom location: {path}",
   "profilesEmpty":          "No data directory",
   "profilesDeleteConfirm":  "<p>Really delete profile data for <strong>{name}</strong>?</p><p>Cookies, login sessions and local data will be lost. The app remains installed.</p>",
 
