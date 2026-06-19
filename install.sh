@@ -193,12 +193,16 @@ install_desktop_entry() {
 
   mkdir -p "$DESKTOP_DIR"
   local desktop_file="$DESKTOP_DIR/voltage-manager.desktop"
+  # The launcher runs via a non-interactive shell, which does NOT source ~/.bashrc — so an nvm-
+  # managed node is not on PATH and `npm start` silently fails (the dash icon "does nothing").
+  # Source nvm here so node/npm are found regardless of the GNOME session's PATH. $HOME and $dest
+  # expand now, so the installed .desktop holds absolute paths (no runtime $ for the parser).
   cat > "$desktop_file" <<EOF
 [Desktop Entry]
 Version=1.0
 Name=Voltage
 Comment=Web App Manager (Voltage)
-Exec=bash -c 'cd "$dest" && npm start'
+Exec=bash -c 'export NVM_DIR="$HOME/.nvm"; [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"; cd "$dest" && npm start'
 Terminal=false
 Type=Application
 Icon=voltage
