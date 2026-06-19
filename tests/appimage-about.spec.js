@@ -148,6 +148,18 @@ test('a freshly built AppImage launches and shows correct About content', async 
     expect(text).toContain(`127.0.0.1:${port}`)
     expect(text).toContain('Electron')
     expect(text).toContain('Chromium')
+
+    // The footer links must open in the system browser (shell.openExternal), not a child window.
+    // Stub shell.openExternal to record the URL, click the first footer link, and assert no extra
+    // window opened.
+    await app.evaluate(({ shell }) => { global.__opened = []; shell.openExternal = (u) => { global.__opened.push(u); return Promise.resolve() } })
+    const windowsBefore = (await windowInfo()).count
+    await app.evaluate(async ({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows().find(w => w._voltageAboutView)
+      await win._voltageAboutView.webContents.executeJavaScript(`document.querySelector('a[target="_blank"]').click()`)
+    })
+    await expect.poll(() => app.evaluate(() => global.__opened || [])).toContain('https://github.com/db0x/voltage')
+    expect((await windowInfo()).count).toBe(windowsBefore)   // no child window spawned
   } finally {
     if (app) await app.close().catch(() => {})
     await new Promise(resolve => server.close(resolve))

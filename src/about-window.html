@@ -81,9 +81,9 @@
     // F12 (toggle) and Esc close from within the overlay; the main process also intercepts
     // F12 globally, but the focused overlay needs its own handler to react.
     document.addEventListener('keydown', e => { if (e.key === 'Escape' || e.key === 'F12') { e.preventDefault(); close(); } });
-    // External links: hand off to the system browser via the host's default handling.
+    // External links open in the system browser (not a child window) via the main process.
     for (const a of document.querySelectorAll('a[target="_blank"]')) {
-      a.addEventListener('click', e => { e.preventDefault(); window.open(a.href, '_blank'); });
+      a.addEventListener('click', e => { e.preventDefault(); window.aboutAPI.openExternal(a.href); });
     }
     // Safe Browsing badge — async; only shown for a definite verdict.
     const sb = document.getElementById('wa-sb');

@@ -7,7 +7,7 @@
 // want gone. The view holds our own HTML (rclone-dialog look) with a solid dark backdrop;
 // page-level transparency is unreliable on Linux/Wayland, so the backdrop is opaque.
 
-const { WebContentsView, ipcMain, app } = require('electron')
+const { WebContentsView, ipcMain, app, shell } = require('electron')
 const path = require('node:path')
 const fs   = require('node:fs')
 const os   = require('node:os')
@@ -175,6 +175,13 @@ function closeAbout(win) {
   win._voltageAboutCleanup = null
   win.webContents.focus()
 }
+
+// The About footer links (Voltage repo, Electron site) must open in the system browser, not a
+// child window. The overlay's renderer routes clicks here instead of calling window.open(); we only
+// hand off https:// URLs to the OS handler.
+ipcMain.on('about:open-external', (event, url) => {
+  if (typeof url === 'string' && /^https:\/\//.test(url)) shell.openExternal(url)
+})
 
 // 'about:close' is sent by the overlay's preload (close button / Esc / F12 / backdrop).
 ipcMain.on('about:close', (event) => {

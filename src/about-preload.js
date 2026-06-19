@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld('aboutAPI', {
   // ignoreExclude=true: the About panel reports the status even for apps excluded from the
   // passive link tooltip (matches the previous behaviour).
   checkSafeBrowsing: (url) => ipcRenderer.invoke('safe-browsing:check', url, true),
+  // Open the footer links (Voltage/Electron) in the system browser instead of a child window.
+  openExternal:      (url) => ipcRenderer.send('about:open-external', url),
 })
