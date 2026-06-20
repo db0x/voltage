@@ -20,6 +20,7 @@ import { initCards }           from './cards.js'
 import { initTooltip }         from './tooltip.js'
 import { initPluginConfig }    from './plugin-config.js'
 import { initColorPicker }     from './color-picker.js'
+import { initFocusRing }       from './focus.js'
 
 function toDisplayName(profile) {
   return profile
@@ -28,6 +29,8 @@ function toDisplayName(profile) {
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
 }
+
+initFocusRing()
 
 const dark = localStorage.getItem('dark') === '1'
 if (dark) document.body.classList.add('dark')

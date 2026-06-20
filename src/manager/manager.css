@@ -24,6 +24,16 @@
   --badge-mail-fg:      #8b1a4a;
   --badge-outdated-bg:  #fff0d0;
   --badge-outdated-fg:  #7a4800;
+  /* Adwaita blue. Default only — the AppImage css-variable override plugin may replace it. */
+  --accent:      #3584e4;
+}
+
+/* Single, theme-consistent keyboard focus ring. Without an explicit rule Chromium falls
+   back to the system accent (orange on this desktop), which looked like a stray glitch.
+   Scoped to :focus-visible so it appears only during keyboard navigation, not mouse clicks. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 body.dark {
