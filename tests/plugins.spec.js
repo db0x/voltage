@@ -438,3 +438,100 @@ test('edit dialog: the zoom step persists per app under pluginConfig', async ({ 
     try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
   }).toEqual({ 'plugins/zoom/zoom.js': { step: 0.2 } })
 })
+
+// Setup:    Edit dialog for test-user-app with the css-inject plugin (a repeatable list of
+//           variable→colour rows) added and its config dialog opened.
+// Action:   Fill the initial blank row, click "add" for a second row and fill it, then Apply + Save.
+// Expected: Both rows round-trip into pluginConfig as config.rules (an array) — proving the host's
+//           generic repeatable-list binding clones rows, the + button grows the list, and every
+//           row's fields persist as one array entry.
+test('edit dialog: css-inject overrides persist as a repeatable list under pluginConfig', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'css-inject' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'css-inject' })
+    .locator('.domain-configure-btn').click()
+
+  const overlay = managerPage.locator('.plugin-config-overlay')
+  const rows    = overlay.locator('[data-config-rows] .plugin-config-list-row')
+
+  // A fresh config seeds exactly one blank row to type into.
+  await expect(rows).toHaveCount(1)
+  // The colour field seeds from its per-row default (#00000000).
+  await expect(rows.nth(0).locator('[data-config-field="color"]')).toHaveValue('#00000000')
+
+  // Fill the first override.
+  await rows.nth(0).locator('[data-config-field="varName"]').fill('--color-bg-primary')
+  await rows.nth(0).locator('[data-config-field="color"]').evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, '#000000')
+
+  // Add a second override row and fill it.
+  await overlay.locator('.plugin-config-add-row').click()
+  await expect(rows).toHaveCount(2)
+  await rows.nth(1).locator('[data-config-field="varName"]').fill('--accent')
+  await rows.nth(1).locator('[data-config-field="color"]').evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, '#ff0000')
+
+  await overlay.locator('.plugin-config-apply').click()
+  await expect(managerPage.locator('#edit-save')).toBeEnabled()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/css-inject/css-inject.js': { rules: [
+    { varName: '--color-bg-primary', color: '#000000' },
+    { varName: '--accent',           color: '#ff0000' },
+  ] } })
+})
+
+// Setup:    css-inject added to test-user-app with two override rows stored (from the test above's
+//           sibling setup, rebuilt here so the test stands alone).
+// Action:   Re-open the config dialog, remove the first row, Apply + Save.
+// Expected: The stored rows load back one-per-row, and removing one drops exactly that entry —
+//           proving rows seed from config and the per-row remove button round-trips.
+test('edit dialog: css-inject rows load back and a removed row is dropped', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+
+  // First open: store two overrides.
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'css-inject' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'css-inject' })
+    .locator('.domain-configure-btn').click()
+  let overlay = managerPage.locator('.plugin-config-overlay')
+  let rows    = overlay.locator('[data-config-rows] .plugin-config-list-row')
+  await rows.nth(0).locator('[data-config-field="varName"]').fill('--color-bg-primary')
+  await rows.nth(0).locator('[data-config-field="color"]').evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, '#000000')
+  await overlay.locator('.plugin-config-add-row').click()
+  await rows.nth(1).locator('[data-config-field="varName"]').fill('--accent')
+  await rows.nth(1).locator('[data-config-field="color"]').evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, '#ff0000')
+  await overlay.locator('.plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  // Second open: the two stored rows load back (each seeded into its own row; no extra blank row
+  // is added when entries exist... the host always appends a trailing blank, so 2 stored => 3 rows).
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'css-inject' })
+    .locator('.domain-configure-btn').click()
+  overlay = managerPage.locator('.plugin-config-overlay')
+  rows    = overlay.locator('[data-config-rows] .plugin-config-list-row')
+  await expect(rows).toHaveCount(3)  // 2 stored + 1 trailing blank
+  await expect(rows.nth(0).locator('[data-config-field="varName"]')).toHaveValue('--color-bg-primary')
+  await expect(rows.nth(1).locator('[data-config-field="varName"]')).toHaveValue('--accent')
+
+  // Remove the first override, Apply, save.
+  await rows.nth(0).locator('[data-config-remove]').click()
+  await overlay.locator('.plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/css-inject/css-inject.js': { rules: [
+    { varName: '--accent', color: '#ff0000' },
+  ] } })
+})

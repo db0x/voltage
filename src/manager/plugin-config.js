@@ -16,6 +16,17 @@ import { applyTemplate } from './template.js'
 //   [data-config-swatch]                   — a colour-preview element; gets the value as the CSS
 //                                            var --swatch-color (style the element to use it)
 //   [data-config-enabled-by="<toggleKey>"] — dimmed + disabled while that toggle is off
+//
+// Repeatable rows — for a config value that is an array of small objects (e.g. css-inject's list
+// of variable→colour overrides):
+//   [data-config-list="<key>"]             — container; config[key] is an array of row objects
+//     [data-config-rows]                   —   where row instances are appended
+//     <template data-config-row>           —   the markup of one row, cloned per entry
+//       [data-config-field="<name>"]       —     an input inside a row; its value is entry[name]
+//       [data-config-field-default]        —     seeds that field when the entry has no value
+//       [data-config-field-swatch="<name>"]—     per-row colour preview (via --swatch-color)
+//       [data-config-remove]               —     button that drops its row
+//     [data-config-add]                    —   button that appends a fresh blank row
 export function initPluginConfig({ i18n, icons, plugins }) {
   const catalog  = plugins || []
   const overlays = new Map()  // plugin file path -> overlay element
@@ -45,6 +56,71 @@ export function initPluginConfig({ i18n, icons, plugins }) {
     if (out) out.textContent = `${raw}${out.dataset.unit || ''}`
     const swatch = overlay.querySelector(`[data-config-swatch="${key}"]`)
     if (swatch) swatch.style.setProperty('--swatch-color', raw)
+  }
+
+  // Mirror a row field's value into its per-row colour preview, scoped to that row (rows share
+  // field names, so the lookup must stay inside the row rather than the whole overlay).
+  function reflectFieldSwatch(row, field, raw) {
+    const swatch = row.querySelector(`[data-config-field-swatch="${field}"]`)
+    if (swatch) swatch.style.setProperty('--swatch-color', raw)
+  }
+
+  // (Re)bind every [data-config-list] repeatable group to the working copy. Each list mirrors
+  // config[key] as an array of row objects: stored entries seed one row each, plus a trailing
+  // blank row so there is always somewhere to type. cfg[key] is recomputed from the DOM on every
+  // edit (add/remove/input), dropping rows whose fields are all blank — so an untouched trailing
+  // row never persists. Listeners that live on reused elements (the add button) use the onX
+  // property to avoid stacking across opens; per-row listeners die with their (recreated) rows.
+  function bindLists(overlay, cfg) {
+    for (const listEl of overlay.querySelectorAll('[data-config-list]')) {
+      const key      = listEl.dataset.configList
+      const template = listEl.querySelector('template[data-config-row]')
+      const rowsBox  = listEl.querySelector('[data-config-rows]')
+      if (!template || !rowsBox) continue
+
+      // Collect the current rows as [{ field: value }, …], skipping untouched rows. A row counts as
+      // untouched when every field is blank or still holds its seeded default — otherwise the
+      // trailing blank row would persist (its colour field carries a non-empty default), so an
+      // unfilled row could never be dropped.
+      const readRows = () => {
+        const out = []
+        for (const row of rowsBox.querySelectorAll('[data-config-row-instance]')) {
+          const entry = {}
+          let touched = false
+          for (const field of row.querySelectorAll('[data-config-field]')) {
+            const value = field.value.trim()
+            entry[field.dataset.configField] = value
+            if (value && value !== (field.dataset.configFieldDefault ?? '')) touched = true
+          }
+          if (touched) out.push(entry)
+        }
+        return out
+      }
+      const sync = () => { cfg[key] = readRows() }
+
+      // Clone one row from the template, seed its fields from `entry`, and wire its live updates.
+      const addRow = (entry = {}) => {
+        const row = template.content.firstElementChild.cloneNode(true)
+        row.setAttribute('data-config-row-instance', '')
+        for (const field of row.querySelectorAll('[data-config-field]')) {
+          const name = field.dataset.configField
+          field.value = entry[name] ?? (field.dataset.configFieldDefault ?? '')
+          reflectFieldSwatch(row, name, field.value)
+          field.oninput = field.onchange = () => { reflectFieldSwatch(row, name, field.value); sync() }
+        }
+        row.querySelector('[data-config-remove]')?.addEventListener('click', () => { row.remove(); sync() })
+        rowsBox.appendChild(row)
+      }
+
+      rowsBox.replaceChildren()  // drop any rows from a previous open before reseeding
+      const entries = Array.isArray(cfg[key]) ? cfg[key] : []
+      for (const entry of entries) addRow(entry)
+      addRow()  // trailing blank row (dropped on read if left untouched)
+      sync()
+
+      const addBtn = listEl.querySelector('[data-config-add]')
+      if (addBtn) addBtn.onclick = () => { addRow(); sync() }
+    }
   }
 
   // (Re)bind every control to `access` for the app being edited. cfg is a working copy that edits
@@ -84,6 +160,7 @@ export function initPluginConfig({ i18n, icons, plugins }) {
       }
     }
 
+    bindLists(overlay, cfg)
     applyGating(overlay)
     overlay._commit = () => access.set({ ...cfg })
   }
