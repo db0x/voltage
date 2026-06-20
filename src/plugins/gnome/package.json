@@ -1,0 +1,5 @@
+{
+  "type": "module",
+  "private": true,
+  "//": "Marks this folder's .js files (extension.js, geometry.js) as ES modules. GNOME Shell always parses extensions as ESM regardless of this file, and it is NOT shipped into the installed extension (see EXT_FILES in src/manager/ipc/handlers/gnome.js). It exists so node — and therefore the Playwright unit test for geometry.js — can import these modules with native ESM."
+}
