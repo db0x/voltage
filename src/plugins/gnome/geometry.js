@@ -42,6 +42,18 @@ export function isRectVisible(rect, workAreas, inset = 1) {
   return corners.every(([px, py]) => workAreas.some(w => pointInRect(px, py, w)))
 }
 
+// "vMastodon.desktop" -> "mastodon". Mirrors src/app-naming.js (appName / profileFromAppName) so
+// the extension can derive a widget's default profile-data folder from its launcher id when an
+// older launcher predates the explicit X-Voltage-ProfileDir line. Returns null for an id that does
+// not follow the "v<Profile>" artifact convention, so the caller can skip rather than guess.
+export function profileFromDesktopId(desktopId) {
+  if (typeof desktopId !== 'string') return null
+  const base = desktopId.replace(/\.desktop$/, '')
+  const m = /^v(.+)/.exec(base)
+  if (!m) return null
+  return m[1].charAt(0).toLowerCase() + m[1].slice(1)
+}
+
 // Reduce a frame rect to the four integers we persist, or null for anything nonsensical. Storing
 // only validated integers means a bad value can never be written and then "restored" later — the
 // load path stays trivial because the data is already clean.

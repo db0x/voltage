@@ -9,11 +9,13 @@ const { pathToFileURL } = require('node:url')
 // import; its folder package.json marks it as such for node.
 let isRectVisible
 let sanitizeRect
+let profileFromDesktopId
 test.beforeAll(async () => {
   const url = pathToFileURL(path.join(__dirname, '..', 'src', 'plugins', 'gnome', 'geometry.js')).href
   const mod = await import(url)
   isRectVisible = mod.isRectVisible
   sanitizeRect = mod.sanitizeRect
+  profileFromDesktopId = mod.profileFromDesktopId
 })
 
 // A single 1920×1080 monitor with a 40px top panel removed.
@@ -76,4 +78,22 @@ test('sanitizeRect: fractional frame coordinates are rounded to integers', () =>
 test('sanitizeRect: degenerate or missing rects yield null', () => {
   expect(sanitizeRect({ x: 10, y: 10, width: 0, height: 300 })).toBeNull()
   expect(sanitizeRect(null)).toBeNull()
+})
+
+// Setup:    Launcher ids following the "v<Profile>.desktop" artifact convention, incl. a hyphenated
+//           profile.
+// Action:   Derive the profile used for the default profile-data folder.
+// Expected: the lowercased profile, matching src/app-naming.js — this is the fallback used when a
+//           launcher predates the explicit X-Voltage-ProfileDir line.
+test('profileFromDesktopId: derives the profile from the launcher id', () => {
+  expect(profileFromDesktopId('vMastodon.desktop')).toBe('mastodon')
+  expect(profileFromDesktopId('vGoogle-docs.desktop')).toBe('google-docs')
+})
+
+// Setup:    Ids that do not follow the convention.
+// Action:   Derive the profile.
+// Expected: null — the caller then skips rather than guessing a wrong folder.
+test('profileFromDesktopId: returns null for unconventional ids', () => {
+  expect(profileFromDesktopId('firefox.desktop')).toBeNull()
+  expect(profileFromDesktopId(null)).toBeNull()
 })
