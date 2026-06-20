@@ -57,7 +57,7 @@ npm start
 - **Widget mode** — the **widget** plugin renders an app as a frameless, rounded window (optional drop shadow, tint, hidden scrollbars). Combined with the [GNOME integration](#gnome-integration) it can be kept out of the dock entirely.
 - **About panel** — `F12` toggles an in-app overlay with the current domain (plus a Google Safe Browsing badge when enabled), the app, the build versions (Voltage / Electron / Chromium), and the loaded plugins.
 - **Zoom** — the optional **zoom** plugin adds `Ctrl+Scroll` zoom with an on-screen percentage panel and a context-menu submenu (in / out / reset); step size and bounds are set in its config dialog.
-- **Custom CSS** — the optional **css-inject** plugin injects a per-app stylesheet into the wrapped page (set in its config dialog) to restyle or hide elements of the site.
+- **Custom CSS** — the optional **css-inject** plugin injects a per-app stylesheet into the wrapped page (set in its config dialog) to restyle or hide elements of the site. It can also remove Chromium's keyboard focus ring (opt-in, off by default).
 - **System integration** — register an app as the default `mailto:` handler or as a file-type handler (see below).
 - **Screen sharing** — WebRTC / PipeWire capture works out of the box.
 - **Shortcuts** — `Shift+F12` toggles DevTools, `F11` toggles fullscreen.
@@ -262,7 +262,7 @@ Apps can also be configured by hand — useful for bulk setup, version-controlle
 | `mailtoTemplate` | string | Compose-window base URL; `mailto:` parameters are appended as a query string |
 | `mailtoParamMap` | object | Rename `mailto:` parameters before appending (e.g. `{ "subject": "su" }` for Gmail) |
 | `plugins` | array | Plugins this app loads, each a webapps-relative path (e.g. `"plugins/onedrive/onedrive.js"`). A plugin exports `attachPlugin(win, api)`. Changing the selection requires a rebuild |
-| `pluginConfig` | object | Per-plugin settings keyed by the plugin's webapps-relative path (e.g. `{ "plugins/widget/widget.js": { "radius": 20 } }`). Configurable plugins expose a gear button in the dialog and receive these as `api.config` at runtime. The **widget** plugin offers corner radius, drop shadow, resizable, hidden scrollbars, suppressed title bar, background tint and *Show in taskbar*; the **zoom** plugin offers step size and min/max bounds; the **css-inject** plugin offers a repeatable list of CSS variable → colour overrides. Changing a value requires a rebuild |
+| `pluginConfig` | object | Per-plugin settings keyed by the plugin's webapps-relative path (e.g. `{ "plugins/widget/widget.js": { "radius": 20 } }`). Configurable plugins expose a gear button in the dialog and receive these as `api.config` at runtime. The **widget** plugin offers corner radius, drop shadow, resizable, hidden scrollbars, suppressed title bar, background tint and *Show in taskbar*; the **zoom** plugin offers step size and min/max bounds; the **css-inject** plugin offers a repeatable list of CSS variable → colour overrides plus an opt-in toggle to remove Chromium's keyboard focus ring. Changing a value requires a rebuild |
 
 ### Advanced routing patterns
 

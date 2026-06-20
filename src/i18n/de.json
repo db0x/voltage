@@ -62,6 +62,8 @@
   "cssInjectConfigColor": "Farbe",
   "cssInjectConfigAddRow": "Override hinzufügen",
   "cssInjectConfigRemoveRow": "Override entfernen",
+  "cssInjectConfigRemoveFocusRing": "Tastatur-Fokus-Ring entfernen",
+  "cssInjectConfigRemoveFocusRingHint": "Entfernt Chromiums Tastatur-Fokus-Ring (die orange Umrandung bei Tastatur-Navigation). Standardmäßig aus, da Tastatur-Nutzer dadurch die Orientierung verlieren können.",
   "robotConfigTitle": "Auto-Klick-Konfiguration",
   "robotConfigTarget": "Element-Typ",
   "robotConfigTargetButton": "Button",

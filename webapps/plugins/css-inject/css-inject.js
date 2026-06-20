@@ -26,6 +26,19 @@ const VAR_NAME_RE = /^--[A-Za-z0-9_-]+$/
 // arbitrary string as a property value.
 const COLOR_RE = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 
+// Suppresses Chromium's default keyboard focus ring — the orange system outline the UA paints on
+// :focus-visible when navigating by keyboard. Opt-in (removeFocusRing toggle, default off) because
+// it removes the page's own keyboard-focus affordance, a deliberate accessibility trade-off the
+// user enables per app. Scoped to :focus-visible so it only touches the keyboard ring, leaving any
+// explicit :focus styling the site defines intact.
+const FOCUS_RING_OFF_CSS = ':focus-visible { outline: none !important; }'
+
+// The toggle stores a real boolean (the manager's plugin-config host writes the toggle state), but
+// a hand-edited config could carry the string "true"; accept both, reject everything else.
+function resolveRemoveFocusRing(config) {
+  return config?.removeFocusRing === true || config?.removeFocusRing === 'true'
+}
+
 // Normalises the configured variable name: trims, and prepends the leading "--" if the user typed
 // the bare name (e.g. "color-bg-primary"). Returns null when empty or still invalid after that.
 function resolveVarName(raw) {
@@ -60,14 +73,19 @@ function resolveRules(config) {
   return rules
 }
 
-// Builds the override stylesheet from the configured rules, or null when none are valid (then the
-// plugin attaches but injects nothing). All declarations share one :root, body block — each
-// overridden variable cascades to every rule that resolves it via var().
+// Builds the injected stylesheet from the configured variable overrides and the optional
+// focus-ring suppression, or null when neither is active (then the plugin attaches but injects
+// nothing). The variable overrides share one :root, body block — each overridden variable
+// cascades to every rule that resolves it via var().
 function buildCss(config) {
+  const parts = []
   const rules = resolveRules(config)
-  if (!rules.length) return null
-  const decls = rules.map(r => `${r.name}: ${r.color} !important;`).join(' ')
-  return `:root, body { ${decls} }`
+  if (rules.length) {
+    const decls = rules.map(r => `${r.name}: ${r.color} !important;`).join(' ')
+    parts.push(`:root, body { ${decls} }`)
+  }
+  if (resolveRemoveFocusRing(config)) parts.push(FOCUS_RING_OFF_CSS)
+  return parts.length ? parts.join('\n') : null
 }
 
 function attachPlugin(win, api) {

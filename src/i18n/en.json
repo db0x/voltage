@@ -62,6 +62,8 @@
   "cssInjectConfigColor": "Colour",
   "cssInjectConfigAddRow": "Add override",
   "cssInjectConfigRemoveRow": "Remove override",
+  "cssInjectConfigRemoveFocusRing": "Remove keyboard focus ring",
+  "cssInjectConfigRemoveFocusRingHint": "Removes Chromium's keyboard focus ring (the orange outline shown during keyboard navigation). Off by default, since it can leave keyboard users without orientation.",
   "robotConfigTitle": "Auto-click configuration",
   "robotConfigTarget": "Element type",
   "robotConfigTargetButton": "Button",

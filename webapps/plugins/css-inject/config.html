@@ -40,6 +40,14 @@
         </template>
         <button type="button" class="plugin-config-add-row" data-config-add>+ {{cssInjectConfigAddRow}}</button>
       </div>
+      <!-- OFF by default: removing the keyboard focus ring suppresses the page's own
+           keyboard-focus affordance (an accessibility trade-off), so it is opt-in. The "?" hint
+           spells that out. Bound by the host's generic .dialog-field-toggle handling; css-inject.js
+           reads config.removeFocusRing and appends the outline:none rule to the injected stylesheet. -->
+      <button type="button" class="dialog-field-toggle" data-config-key="removeFocusRing" data-config-default="false">
+        <span class="toggle-switch"></span>
+        <span>{{cssInjectConfigRemoveFocusRing}}<span class="field-help" data-tooltip="{{cssInjectConfigRemoveFocusRingHint}}">?</span></span>
+      </button>
     </div>
     <!-- Apply commits the edit to the app's config; Cancel/✕/backdrop/Esc discard. The host wires
          these by class (.plugin-config-apply / .plugin-config-cancel). -->
