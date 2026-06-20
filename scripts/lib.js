@@ -4,9 +4,13 @@ const path = require('node:path')
 const { execSync } = require('node:child_process')
 const { primaryKeyFromUrl, routingUrlKeys } = require('../src/routing-match')
 const { appName, wmClass } = require('../src/app-naming')
-const { appImagePath }     = require('../src/app-paths')
+const { appImagePath, profileDir } = require('../src/app-paths')
 
 const PROJECT_ROOT = path.resolve(__dirname, '..')
+
+// Base of the per-app profile-data folders, mirroring Electron's app.getPath('appData')/voltage so
+// the path baked into the launcher matches the runtime userData dir (see src/app-window.js).
+const VOLTAGE_DATA_DIR = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'voltage')
 
 function toDisplayName(profile) {
   return profile.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
@@ -163,6 +167,12 @@ function installDesktop(app) {
   if (widgetPlugin && app.pluginConfig?.[widgetPlugin]?.showInTaskbar !== true) {
     lines.push('X-Voltage-Widget=true')
   }
+  // Written for EVERY Voltage app (not only widgets): tells the GNOME extension where this app
+  // keeps its data so it can persist + restore the window's last position there. Absolute and
+  // override-aware (honours a per-app `profileDir`), so the extension never has to guess the path.
+  // It doubles as the "this is a Voltage app" marker — the window-position feature applies to all
+  // Voltage AppImages whenever the extension is active, independent of the taskbar/widget setting.
+  lines.push(`X-Voltage-ProfileDir=${profileDir(app, VOLTAGE_DATA_DIR)}`)
   if (mimeTypes) lines.push(`MimeType=${mimeTypes}`)
   lines.push('')
 

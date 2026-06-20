@@ -17,8 +17,11 @@ const { runAsync } = require('../lib/subprocess')
 // Must match metadata.json's uuid — the extensions directory is named after it.
 const EXT_UUID = 'voltage@db0x.de'
 const BUNDLED_DIR = path.join(APP_ROOT, 'src', 'plugins', 'gnome')
-// Files that make up the extension; copied verbatim on install.
-const EXT_FILES = ['extension.js', 'metadata.json']
+// Files that make up the extension; copied verbatim on install. geometry.js holds the pure
+// window-placement rules imported by extension.js. The sibling package.json is intentionally NOT
+// shipped — it only marks the source folder as ESM for node-based unit tests; GNOME Shell parses
+// the extension as ESM regardless.
+const EXT_FILES = ['extension.js', 'geometry.js', 'metadata.json']
 
 function installedExtDir() {
   // VOLTAGE_TEST_GNOME_EXT_DIR redirects the install target in tests so the real

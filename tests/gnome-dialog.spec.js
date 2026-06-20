@@ -53,9 +53,10 @@ test('shows not-installed status under a GNOME session', async ({ managerPageGno
 // Setup:    GNOME session on Wayland, extension not installed, and the faked
 //           `gnome-extensions list` reports it as not enabled even after install.
 // Action:   Open the dialog and click Install.
-// Expected: extension.js + metadata.json land in the (temp) extensions dir, the status
-//           flips to "Disabled" (copied but not yet loaded), and the relog hint appears —
-//           on Wayland GNOME only loads the extension after a re-login.
+// Expected: extension.js + geometry.js + metadata.json land in the (temp) extensions dir, the
+//           status flips to "Disabled" (copied but not yet loaded), and the relog hint appears —
+//           on Wayland GNOME only loads the extension after a re-login. geometry.js is asserted
+//           because extension.js imports it; a missing file would break loading at runtime.
 test('install copies files and surfaces the relog hint on Wayland', async ({ managerPageGnomeWayland }) => {
   const { page, gnomeExtDir } = managerPageGnomeWayland
   await openDrawer(page)
@@ -67,5 +68,6 @@ test('install copies files and surfaces the relog hint on Wayland', async ({ man
 
   const installed = path.join(gnomeExtDir, 'voltage@db0x.de')
   expect(fs.existsSync(path.join(installed, 'extension.js'))).toBe(true)
+  expect(fs.existsSync(path.join(installed, 'geometry.js'))).toBe(true)
   expect(fs.existsSync(path.join(installed, 'metadata.json'))).toBe(true)
 })
