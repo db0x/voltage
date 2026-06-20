@@ -1131,6 +1131,93 @@ body.dark .domain-configure-btn img {
   background-size: auto, 8px 8px, 8px 8px;
 }
 
+/* Repeatable override list (css-inject): a stack of variable→colour rows the user can grow/shrink.
+   The row grid is shared by the header and every row so the columns line up: variable name (flex),
+   colour control (fixed-ish), remove button. */
+.plugin-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plugin-config-list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plugin-config-list-head,
+.plugin-config-list-row {
+  display: grid;
+  grid-template-columns: 1fr 200px 24px;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Column captions sit above the rows; quiet like other field labels. */
+.plugin-config-list-head {
+  font-size: 12px;
+  color: var(--card-url);
+}
+
+/* The row inputs (variable name + the Coloris colour field) reuse the standard dialog input look —
+   they live outside a .dialog-field, so the .dialog-field input rules don't reach them. Keep this
+   in sync with .dialog-field input. */
+.plugin-config-list-row input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 32px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--badge-unbuilt-bg);
+  color: var(--card-fg);
+  border: 1.5px solid transparent;
+  padding: 6px 10px;
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.plugin-config-list-row input:focus {
+  border-color: #3584e4;
+}
+
+/* Remove button for a row — quiet by default, destructive red on hover (mirrors .domain-remove-btn). */
+.plugin-config-row-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--card-url);
+  font-size: 15px;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 3px;
+  opacity: 0.6;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.plugin-config-row-remove:hover {
+  opacity: 1;
+  color: #e05555;
+}
+
+/* Add-row button — quiet text button that turns accent-blue on hover (like .domain-add-btn). */
+.plugin-config-add-row {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--card-url);
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 0.15s;
+}
+
+.plugin-config-add-row:hover {
+  color: #3584e4;
+}
+
 /* Generic grouping box for related controls in a plugin's config dialog (e.g. "Hintergrund"
    wrapping the widget tint colour + opacity). Mirrors the manager's other fieldsets. */
 .plugin-config-fieldset {

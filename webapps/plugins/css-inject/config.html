@@ -1,0 +1,51 @@
+<!-- Config dialog shipped by the css-inject plugin (part of the plugin). The manager's plugin-config
+     host (src/manager/plugin-config.js) renders this into the manager DOM and owns the generic
+     open/close + Apply/Cancel wiring; the markup reuses the manager's .dialog-* classes so it
+     matches every other dialog. {{pluginIcon}} is the plugin's icon (a var); {{cssInject*}} and
+     {{pluginConfig*}} are i18n keys.
+
+     The overrides are a repeatable list (data-config-list="rules"): each row is one CSS
+     custom-property name + the shared Coloris colour to set it to. The host clones <template
+     data-config-row> per stored entry (plus a trailing blank row), binds each row's
+     data-config-field inputs into one array entry, and the + button adds another row. css-inject.js
+     receives config.rules = [{ varName, color }, …] and combines them into the override stylesheet. -->
+<div class="dialog-overlay plugin-config-overlay hidden">
+  <div class="dialog">
+    <div class="dialog-header">
+      <img src="{{pluginIcon}}" alt="">
+      <span class="dialog-title">{{cssInjectConfigTitle}}</span>
+      <button class="dialog-close" type="button">✕</button>
+    </div>
+    <div class="dialog-fields">
+      <div class="plugin-config-list" data-config-list="rules">
+        <!-- Column headers, shown once above the rows. -->
+        <div class="plugin-config-list-head">
+          <span>{{cssInjectConfigVariable}}<span class="field-help" data-tooltip="{{cssInjectConfigVariableHint}}">?</span></span>
+          <span>{{cssInjectConfigColor}}</span>
+        </div>
+        <div class="plugin-config-list-rows" data-config-rows></div>
+        <!-- One override row. Cloned by the host; placeholder shows the expected shape. -->
+        <template data-config-row>
+          <div class="plugin-config-list-row">
+            <input type="text" class="plugin-config-list-var" spellcheck="false"
+                   placeholder="--color-bg-primary" data-config-field="varName">
+            <div class="plugin-config-color-row">
+              <span class="plugin-config-swatch" data-config-field-swatch="color" aria-hidden="true"></span>
+              <input type="text" data-coloris spellcheck="false"
+                     data-config-field="color" data-config-field-default="#00000000">
+            </div>
+            <button type="button" class="plugin-config-row-remove" data-config-remove
+                    aria-label="{{cssInjectConfigRemoveRow}}" title="{{cssInjectConfigRemoveRow}}">✕</button>
+          </div>
+        </template>
+        <button type="button" class="plugin-config-add-row" data-config-add>+ {{cssInjectConfigAddRow}}</button>
+      </div>
+    </div>
+    <!-- Apply commits the edit to the app's config; Cancel/✕/backdrop/Esc discard. The host wires
+         these by class (.plugin-config-apply / .plugin-config-cancel). -->
+    <div class="confirm-actions">
+      <button class="btn-cancel plugin-config-cancel" type="button">{{pluginConfigCancel}}</button>
+      <button class="btn-save plugin-config-apply" type="button">{{pluginConfigApply}}</button>
+    </div>
+  </div>
+</div>
