@@ -15,6 +15,74 @@ const { t } = require('./i18n')
 
 const ROUTING_FILE = path.join(app.getPath('appData'), 'voltage', 'plugins', 'routing', 'routing.json')
 
+// Standardised "page unavailable" screen, shown in the app view when the base URL fails to load or
+// hangs — without it a widget-mode app would leave only the transparent shadow frame. Read once.
+const errorTemplate = fs.readFileSync(path.join(__dirname, 'error-page.html'), 'utf8')
+const APP_LOAD_TIMEOUT_MS = 30_000
+
+const escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+
+// Builds the error page as a data: URL for the given app, filling in localized text + the failure
+// reason. urlJson is a safe JS string literal used by the page's retry handler.
+function errorPageDataUrl(pkg, reason) {
+  const i18n = t()
+  const de   = app.getLocale().split('-')[0].toLowerCase() === 'de'
+  const name = pkg.displayName || pkg.profile
+  const html = errorTemplate.replace(/\{\{(\w+)\}\}/g, (_, k) => ({
+    lang:    de ? 'de' : 'en',
+    iconSrc: voltageIconDataUrl || '',
+    title:   escHtml(i18n.errorTitle || 'Page unavailable'),
+    body:    escHtml((i18n.errorBody || 'The app {name} could not be started.').replace('{name}', name)),
+    retry:   escHtml(i18n.errorRetry || 'Reload'),
+    close:   escHtml(i18n.errorClose || 'Close app'),
+    url:     escHtml(pkg.url),
+    reason:  escHtml(reason || ''),
+    urlJson: JSON.stringify(pkg.url),
+  }[k] ?? ''))
+  return 'data:text/html;charset=utf-8,' + encodeURIComponent(html)
+}
+
+// Replaces a failed/hung base-URL load with the error page (network failure or a timeout), instead
+// of a blank/transparent window. Any real top-level navigation (incl. the retry) re-arms the guard.
+function installLoadGuard(appContents, pkg) {
+  let timer = null
+  let showingError = false
+  const clear = () => { if (timer) { clearTimeout(timer); timer = null } }
+  const showError = (reason) => {
+    if (showingError) return
+    showingError = true
+    clear()
+    try { appContents.stop() } catch {}
+    // .catch: the failed/aborted load rejects loadURL's promise; the guard reacts via events, so
+    // swallow it to avoid an unhandled rejection.
+    appContents.loadURL(errorPageDataUrl(pkg, reason)).catch(() => {})
+  }
+  appContents.on('did-start-navigation', (_e, url, isInPlace, isMainFrame) => {
+    // Arm only for real top-level navigations to the app — not the data: error page, and not
+    // in-page/hash navigations (which don't fire did-finish-load and would falsely time out).
+    if (!isMainFrame || isInPlace || (url || '').startsWith('data:')) return
+    showingError = false
+    clear()
+    timer = setTimeout(() => showError(t().errorTimedOut || 'Connection timed out'), APP_LOAD_TIMEOUT_MS)
+  })
+  appContents.on('did-finish-load', clear)
+  appContents.on('did-fail-load', (_e, errorCode, errorDesc, _validatedURL, isMainFrame) => {
+    if (!isMainFrame) return
+    if (errorCode === -3) return  // ERR_ABORTED: navigation replaced or our own stop() — not a failure
+    showError(errorDesc || `Error ${errorCode}`)
+  })
+}
+
+// "Close app" button on the error page. The page's own window.close() is neutralised for widget apps
+// (registerBlockCloseHandler), so the quit must originate from main. Scoped to data:-URL senders so
+// only our built-in error screen — never the wrapped web content — can quit the app.
+ipcMain.on('voltage:quit-app', (event) => {
+  let url = ''
+  try { url = event.senderFrame?.url || '' } catch { return }
+  if (url.startsWith('data:')) app.quit()
+})
+
 // In-memory cache: origin → { result: 'safe'|'unsafe', expiresAt }
 // Avoids repeated API calls for the same domain during a browsing session.
 const safeBrowsingCache = new Map()
@@ -110,6 +178,9 @@ function readSvgDataUrl(assetName) {
 }
 const safeIconDataUrl   = readSvgDataUrl('safe-browsing.svg')
 const unsafeIconDataUrl = readSvgDataUrl('security-low.svg')
+// Voltage brand mark embedded as a data URL — the error page is itself a data: URL, so it can't
+// reference a file:// asset; inlining keeps the screen self-contained.
+const voltageIconDataUrl = readSvgDataUrl('voltage.svg')
 
 // Read once — both files are stable for the module's lifetime.
 const tooltipScript = fs.readFileSync(path.join(__dirname, 'tooltip-script.js'), 'utf8')
@@ -591,7 +662,11 @@ function createWindow(pkg, opts = {}) {
   mainWindow.on('closed', () => appMenuRegistry.delete(webContentsId))
 
   if (pkg.userAgent) appContents.setUserAgent(pkg.userAgent)
-  appContents.loadURL(pkg.url)
+  // Guard the initial load (and later navigations) so an unreachable base URL shows the error page.
+  installLoadGuard(appContents, pkg)
+  // Not awaited; failures are handled by the load guard's events (a rejection here would otherwise
+  // surface as an unhandled promise rejection).
+  appContents.loadURL(pkg.url).catch(() => {})
 
   const appOrigin = new URL(pkg.url).origin
   const internalDomains = pkg.internalDomains ?

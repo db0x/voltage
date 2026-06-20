@@ -3,7 +3,7 @@
   "description": "Turn any web app into a standalone Linux desktop application - packaged as an AppImage, with its own window, session, and taskbar entry.",
   "keywords": [],
   "main": "./main.js",
-  "version": "0.28.1",
+  "version": "0.28.2",
   "minAppImageVersion": "0.28.1",
   "author": {
     "name": "db0x",

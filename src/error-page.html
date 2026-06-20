@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- Standardised "page unavailable" screen, shown in the app view when the base URL fails to load
+     or times out (see window.js installLoadGuard). It has an OPAQUE background so a widget-mode app
+     shows this instead of just the transparent shadow frame. {{tokens}} are filled by window.js;
+     data-voltage-error marks the document so it can be detected in tests. -->
+<html lang="{{lang}}" data-voltage-error="1">
+<head>
+<meta charset="utf-8">
+<style>
+  *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0 }
+  :root { --bg:#f4f4f5; --fg:#1e1e1e; --muted:#777; --accent:#1a73e8; --card:#ffffff; --border:#e4e4e7 }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1e1e1e; --fg:#f0f0f0; --muted:#aaa; --accent:#5ab4f0; --card:#2c2c2c; --border:#444 }
+  }
+  html, body { height: 100% }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: 'Ubuntu', system-ui, sans-serif; color-scheme: light dark;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    max-width: 460px; width: 100%; padding: 32px 28px; text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  }
+  .glyph { width: 56px; height: 56px; margin: 0 auto 16px; display: block }
+  h1 { font-size: 18px; font-weight: 600; margin-bottom: 8px }
+  p { font-size: 13px; color: var(--fg); line-height: 1.5 }
+  .reason { margin-top: 8px; font-size: 12px; color: var(--muted); word-break: break-all }
+  .url { margin-top: 4px; font-size: 11px; color: var(--muted); opacity: .8; word-break: break-all }
+  .actions { margin-top: 22px; display: flex; gap: 10px; justify-content: center }
+  button {
+    padding: 9px 22px; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+    background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 500;
+    transition: opacity .15s;
+  }
+  button:hover { opacity: .85 }
+  /* Secondary action ("Close app"): quieter than the primary retry so reloading stays the default. */
+  button.secondary { background: transparent; color: var(--fg); border-color: var(--border) }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img class="glyph" src="{{iconSrc}}" alt="">
+    <!-- Headline carries the important message (the app can't start); the technical "page
+         unavailable" line is demoted to a subtitle, with the concrete reason below it. -->
+    <h1>{{body}}</h1>
+    <p>{{title}}</p>
+    <div class="reason">{{reason}}</div>
+    <div class="url">{{url}}</div>
+    <div class="actions">
+      <button id="retry">{{retry}}</button>
+      <button id="close" class="secondary">{{close}}</button>
+    </div>
+  </div>
+  <script>
+    // Retry simply navigates the view back to the app URL; the main process's load guard re-arms
+    // its timeout and shows this page again if it still fails.
+    document.getElementById('retry').addEventListener('click', () => location.replace({{urlJson}}))
+    // Close quits the app. window.close() is neutralised for widget apps, so reach the main process
+    // through the preload bridge (which scopes the quit to this data:-URL error page).
+    document.getElementById('close').addEventListener('click', () => window.electronAPI && window.electronAPI.closeApp && window.electronAPI.closeApp())
+  </script>
+</body>
+</html>

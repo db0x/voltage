@@ -44,6 +44,9 @@ test('a freshly built AppImage launches and shows correct About content', async 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const port = server.address().port
   const url  = `http://127.0.0.1:${port}/`
+  // Idempotent close so the test can make the origin unreachable mid-run and the finally is safe.
+  let serverClosed = false
+  const closeServer = () => new Promise(r => serverClosed ? r() : (serverClosed = true, server.close(() => r())))
 
   const tmpHome     = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-build-home-'))
   const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-about-ud-'))
@@ -160,9 +163,34 @@ test('a freshly built AppImage launches and shows correct About content', async 
     })
     await expect.poll(() => app.evaluate(() => global.__opened || [])).toContain('https://github.com/db0x/voltage')
     expect((await windowInfo()).count).toBe(windowsBefore)   // no child window spawned
+
+    // Error page: make the origin unreachable, navigate the app there, and confirm the standardized
+    // error screen replaces the (otherwise blank) view rather than leaving nothing.
+    await closeServer()
+    // loadURL rejects when the guard aborts/replaces it — don't let that reject the evaluate.
+    await app.evaluate(({ BrowserWindow }, u) => { BrowserWindow.getAllWindows()[0].webContents.loadURL(u).catch(() => {}) }, url)
+    await expect.poll(() => app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].webContents.executeJavaScript('document.documentElement.dataset.voltageError || ""')
+    ), { timeout: 20_000 }).toBe('1')
+
+    // Error screen specifics: the brand icon is inlined as an SVG data URL (the page is itself a
+    // data: URL and can't load a file:// asset), and a "Close app" button is wired to the preload
+    // closeApp bridge — without it a widget app couldn't be dismissed (its window.close is blocked).
+    const errorUi = JSON.parse(await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(
+        'JSON.stringify({' +
+        '  close: !!document.getElementById("close"),' +
+        '  closeApi: typeof (window.electronAPI && window.electronAPI.closeApp),' +
+        '  icon: ((document.querySelector("img.glyph")||{}).src||"").slice(0, 24)' +
+        '})'
+      )
+    ))
+    expect(errorUi.close).toBe(true)
+    expect(errorUi.closeApi).toBe('function')
+    expect(errorUi.icon.startsWith('data:image/svg+xml')).toBe(true)
   } finally {
     if (app) await app.close().catch(() => {})
-    await new Promise(resolve => server.close(resolve))
+    await closeServer()
     // Remove everything the test created: the config, all dist artifacts for this profile, and the
     // temp dirs (which hold the build's isolated launcher/icon/routing side effects).
     fs.rmSync(CONFIG_FILE, { force: true })

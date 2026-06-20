@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   adjustZoom:        (delta)  => ipcRenderer.send('adjust-zoom',       delta),
   rcloneConfirm:     (choice) => ipcRenderer.send('rclone-confirm',    choice),
   checkSafeBrowsing: (url, ignoreExclude) => ipcRenderer.invoke('safe-browsing:check', url, ignoreExclude),
+  // Used only by the built-in error page's "Close app" button; main scopes it to data:-URL senders.
+  closeApp:          ()       => ipcRenderer.send('voltage:quit-app'),
 });
 
 // ── Custom Ctrl+right-click context menu ────────────────────────────────────────────────────────
