@@ -54,6 +54,50 @@ export function profileFromDesktopId(desktopId) {
   return m[1].charAt(0).toLowerCase() + m[1].slice(1)
 }
 
+// Meta.MaximizeFlags as Mutter reports them via Meta.Window.get_maximized(): HORIZONTAL=1,
+// VERTICAL=2, BOTH=3. A stable Mutter enum, inlined here so this stays a pure (GI-free) module.
+const MAXIMIZE_BOTH = 3
+
+// Whether a window is in one of the states the F11 cycle moves *through* (full maximize or
+// fullscreen) — as opposed to a windowed placement the cycle must remember and return to.
+//
+// The crucial distinction is edge-tiling: snapping a widget to a screen half reports a PARTIAL
+// (single-axis, usually vertical) maximize, not BOTH. That snapped placement is exactly where the
+// user wants the widget to come back to, so it must count as windowed — only a full (both-axis)
+// maximize or fullscreen is "abnormal". Treating a half-tiled window as abnormal was the bug where
+// "back" landed at the pre-snap floating position instead of the edge.
+export function isCycleAbnormalState(isFullscreen, maximizeFlags) {
+  return !!isFullscreen || maximizeFlags === MAXIMIZE_BOTH
+}
+
+// Decide what to do when a tracked widget window's frame changes, driving the Wayland-only
+// reposition that puts a widget back where it was after the F11 windowed→maximized→fullscreen→
+// windowed cycle (window.js cycleFullscreen).
+//
+// Under Wayland the client cannot restore its own position: leaving maximized/fullscreen brings the
+// size back but the compositor drops the window at the wrong spot. So the extension remembers the
+// last *windowed* frame and, the moment the window returns to windowed, moves it back there.
+//
+// Pure state machine so it is unit-testable without a live Shell. `state` ({ lastNormalFrame,
+// abnormal }) is mutated in place. Returns the frame to move the window to, or null when the change
+// is mere bookkeeping (entering maximized/fullscreen, or a plain windowed move/resize to remember).
+export function planWidgetReposition(state, isAbnormal, currentFrame) {
+  if (isAbnormal) {
+    // Maximized or fullscreen now — keep the remembered windowed frame as the restore target.
+    state.abnormal = true
+    return null
+  }
+  if (state.abnormal) {
+    // Just returned to windowed: restore the frame captured before the cycle began.
+    state.abnormal = false
+    return state.lastNormalFrame ?? null
+  }
+  // Genuine windowed move/resize: this becomes the new restore target.
+  const rect = sanitizeRect(currentFrame)
+  if (rect) state.lastNormalFrame = rect
+  return null
+}
+
 // Reduce a frame rect to the four integers we persist, or null for anything nonsensical. Storing
 // only validated integers means a bad value can never be written and then "restored" later — the
 // load path stays trivial because the data is already clean.

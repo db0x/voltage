@@ -28,6 +28,7 @@
   "errorClose": "App schließen",
   "errorTimedOut": "Zeitüberschreitung der Verbindung",
   "fullscreen": "Vollbild",
+  "maximizeWindow": "Maximieren",
   "widgetMove": "Verschieben",
   "widgetMoveHint": "Zum Verschieben ziehen",
   "widgetMoveDone": "Fertig",

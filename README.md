@@ -60,7 +60,7 @@ npm start
 - **Custom CSS** — the optional **css-inject** plugin injects a per-app stylesheet into the wrapped page (set in its config dialog) to restyle or hide elements of the site. It can also remove Chromium's keyboard focus ring (opt-in, off by default).
 - **System integration** — register an app as the default `mailto:` handler or as a file-type handler (see below).
 - **Screen sharing** — WebRTC / PipeWire capture works out of the box.
-- **Shortcuts** — `Shift+F12` toggles DevTools, `F11` toggles fullscreen. In widget mode (frameless) `F11` instead cycles windowed → maximized → fullscreen → windowed, since a frameless window has no titlebar controls to maximize it otherwise.
+- **Shortcuts** — `Shift+F12` toggles DevTools, `F11` toggles fullscreen. In widget mode (frameless) `Shift+F11` additionally toggles maximize/restore, since a frameless window has no titlebar control to maximize it otherwise.
 - **Single-instance enforcement** — optionally focus the existing window instead of opening a second one.
 - **Private builds** — configs matching `webapps/build.private.*.json` are gitignored.
 

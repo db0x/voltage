@@ -28,6 +28,7 @@
   "errorClose": "Close app",
   "errorTimedOut": "Connection timed out",
   "fullscreen": "Fullscreen",
+  "maximizeWindow": "Maximize",
   "widgetMove": "Move",
   "widgetMoveHint": "Drag to move",
   "widgetMoveDone": "Done",

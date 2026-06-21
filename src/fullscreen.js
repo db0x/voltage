@@ -1,35 +1,28 @@
-// Fullscreen control for the app windows' F11 key and "Fullscreen" context-menu item.
+// Fullscreen / maximize control for the app windows' F11 keys and context-menu items.
 //
-// Kept electron-free (it only drives the BrowserWindow passed in) so the state machine is unit
-// testable without an Electron runtime — window.js wires it to the real window.
+// Kept electron-free (it only drives the BrowserWindow passed in) so it is unit testable without an
+// Electron runtime — window.js wires it to the real window.
 //
-// A normal (framed) app keeps the plain on/off toggle. A widget app is frameless and has no
-// titlebar controls, so the window can't be maximized or restored by the user any other way —
-// there each activation cycles three states:
-//   1. windowed   → maximized (fills the desktop work area, panels still visible)
-//   2. maximized  → real fullscreen (covers the whole screen)
-//   3. fullscreen → back to a plain window
-// State is derived from the live window flags (not tracked separately) so manual changes stay in
-// sync. isFullScreen() is checked before isMaximized() because a window entered fullscreen from the
-// maximized state still reports maximized underneath.
-function cycleFullscreen(win, isWidget) {
-  if (!isWidget) {
-    win.setFullScreen(!win.isFullScreen())
-    return
-  }
-  if (win.isFullScreen()) {
-    // Leaving fullscreen first restores the maximized state we passed through on the way in; drop
-    // that only once the transition has settled, otherwise unmaximize races the fullscreen exit.
-    win.once('leave-full-screen', () => win.unmaximize())
-    win.setFullScreen(false)
-  } else if (win.isMaximized()) {
-    win.setFullScreen(true)
+// In widget mode the window is frameless and has no titlebar controls, so these are the only ways
+// to reach those states. The two actions are deliberately independent (no cycle): F11 toggles real
+// fullscreen, Shift+F11 toggles maximize. A single native operation per key means GNOME/Mutter can
+// restore the prior state cleanly — the chained cycle was what stranded snapped/tiled windows.
+
+// Toggle real (whole-screen) fullscreen. Same for every app — F11.
+function toggleFullscreen(win) {
+  win.setFullScreen(!win.isFullScreen())
+}
+
+// Toggle maximize ↔ restore — Shift+F11, used by frameless widgets that have no titlebar button.
+function toggleMaximize(win) {
+  if (win.isMaximized()) {
+    win.unmaximize()
   } else {
     // A non-resizable widget (config.resizable === false) is also non-maximizable, so enable it
-    // first — otherwise maximize() is silently ignored and the cycle never leaves the windowed step.
+    // first — otherwise maximize() is silently ignored.
     win.setMaximizable(true)
     win.maximize()
   }
 }
 
-module.exports = { cycleFullscreen }
+module.exports = { toggleFullscreen, toggleMaximize }

@@ -10,13 +10,23 @@ const { pathToFileURL } = require('node:url')
 let isRectVisible
 let sanitizeRect
 let profileFromDesktopId
+let planWidgetReposition
+let isCycleAbnormalState
 test.beforeAll(async () => {
   const url = pathToFileURL(path.join(__dirname, '..', 'src', 'plugins', 'gnome', 'geometry.js')).href
   const mod = await import(url)
   isRectVisible = mod.isRectVisible
   sanitizeRect = mod.sanitizeRect
   profileFromDesktopId = mod.profileFromDesktopId
+  planWidgetReposition = mod.planWidgetReposition
+  isCycleAbnormalState = mod.isCycleAbnormalState
 })
+
+// Meta.MaximizeFlags values Mutter reports: none / horizontal / vertical / both.
+const MAX_NONE = 0
+const MAX_HORIZONTAL = 1
+const MAX_VERTICAL = 2
+const MAX_BOTH = 3
 
 // A single 1920×1080 monitor with a 40px top panel removed.
 const SINGLE = [{ x: 0, y: 40, width: 1920, height: 1040 }]
@@ -96,4 +106,111 @@ test('profileFromDesktopId: derives the profile from the launcher id', () => {
 test('profileFromDesktopId: returns null for unconventional ids', () => {
   expect(profileFromDesktopId('firefox.desktop')).toBeNull()
   expect(profileFromDesktopId(null)).toBeNull()
+})
+
+// ── isCycleAbnormalState: which states the F11 cycle passes through ───────────────────────────────
+
+// Setup:    A fullscreen window (any maximize flags).
+// Action:   Classify it.
+// Expected: Abnormal — fullscreen is a cycle state regardless of maximize flags.
+test('isCycleAbnormalState: fullscreen is abnormal', () => {
+  expect(isCycleAbnormalState(true, MAX_NONE)).toBe(true)
+  expect(isCycleAbnormalState(true, MAX_BOTH)).toBe(true)
+})
+
+// Setup:    A fully (both-axis) maximized, non-fullscreen window.
+// Action:   Classify it.
+// Expected: Abnormal — this is the cycle's maximize step.
+test('isCycleAbnormalState: a full both-axis maximize is abnormal', () => {
+  expect(isCycleAbnormalState(false, MAX_BOTH)).toBe(true)
+})
+
+// Setup:    An edge-tiled widget — snapped to a screen half, which Mutter reports as a partial
+//           (single-axis) maximize.
+// Action:   Classify it.
+// Expected: NOT abnormal — a half-snapped widget is a windowed placement to remember and restore
+//           to. This is the regression the edge-tiling fix addresses.
+test('isCycleAbnormalState: an edge-tiled (partial) maximize is windowed, not abnormal', () => {
+  expect(isCycleAbnormalState(false, MAX_VERTICAL)).toBe(false)
+  expect(isCycleAbnormalState(false, MAX_HORIZONTAL)).toBe(false)
+})
+
+// Setup:    A plain floating window.
+// Action:   Classify it.
+// Expected: NOT abnormal — nothing to cycle out of.
+test('isCycleAbnormalState: a floating window is windowed', () => {
+  expect(isCycleAbnormalState(false, MAX_NONE)).toBe(false)
+})
+
+// ── planWidgetReposition: the F11 widget windowed↔maximized/fullscreen state machine ──────────────
+// The widget frame the user wants back after the cycle.
+const WIN_FRAME = { x: 300, y: 200, width: 480, height: 360 }
+
+// Setup:    A windowed widget the user just moved/resized.
+// Action:   Report a windowed (not abnormal) frame change.
+// Expected: No reposition (null), but the frame is remembered as the restore target — this is how
+//           the pre-maximize position is captured before the cycle ever starts.
+test('planWidgetReposition: a windowed move just records the restore target', () => {
+  const state = { lastNormalFrame: null, abnormal: false }
+  expect(planWidgetReposition(state, false, WIN_FRAME)).toBeNull()
+  expect(state.lastNormalFrame).toEqual(WIN_FRAME)
+})
+
+// Setup:    A windowed widget with a remembered frame.
+// Action:   Report an abnormal (maximized/fullscreen) frame change.
+// Expected: No reposition, the remembered frame is left untouched, and the state flips to abnormal
+//           so the next return-to-windowed triggers the restore.
+test('planWidgetReposition: entering maximized/fullscreen keeps the target and arms the restore', () => {
+  const state = { lastNormalFrame: WIN_FRAME, abnormal: false }
+  expect(planWidgetReposition(state, true, { x: 0, y: 0, width: 1920, height: 1080 })).toBeNull()
+  expect(state).toEqual({ lastNormalFrame: WIN_FRAME, abnormal: true })
+})
+
+// Setup:    A widget that was maximized/fullscreen (abnormal) and is now back to windowed — exactly
+//           the moment Wayland has restored the size at the wrong position.
+// Action:   Report the windowed frame change.
+// Expected: It returns the remembered frame so the extension moves the window back there, and clears
+//           the abnormal flag.
+test('planWidgetReposition: returning to windowed restores the remembered frame', () => {
+  const state = { lastNormalFrame: WIN_FRAME, abnormal: true }
+  expect(planWidgetReposition(state, false, { x: 0, y: 0, width: 1920, height: 1080 })).toEqual(WIN_FRAME)
+  expect(state.abnormal).toBe(false)
+})
+
+// Setup:    Nothing was ever recorded (window opened straight into an abnormal state).
+// Action:   Return to windowed with no remembered frame.
+// Expected: null — with no target there is nothing to restore, so the window is left where the
+//           compositor placed it rather than moved to a bogus spot.
+test('planWidgetReposition: no restore when there is no remembered frame', () => {
+  const state = { lastNormalFrame: null, abnormal: true }
+  expect(planWidgetReposition(state, false, WIN_FRAME)).toBeNull()
+})
+
+// Setup:    A fresh windowed widget.
+// Action:   Drive the whole cycle: windowed (remember) → maximized → fullscreen → windowed.
+// Expected: Only the final return-to-windowed yields a reposition, and it is exactly the frame the
+//           widget started at — the full round trip lands back where it began.
+test('planWidgetReposition: the full F11 cycle restores the original frame', () => {
+  const state = { lastNormalFrame: null, abnormal: false }
+  expect(planWidgetReposition(state, false, WIN_FRAME)).toBeNull()                              // windowed: remember
+  expect(planWidgetReposition(state, true,  { x: 0, y: 40, width: 1920, height: 1040 })).toBeNull() // maximized
+  expect(planWidgetReposition(state, true,  { x: 0, y: 0,  width: 1920, height: 1080 })).toBeNull() // fullscreen
+  expect(planWidgetReposition(state, false, { x: 0, y: 0,  width: 1920, height: 1080 })).toEqual(WIN_FRAME) // back
+})
+
+// Setup:    A widget edge-tiled to the left half of a 1920×1080 screen (partial vertical maximize),
+//           then cycled through F11. Drives the two functions together exactly as the extension does.
+// Action:   tiled (windowed) → maximized → fullscreen → back, classifying each state via
+//           isCycleAbnormalState before feeding planWidgetReposition.
+// Expected: It returns to the half-tiled frame, not some earlier floating position — the regression
+//           the user reported ("an den Rand geklebt, dann geht zurück nicht").
+test('planWidgetReposition + isCycleAbnormalState: an edge-tiled widget returns to the edge', () => {
+  const TILED = { x: 0, y: 40, width: 960, height: 1040 }  // left half, below the panel
+  const state = { lastNormalFrame: null, abnormal: false }
+  const step = (fs, flags, frame) => planWidgetReposition(state, isCycleAbnormalState(fs, flags), frame)
+
+  expect(step(false, MAX_VERTICAL, TILED)).toBeNull()                              // tiled: remembered as windowed
+  expect(step(false, MAX_BOTH,     { x: 0, y: 40, width: 1920, height: 1040 })).toBeNull() // F11 maximize
+  expect(step(true,  MAX_BOTH,     { x: 0, y: 0,  width: 1920, height: 1080 })).toBeNull() // F11 fullscreen
+  expect(step(false, MAX_NONE,     { x: 0, y: 0,  width: 1920, height: 1080 })).toEqual(TILED) // F11 back → edge
 })

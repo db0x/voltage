@@ -35,7 +35,7 @@ import Shell from 'gi://Shell'
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js'
 
-import { isRectVisible, sanitizeRect, profileFromDesktopId } from './geometry.js'
+import { isRectVisible, sanitizeRect, profileFromDesktopId, planWidgetReposition, isCycleAbnormalState } from './geometry.js'
 
 // Directory holding the user's .desktop launchers — the Voltage manager installs app
 // launchers here, and this is what we scan/watch.
@@ -77,7 +77,7 @@ export default class VoltageExtension extends Extension {
 
     // --- Widget window placement -------------------------------------------------------------
     this._tracker = Shell.WindowTracker.get_default()
-    // win -> 'unmanaging' handler id, so every per-window signal is disconnected on disable.
+    // win -> array of per-window handler ids, so every per-window signal is disconnected on disable.
     this._trackedWindows = new Map()
     this._windowCreatedId = global.display.connect('window-created', (_d, win) => this._onWindowCreated(win))
     // Attach the save-on-close handler to Voltage windows already open at enable time (e.g. after a
@@ -111,8 +111,8 @@ export default class VoltageExtension extends Extension {
       this._windowCreatedId = null
     }
     if (this._trackedWindows) {
-      for (const [win, id] of this._trackedWindows) {
-        try { win.disconnect(id) } catch { /* window already gone */ }
+      for (const [win, ids] of this._trackedWindows) {
+        for (const id of ids) { try { win.disconnect(id) } catch { /* window already gone */ } }
       }
       this._trackedWindows.clear()
       this._trackedWindows = null
@@ -232,15 +232,51 @@ export default class VoltageExtension extends Extension {
   // existing windows).
   _trackAppWindow(win, appId = this._voltageAppIdForWindow(win)) {
     if (!appId || !this._trackedWindows || this._trackedWindows.has(win)) return
+    const handlerIds = []
     // 'unmanaging' fires while the window is still managed, so its frame rect is still valid here;
     // 'unmanaged' would be too late to read geometry. Persisting on close means the latest
     // position always wins.
-    const handlerId = win.connect('unmanaging', () => {
+    handlerIds.push(win.connect('unmanaging', () => {
       this._saveWindowGeometry(win, appId)
-      try { win.disconnect(handlerId) } catch { /* already gone */ }
-      this._trackedWindows?.delete(win)
-    })
-    this._trackedWindows.set(win, handlerId)
+      this._untrackWindow(win)
+    }))
+
+    // Widget windows are frameless and use the F11 windowed→maximized→fullscreen→windowed cycle.
+    // Under Wayland the client cannot restore its own position when it returns to windowed (the size
+    // comes back but the compositor drops it at the wrong spot — "falsche Position"), so we remember
+    // the windowed frame here and move the window back once it leaves maximized/fullscreen.
+    if (this._hiddenIds?.has(appId)) {
+      const state = { lastNormalFrame: sanitizeRect(win.get_frame_rect()), abnormal: this._isAbnormal(win) }
+      const onFrameChanged = () => this._repositionWidget(win, state)
+      handlerIds.push(win.connect('size-changed', onFrameChanged))
+      handlerIds.push(win.connect('position-changed', onFrameChanged))
+    }
+
+    this._trackedWindows.set(win, handlerIds)
+  }
+
+  // Disconnect every per-window handler and stop tracking the window.
+  _untrackWindow(win) {
+    const ids = this._trackedWindows?.get(win)
+    if (!ids) return
+    for (const id of ids) { try { win.disconnect(id) } catch { /* already gone */ } }
+    this._trackedWindows.delete(win)
+  }
+
+  // Whether the window is in a state the F11 cycle passes through (full maximize / fullscreen) —
+  // NOT an edge-tiled (half-snapped) window, which is a windowed placement we must restore to. See
+  // isCycleAbnormalState for why a partial maximize must not count here.
+  _isAbnormal(win) {
+    try { return isCycleAbnormalState(win.is_fullscreen(), win.get_maximized()) } catch { return false }
+  }
+
+  // On a widget window's frame change, run the pure state machine; when it asks for a restore, move
+  // the window back to its remembered windowed frame — but only while that frame is still on usable
+  // screen space (same visibility guard as launch-time restore).
+  _repositionWidget(win, state) {
+    const target = planWidgetReposition(state, this._isAbnormal(win), win.get_frame_rect())
+    if (target && isRectVisible(target, this._workAreas()))
+      win.move_resize_frame(false, target.x, target.y, target.width, target.height)
   }
 
   // Put the window back exactly where it last closed — but only if that frame still lands on

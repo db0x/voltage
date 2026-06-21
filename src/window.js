@@ -11,7 +11,7 @@ const windowState = require('./window-state')
 const { findRoute, normalizeRouting } = require('./routing-match')
 const { appName, profileFromAppName } = require('./app-naming')
 const { toggleAboutWindow } = require('./about-window')
-const { cycleFullscreen } = require('./fullscreen')
+const { toggleFullscreen, toggleMaximize } = require('./fullscreen')
 const { t } = require('./i18n')
 
 const ROUTING_FILE = path.join(app.getPath('appData'), 'voltage', 'plugins', 'routing', 'routing.json')
@@ -417,14 +417,21 @@ ipcMain.handle('voltage:menu-items', (event, { linkURL, imageURL } = {}) => {
 
   // Core entries (built here, not in a plugin), positioned among the plugin items via `order`:
   //   Fullscreen (F11) sits between the zoom plugin's "Zoom" (10) and "About" (990).
+  //   Maximize (Shift+F11) follows it, widget-only — frameless widgets have no titlebar to maximize.
   //   "About {name}" (F12) sits just above the widget's "Quit" (1000).
   const fullscreenItem = {
     label: i18n.fullscreen,
     order: 500,
     shortcut: 'F11',
     ...(FULLSCREEN_ICON && { icon: FULLSCREEN_ICON }),
-    click: () => cycleFullscreen(ctx.mainWindow, ctx.isWidget),
+    click: () => toggleFullscreen(ctx.mainWindow),
   }
+  const maximizeItem = ctx.isWidget ? {
+    label: i18n.maximizeWindow,
+    order: 510,
+    shortcut: 'Shift+F11',
+    click: () => toggleMaximize(ctx.mainWindow),
+  } : null
   const aboutItem = {
     label: (i18n.aboutApp || 'About {name}').replace(/\{name\}/g, ctx.displayName),
     order: 990,
@@ -436,6 +443,7 @@ ipcMain.handle('voltage:menu-items', (event, { linkURL, imageURL } = {}) => {
     ...(ctx.mainWindow._voltagePlugins ?? [])
       .flatMap(inst => { try { return inst.contextMenuItems?.() ?? [] } catch { return [] } }),
     fullscreenItem,
+    ...(maximizeItem ? [maximizeItem] : []),
     aboutItem,
   ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   const pluginTree = serializePluginMenu(pluginList, actions)
@@ -812,10 +820,9 @@ function createWindow(pkg, opts = {}) {
     catch { try { appContents.send('voltage:menu-show', { items, x: params.x, y: params.y }) } catch {} }
   })
 
-  // F12 toggles the About panel; Shift+F12 toggles DevTools; F11 drives fullscreen (a plain toggle
-  // for framed apps, the windowed→maximized→fullscreen cycle for widgets — see cycleFullscreen).
-  // before-input-event fires ahead of the page, and preventDefault() swallows the key so the web
-  // app never sees it.
+  // F12 toggles the About panel; Shift+F12 toggles DevTools; F11 toggles fullscreen; Shift+F11
+  // toggles maximize for widgets. before-input-event fires ahead of the page, and preventDefault()
+  // swallows the key so the web app never sees it.
   appContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') {
       event.preventDefault()
@@ -834,7 +841,10 @@ function createWindow(pkg, opts = {}) {
       }
     } else if (input.type === 'keyDown' && input.key === 'F11') {
       event.preventDefault()
-      cycleFullscreen(mainWindow, usesWidgetPlugin(pkg))
+      // F11 toggles real fullscreen for every app. Shift+F11 toggles maximize instead, but only for
+      // frameless widgets — framed apps already have a titlebar maximize button.
+      if (input.shift && usesWidgetPlugin(pkg)) toggleMaximize(mainWindow)
+      else                                      toggleFullscreen(mainWindow)
     }
   })
 
