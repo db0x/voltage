@@ -11,6 +11,7 @@ const windowState = require('./window-state')
 const { findRoute, normalizeRouting } = require('./routing-match')
 const { appName, profileFromAppName } = require('./app-naming')
 const { toggleAboutWindow } = require('./about-window')
+const { cycleFullscreen } = require('./fullscreen')
 const { t } = require('./i18n')
 
 const ROUTING_FILE = path.join(app.getPath('appData'), 'voltage', 'plugins', 'routing', 'routing.json')
@@ -422,7 +423,7 @@ ipcMain.handle('voltage:menu-items', (event, { linkURL, imageURL } = {}) => {
     order: 500,
     shortcut: 'F11',
     ...(FULLSCREEN_ICON && { icon: FULLSCREEN_ICON }),
-    click: () => ctx.mainWindow.setFullScreen(!ctx.mainWindow.isFullScreen()),
+    click: () => cycleFullscreen(ctx.mainWindow, ctx.isWidget),
   }
   const aboutItem = {
     label: (i18n.aboutApp || 'About {name}').replace(/\{name\}/g, ctx.displayName),
@@ -657,7 +658,7 @@ function createWindow(pkg, opts = {}) {
   // displayName is computed once near the top of createWindow (also used for the window title).
   appMenuRegistry.set(webContentsId, {
     appContents, mainWindow, profile: pkg.profile, customSession, actions: {},
-    displayName, appIcon: appIconDataUrl(pkg),
+    displayName, appIcon: appIconDataUrl(pkg), isWidget: usesWidgetPlugin(pkg),
   })
   mainWindow.on('closed', () => appMenuRegistry.delete(webContentsId))
 
@@ -811,8 +812,10 @@ function createWindow(pkg, opts = {}) {
     catch { try { appContents.send('voltage:menu-show', { items, x: params.x, y: params.y }) } catch {} }
   })
 
-  // F12 toggles the About panel; Shift+F12 toggles DevTools; F11 toggles fullscreen. before-input-event
-  // fires ahead of the page, and preventDefault() swallows the key so the web app never sees it.
+  // F12 toggles the About panel; Shift+F12 toggles DevTools; F11 drives fullscreen (a plain toggle
+  // for framed apps, the windowed→maximized→fullscreen cycle for widgets — see cycleFullscreen).
+  // before-input-event fires ahead of the page, and preventDefault() swallows the key so the web
+  // app never sees it.
   appContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') {
       event.preventDefault()
@@ -831,7 +834,7 @@ function createWindow(pkg, opts = {}) {
       }
     } else if (input.type === 'keyDown' && input.key === 'F11') {
       event.preventDefault()
-      mainWindow.setFullScreen(!mainWindow.isFullScreen())
+      cycleFullscreen(mainWindow, usesWidgetPlugin(pkg))
     }
   })
 
