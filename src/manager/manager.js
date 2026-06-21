@@ -134,14 +134,17 @@ const confirm      = initConfirmDialog(ctx)
 const info         = initInfoDialog(ctx)
 const profiles     = initProfilesDialog(ctx, { showConfirm: confirm.showConfirm })
 const iconPicker   = initIconPicker(ctx)
-// Both integration callbacks are late-bound because their dialogs are initialized after about.
+// All three integration callbacks are late-bound because their dialogs are initialized after about.
 let onRcloneFromAbout   = null
 let onObsidianFromAbout = null
+let onGnomeFromAbout    = null
 const about        = initAboutDialog(ctx, {
   obsidianAvailable,
   rcloneAvailable: rcloneStatus?.available ?? false,
+  gnomeAvailable,
   onOpenObsidian: () => onObsidianFromAbout?.(),
   onOpenRclone:   () => onRcloneFromAbout?.(),
+  onOpenGnome:    () => onGnomeFromAbout?.(),
 })
 // Late-bound closures — cards is assigned after these dialogs are initialized.
 let onGlobalSettingsSave = null
@@ -158,6 +161,7 @@ onRcloneFromAbout   = () => rcloneDialog.openRcloneDialog()
 const obsidianDialog    = initObsidianDialog(ctx)
 onObsidianFromAbout = () => obsidianDialog.openObsidianDialog()
 const gnomeDialog       = initGnomeDialog(ctx)
+onGnomeFromAbout = () => gnomeDialog.openGnomeDialog()
 const safeBrowsingDialog = initSafeBrowsingDialog(ctx)
 // Per-plugin config dialogs (the markup is shipped by each configurable plugin). Opened from the
 // configure button on a plugin chip in the create/edit dialogs.

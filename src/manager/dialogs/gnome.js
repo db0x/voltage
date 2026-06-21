@@ -15,7 +15,6 @@ export function initGnomeDialog({ i18n, icons, templates }) {
 
   function closeDialog() { overlay.classList.add('hidden') }
 
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog() })
   document.getElementById('gnome-close').addEventListener('click', closeDialog)
   document.getElementById('gnome-cancel').addEventListener('click', closeDialog)
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDialog() })

@@ -150,6 +150,18 @@ test('about dialog closes with Escape', async ({ managerPage }) => {
   await expect(managerPage.locator('.about-dialog')).not.toBeVisible()
 })
 
+// Setup:    About dialog open.
+// Action:   Click the footer Close button (the explicit alternative to the corner ✕).
+// Expected: The about dialog closes — the about dialog has no Cancel/Save footer, so this button
+//           is the discoverable close affordance now that a backdrop click no longer dismisses.
+test('about dialog closes via the Close button', async ({ managerPage }) => {
+  await managerPage.click('#menu-btn')
+  await managerPage.click('#menu-about')
+  await expect(managerPage.locator('.about-dialog')).toBeVisible()
+  await managerPage.click('#about-close-btn')
+  await expect(managerPage.locator('.about-dialog')).not.toBeVisible()
+})
+
 // ── Profiles dialog ───────────────────────────────────────────────────────────
 
 // Setup:    Manager open; profiles dialog is closed.

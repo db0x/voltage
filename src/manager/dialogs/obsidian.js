@@ -14,7 +14,6 @@ export function initObsidianDialog({ i18n, icons, templates }) {
 
   function closeDialog() { overlay.classList.add('hidden') }
 
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog() })
   document.getElementById('obsidian-close').addEventListener('click', closeDialog)
   document.getElementById('obsidian-cancel').addEventListener('click', closeDialog)
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDialog() })

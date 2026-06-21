@@ -209,7 +209,6 @@ export function initGlobalSettingsDialog({ i18n, icons, apps, appDefaultSrc, bui
 
   function closeDialog() { closeDropdown(); overlay.classList.add('hidden') }
 
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog() })
   document.getElementById('global-settings-close').addEventListener('click', closeDialog)
   document.getElementById('global-settings-cancel').addEventListener('click', closeDialog)
   document.addEventListener('keydown', e => {

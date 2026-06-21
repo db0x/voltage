@@ -36,11 +36,11 @@ export function initPluginConfig({ i18n, icons, plugins }) {
     const overlay = applyTemplate(entry.configHtml, { i18n, icons, vars: { pluginIcon: entry.icon || '' } })
     document.body.appendChild(overlay)
     const close = () => overlay.classList.add('hidden')
-    // ✕, Cancel and backdrop all discard: they close without running the commit. The working
-    // copy lives only until close; the next open re-seeds the controls from the stored config.
+    // ✕ and Cancel discard: they close without running the commit. The working copy lives only
+    // until close; the next open re-seeds the controls from the stored config. A backdrop click is
+    // deliberately not a dismiss — it closes dialogs too easily by accident, especially on trackpads.
     overlay.querySelector('.dialog-close')?.addEventListener('click', close)
     overlay.querySelector('.plugin-config-cancel')?.addEventListener('click', close)
-    overlay.addEventListener('click', e => { if (e.target === overlay) close() })
     // Apply commits the working copy (set by the latest bindControls) to the app's config.
     overlay.querySelector('.plugin-config-apply')?.addEventListener('click', () => {
       overlay._commit?.()

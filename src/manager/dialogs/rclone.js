@@ -12,7 +12,6 @@ export function initRcloneDialog({ i18n, icons, appDefaultSrc, templates }) {
 
   function closeDialog() { overlay.classList.add('hidden') }
 
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog() })
   document.getElementById('rclone-close').addEventListener('click', closeDialog)
   document.getElementById('rclone-cancel').addEventListener('click', closeDialog)
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDialog() })

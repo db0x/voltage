@@ -45,7 +45,6 @@ export function initConfirmDialog({ i18n, templates }) {
 
       document.getElementById('confirm-ok').addEventListener('click',    () => cleanup(true))
       document.getElementById('confirm-cancel').addEventListener('click', () => cleanup(false))
-      overlay.addEventListener('click', e => { if (e.target === overlay) cleanup(false) }, { once: true })
     })
   }
 

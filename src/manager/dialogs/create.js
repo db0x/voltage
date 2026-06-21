@@ -270,7 +270,6 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     overlay.classList.add('hidden')
   }
 
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeCreateDialog() })
   document.getElementById('create-close').addEventListener('click', closeCreateDialog)
   document.getElementById('create-cancel').addEventListener('click', closeCreateDialog)
   document.addEventListener('keydown', e => {

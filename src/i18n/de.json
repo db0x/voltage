@@ -208,6 +208,7 @@
   "aboutGithub":   "Voltage bei GitHub",
   "aboutObsidianAvailable": "Obsidian-Plugin verfügbar",
   "aboutRclonePlugin":      "rclone-Plugin verfügbar",
+  "aboutGnome":             "GNOME-Integration verfügbar",
 
   "drawerRcloneSection":       "Integrationen",
   "drawerMailHandler":         "Mail-Handler",

@@ -9,7 +9,6 @@ export function initProfilesDialog({ i18n, tr, apps, appDefaultSrc, icons, templ
 
   function closeProfilesDialog() { overlay.classList.add('hidden') }
 
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeProfilesDialog() })
   document.getElementById('profiles-close').addEventListener('click', closeProfilesDialog)
 
   let scrollbarInited = false

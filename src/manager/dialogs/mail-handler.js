@@ -40,7 +40,6 @@ export function initMailHandlerDialog({ i18n, icons, apps, appDefaultSrc, templa
 
   function closeDialog() { overlay.classList.add('hidden') }
 
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog() })
   document.getElementById('mail-handler-close').addEventListener('click', closeDialog)
   document.getElementById('mail-handler-cancel').addEventListener('click', closeDialog)
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDialog() })

@@ -304,7 +304,6 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     document.getElementById('edit-name').focus()
   }
 
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeEditDialog() })
   document.getElementById('edit-close').addEventListener('click', closeEditDialog)
   document.getElementById('edit-cancel').addEventListener('click', closeEditDialog)
   document.addEventListener('keydown', e => {

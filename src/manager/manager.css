@@ -1860,6 +1860,13 @@ body.dark .profile-custom-badge {
   cursor: default;
 }
 
+/* display:flex above would otherwise override the UA [hidden] rule (author CSS wins over the UA
+   sheet at equal specificity), leaving an unavailable integration icon visible. Make [hidden]
+   authoritative so the obsidian/rclone/gnome icons truly hide when their integration is absent. */
+.about-integration[hidden] {
+  display: none;
+}
+
 .about-integration-icon-wrap {
   position: relative;
   width: 38px;

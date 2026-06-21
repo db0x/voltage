@@ -12,7 +12,6 @@ export function initIconPicker({ i18n, templates }) {
     overlay = applyTemplate(templates.iconPicker, { i18n })
     document.body.appendChild(overlay)
     OverlayScrollbars(document.getElementById('icon-picker-scroll-wrapper'), { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
-    overlay.addEventListener('click', e => { if (e.target === overlay) closeIconPicker() })
     document.getElementById('icon-picker-close').addEventListener('click', closeIconPicker)
     document.getElementById('icon-search').addEventListener('input', e =>
       filterIconGrid(e.target.value.trim().toLowerCase())

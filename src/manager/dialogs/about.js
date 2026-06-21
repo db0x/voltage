@@ -8,7 +8,7 @@ const ASCII_ART = [
   '                    /___/       ',
 ].join('\n')
 
-export function initAboutDialog({ i18n, version, icons, templates }, { obsidianAvailable = false, rcloneAvailable = false, onOpenObsidian = null, onOpenRclone = null } = {}) {
+export function initAboutDialog({ i18n, version, icons, templates }, { obsidianAvailable = false, rcloneAvailable = false, gnomeAvailable = false, onOpenObsidian = null, onOpenRclone = null, onOpenGnome = null } = {}) {
   const overlay = applyTemplate(templates.about, { i18n, icons, vars: { version } })
   document.body.appendChild(overlay)
 
@@ -30,11 +30,19 @@ export function initAboutDialog({ i18n, version, icons, templates }, { obsidianA
       rcloneEl.addEventListener('click', () => { closeAboutDialog(); onOpenRclone() })
     }
   }
+  // GNOME is an environment integration (not a plugin), so it only surfaces when running on GNOME.
+  if (gnomeAvailable) {
+    const gnomeEl = document.getElementById('about-gnome')
+    gnomeEl.hidden = false
+    if (onOpenGnome) {
+      gnomeEl.style.cursor = 'pointer'
+      gnomeEl.addEventListener('click', () => { closeAboutDialog(); onOpenGnome() })
+    }
+  }
 
   function closeAboutDialog() { overlay.classList.add('hidden') }
-
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeAboutDialog() })
   document.getElementById('about-close').addEventListener('click', closeAboutDialog)
+  document.getElementById('about-close-btn').addEventListener('click', closeAboutDialog)
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAboutDialog() })
 
   // openExternal goes through main to enforce an allowlist — renderer cannot open arbitrary URLs.

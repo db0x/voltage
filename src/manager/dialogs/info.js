@@ -11,7 +11,6 @@ export function initInfoDialog({ i18n, icons, appDefaultSrc, plugins, templates 
 
   function closeInfoDialog() { overlay.classList.add('hidden') }
 
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeInfoDialog() })
   document.getElementById('info-close').addEventListener('click', closeInfoDialog)
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInfoDialog() })
 
