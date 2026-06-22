@@ -5,6 +5,7 @@ const { execSync } = require('node:child_process')
 const { primaryKeyFromUrl, routingUrlKeys } = require('../src/routing-match')
 const { appName, wmClass } = require('../src/app-naming')
 const { appImagePath, profileDir } = require('../src/app-paths')
+const { voltageIconThemeDir } = require('../src/icon-paths')
 
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 
@@ -16,56 +17,67 @@ function toDisplayName(profile) {
   return profile.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 
-function ensureHicolorIndexTheme() {
-  const hicolorDir = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
-
-  // Build index.theme from directories that actually exist locally — a copied
-  // system index.theme lists hundreds of missing dirs and makes gtk-update-icon-cache
-  // generate an invalid cache.
-  const sizeMap = { scalable: null }
-  const subdirs = []
-  try {
-    for (const sizeEntry of fs.readdirSync(hicolorDir, { withFileTypes: true })) {
-      if (!sizeEntry.isDirectory()) continue
-      const size = sizeEntry.name
-      const sizeDir = path.join(hicolorDir, size)
-      for (const ctxEntry of fs.readdirSync(sizeDir, { withFileTypes: true })) {
-        if (ctxEntry.isDirectory()) subdirs.push(`${size}/${ctxEntry.name}`)
-      }
-    }
-  } catch { /* ignore */ }
-
-  if (subdirs.length === 0) subdirs.push('scalable/apps', 'scalable/mimetypes')
-
-  const sections = subdirs.map(d => {
-    const size = d.startsWith('scalable') ? 128 : parseInt(d.split('/')[0]) || 48
-    return `[${d}]\nSize=${size}\nType=${d.startsWith('scalable') ? 'Scalable' : 'Fixed'}\nMinSize=1\nMaxSize=256`
-  })
-
-  const content = ['[Icon Theme]', 'Name=Hicolor', 'Comment=Hicolor',
-    `Directories=${subdirs.join(',')}`, '', ...sections, ''].join('\n')
-  fs.writeFileSync(path.join(hicolorDir, 'index.theme'), content, 'utf8')
-  return hicolorDir
+// scalable/apps dir of Voltage's private icon theme — see src/icon-paths.js for why we never write
+// app icons into the shared hicolor theme.
+function voltageAppsDir() {
+  return path.join(voltageIconThemeDir(), 'scalable', 'apps')
 }
 
-function updateHicolorCache() {
+// Writes the private theme's index.theme. Safe to (re)write unconditionally: no other software ships
+// a `voltage` theme, so this overshadows nothing. Inherits=hicolor keeps the normal fallback chain.
+function ensureVoltageIndexTheme() {
+  const dir = voltageIconThemeDir()
+  const subdirs = ['scalable/apps', '48x48/apps']
+  const section = (d) => {
+    const scalable = d.startsWith('scalable')
+    const size = scalable ? 128 : parseInt(d) || 48
+    return `[${d}]\nSize=${size}\nType=${scalable ? 'Scalable' : 'Fixed'}\nMinSize=1\nMaxSize=512\nContext=Applications`
+  }
+  const content = ['[Icon Theme]', 'Name=Voltage', 'Comment=Voltage application icons',
+    'Inherits=hicolor', `Directories=${subdirs.join(',')}`, '', ...subdirs.map(section), ''].join('\n')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'index.theme'), content, 'utf8')
+  return dir
+}
+
+function updateVoltageCache() {
   try {
-    const hicolorDir = ensureHicolorIndexTheme()
-    execSync(`gtk-update-icon-cache -f -t "${hicolorDir}"`, { stdio: 'ignore' })
+    const dir = ensureVoltageIndexTheme()
+    execSync(`gtk-update-icon-cache -f -t "${dir}"`, { stdio: 'ignore' })
   } catch { /* non-fatal */ }
 }
 
+// One-time repair for systems hit by an earlier bug: older Voltage versions fabricated a sparse
+// ~/.local/share/icons/hicolor/index.theme. Because the spec reads the theme's Directories= list
+// only from the highest-priority base dir, that file shadowed the complete system hicolor index and
+// hid hundreds of unrelated system icons. Remove the self-generated file (signature: Name=Hicolor
+// with no Context= keys — a real distro index.theme always carries Context=) so GTK falls back to
+// the system index again, and drop any stale cache built from it.
+function cleanupFabricatedHicolorIndex() {
+  const hicolorDir = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
+  const indexFile  = path.join(hicolorDir, 'index.theme')
+  try {
+    const content = fs.readFileSync(indexFile, 'utf8')
+    if (/Name=Hicolor/.test(content) && !/Context=/.test(content)) {
+      fs.rmSync(indexFile, { force: true })
+      fs.rmSync(path.join(hicolorDir, 'icon-theme.cache'), { force: true })
+      console.log('  Removed Voltage-fabricated hicolor index.theme (restored system icon fallback)')
+    }
+  } catch { /* nothing to clean */ }
+}
+
 function installIcon() {
+  cleanupFabricatedHicolorIndex()  // heal systems damaged by the old hicolor-index behaviour
   const src = path.join(PROJECT_ROOT, 'assets', 'voltage.svg')
   if (!fs.existsSync(src)) return
 
-  const iconDir = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', 'scalable', 'apps')
+  const iconDir = voltageAppsDir()
   const dest = path.join(iconDir, 'voltage.svg')
 
   fs.mkdirSync(iconDir, { recursive: true })
   fs.copyFileSync(src, dest)
   console.log(`  Icon installed: ${dest}`)
-  updateHicolorCache()
+  updateVoltageCache()
 }
 
 // Escape backslashes for .desktop file values (the only character requiring escaping in practice).
@@ -73,20 +85,22 @@ function escapeDesktop(s) {
   return String(s).replace(/\\/g, '\\\\')
 }
 
-// Copies a system icon into the user's hicolor theme under the app's desktop
-// name (e.g. vTeams) so the .desktop entry always has a valid icon.
-// Falls back to the bundled SVG from assets/webapps/ or assets/voltage.svg
-// when no matching icon is found in any system theme.
-function resolveIconToHicolor(iconName, desktopName) {
-  if (!iconName || iconName === 'voltage') return iconName
+// Installs the app's icon into Voltage's private theme and returns the ABSOLUTE path to the
+// installed file. The .desktop entry references that path directly, so the launcher never relies on
+// the icon being resolvable by *name* in the active theme — a private theme is not searched by name.
+// Source precedence: a matching icon from any system theme, else the bundled assets/webapps/<name>.svg,
+// else the generic assets/voltage.svg (shared by every default-icon app).
+function resolveAppIcon(iconName, desktopName) {
+  const appsDir        = voltageAppsDir()
+  const destSvg        = path.join(appsDir, `${desktopName}.svg`)
+  const destPng        = path.join(appsDir, `${desktopName}.png`)
+  const voltageDefault = path.join(appsDir, 'voltage.svg')  // installed by installIcon()
 
-  const hicolorDir = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', 'scalable', 'apps')
-  const destName = desktopName  // e.g. 'vTeams'
-  const destSvg  = path.join(hicolorDir, `${destName}.svg`)
-  const destPng  = path.join(hicolorDir, `${destName}.png`)
+  if (!iconName || iconName === 'voltage') return voltageDefault
 
   // Already installed under this name
-  if (fs.existsSync(destSvg) || fs.existsSync(destPng)) return destName
+  if (fs.existsSync(destSvg)) return destSvg
+  if (fs.existsSync(destPng)) return destPng
 
   // Search icon themes for a matching file (apps/ subdir first, then root of icons dirs)
   const searchDirs = [
@@ -110,12 +124,12 @@ function resolveIconToHicolor(iconName, desktopName) {
       const found = c.file ?? execSync(c.cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
       if (!found) continue
       const ext = c.ext ?? (found.endsWith('.svg') ? 'svg' : 'png')
-      fs.mkdirSync(hicolorDir, { recursive: true })
+      fs.mkdirSync(appsDir, { recursive: true })
       const dest = ext === 'svg' ? destSvg : destPng
       fs.copyFileSync(found, dest)
-      console.log(`  Icon copied to hicolor: ${dest}`)
-      updateHicolorCache()
-      return destName
+      console.log(`  Icon installed to voltage theme: ${dest}`)
+      updateVoltageCache()
+      return dest
     } catch { /* non-fatal */ }
   }
   // Bundled fallback: check assets/webapps/<iconName>.svg, then assets/voltage.svg
@@ -125,13 +139,13 @@ function resolveIconToHicolor(iconName, desktopName) {
     : path.join(PROJECT_ROOT, 'assets', 'voltage.svg')
   if (fs.existsSync(fallbackSvg)) {
     try {
-      fs.mkdirSync(hicolorDir, { recursive: true })
+      fs.mkdirSync(appsDir, { recursive: true })
       fs.copyFileSync(fallbackSvg, destSvg)
-      updateHicolorCache()
-      return destName
+      updateVoltageCache()
+      return destSvg
     } catch { /* non-fatal */ }
   }
-  return iconName
+  return voltageDefault
 }
 
 function installDesktop(app) {
@@ -141,7 +155,10 @@ function installDesktop(app) {
 
   const appImageFile = appImagePath(app, path.resolve('dist'))
   const displayName = escapeDesktop(app.name || toDisplayName(app.profile))
-  const icon = resolveIconToHicolor(app.icon || 'voltage', desktopName)
+  // Absolute path into Voltage's private icon theme. A path (rather than an icon name) is required
+  // here: the private theme is not searched by name in the active theme, so only a direct path is
+  // guaranteed to resolve in every launcher/desktop environment.
+  const icon = resolveAppIcon(app.icon || 'voltage', desktopName)
   const mimeTypes = app.mimeTypes?.length ? app.mimeTypes.join(';') + ';' : null
 
   const lines = [
@@ -187,14 +204,15 @@ function installDesktop(app) {
   }
 
   // Render a 48×48 PNG from the app icon SVG so nativeImage.createFromPath() works in
-  // context menus (Electron on Linux cannot load SVG via nativeImage).
-  const appIconSvg = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', 'scalable', 'apps', `${desktopName}.svg`)
+  // context menus (Electron on Linux cannot load SVG via nativeImage). Both source and target live
+  // in Voltage's private icon theme.
+  const appIconSvg = path.join(voltageAppsDir(), `${desktopName}.svg`)
   if (fs.existsSync(appIconSvg)) {
     const pngConverter = ['rsvg-convert', 'inkscape', 'convert'].find(cmd => {
       try { execSync(`which ${cmd}`, { stdio: 'ignore' }); return true } catch { return false }
     })
     if (pngConverter) {
-      const pngDir  = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '48x48', 'apps')
+      const pngDir  = path.join(voltageIconThemeDir(), '48x48', 'apps')
       const pngPath = path.join(pngDir, `${desktopName}.png`)
       try {
         fs.mkdirSync(pngDir, { recursive: true })
@@ -284,7 +302,11 @@ function installDesktop(app) {
         }
       }
     }
-    updateHicolorCache()
+    // No icon-cache rebuild here: MIME icons must stay resolvable by *name*, so they live in the
+    // shared hicolor theme (and active-theme override dirs) rather than Voltage's private theme.
+    // We deliberately do NOT touch those themes' index.theme — that was the system-wide-breakage
+    // bug. Copying a file bumps the directory mtime, which invalidates any stale per-dir cache, so
+    // GTK picks the new icons up via its live directory scan without a fabricated index/cache.
   }
 
   updateRoutingTable()
@@ -331,15 +353,19 @@ function updateRoutingTable() {
       if (!fs.existsSync(appImagePath)) continue
       try {
         const name      = cfg.name || toDisplayName(cfg.profile)
-        const hicolor   = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
         const iconName  = appName(cfg.profile)
-        const iconPng48 = path.join(hicolor, '48x48', 'apps', `${iconName}.png`)
-        const iconPng   = path.join(hicolor, 'scalable', 'apps', `${iconName}.png`)
-        const iconSvg   = path.join(hicolor, 'scalable', 'apps', `${iconName}.svg`)
-        const icon      = fs.existsSync(iconPng48) ? iconPng48
-                        : fs.existsSync(iconPng)   ? iconPng
-                        : fs.existsSync(iconSvg)   ? iconSvg
-                        : null
+        // Prefer Voltage's private theme (current layout), fall back to hicolor for older installs.
+        // 48×48 PNG first because nativeImage cannot load SVG on Linux.
+        const voltage   = voltageIconThemeDir()
+        const hicolor   = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
+        const icon      = [
+          path.join(voltage, '48x48',    'apps', `${iconName}.png`),
+          path.join(voltage, 'scalable', 'apps', `${iconName}.png`),
+          path.join(voltage, 'scalable', 'apps', `${iconName}.svg`),
+          path.join(hicolor, '48x48',    'apps', `${iconName}.png`),
+          path.join(hicolor, 'scalable', 'apps', `${iconName}.png`),
+          path.join(hicolor, 'scalable', 'apps', `${iconName}.svg`),
+        ].find(p => fs.existsSync(p)) || null
         const entry = { path: appImagePath, name, ...(icon && { icon }) }
         const baseKey = primaryKeyFromUrl(cfg.url)
         if (baseKey) routing.base[baseKey] = entry

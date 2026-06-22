@@ -10,11 +10,11 @@
 const { WebContentsView, ipcMain, app, shell } = require('electron')
 const path = require('node:path')
 const fs   = require('node:fs')
-const os   = require('node:os')
 
 const pkg      = require(app.getAppPath() + '/package.json')
 const APP_ROOT = app.getAppPath()
 const { appName } = require('./app-naming')
+const { appIconCandidates } = require('./icon-paths')
 const { t }       = require('./i18n')
 
 // Reads an SVG asset as a base64 data URL for inline embedding; null if missing.
@@ -22,18 +22,12 @@ function svgDataUrl(absPath) {
   try { return `data:image/svg+xml;base64,${fs.readFileSync(absPath).toString('base64')}` } catch { return null }
 }
 
-// The installed per-app icon. resolveIconToHicolor places it under scalable/apps as .svg OR .png
-// (a private app's icon copied from a system theme is often a .png there), so check both before the
-// 48x48 fallback — otherwise such icons (e.g. mastodon) come up empty.
+// The installed per-app icon. resolveAppIcon installs it into Voltage's private icon theme under
+// scalable/apps as .svg OR .png (a private app's icon copied from a system theme is often a .png
+// there); appIconCandidates also probes the legacy hicolor location for older installs and the
+// 48x48 raster — otherwise such icons (e.g. mastodon) come up empty.
 function appIconDataUrl() {
-  const hicolor = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
-  const iconBase = appName(pkg.profile)
-  const candidates = [
-    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.svg`), 'image/svg+xml'],
-    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.png`), 'image/png'],
-    [path.join(hicolor, '48x48',    'apps', `${iconBase}.png`), 'image/png'],
-  ]
-  for (const [p, mime] of candidates) {
+  for (const [p, mime] of appIconCandidates(appName(pkg.profile))) {
     if (fs.existsSync(p)) return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`
   }
   return null

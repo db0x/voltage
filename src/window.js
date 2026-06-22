@@ -1,7 +1,6 @@
 const { BrowserWindow, WebContentsView, shell, ipcMain, dialog, app } = require('electron')
 const path   = require('node:path')
 const fs     = require('node:fs')
-const os     = require('node:os')
 const crypto = require('node:crypto')
 const https  = require('node:https')
 const { spawn, spawnSync } = require('node:child_process')
@@ -10,6 +9,7 @@ const { aspellSuggestions } = require('./context-menu')
 const windowState = require('./window-state')
 const { findRoute, normalizeRouting } = require('./routing-match')
 const { appName, profileFromAppName } = require('./app-naming')
+const { appIconCandidates } = require('./icon-paths')
 const { toggleAboutWindow } = require('./about-window')
 const { toggleFullscreen, toggleMaximize } = require('./fullscreen')
 const { t } = require('./i18n')
@@ -306,17 +306,12 @@ function routeExternalUrl(url, currentProfile) {
 function iconToDataUrl(p) { try { return p ? `data:image/png;base64,${fs.readFileSync(p).toString('base64')}` : null } catch { return null } }
 
 // The app's own icon as a data URL. Prefers the installed per-app icon (what the About panel shows
-// too) — resolveIconToHicolor (scripts/lib.js) places it under scalable/apps as either .svg OR .png
-// (a private app's icon copied from a system theme is often a .png in that dir), so we check both
-// there. Falls back to the bundled assets/webapps/<icon> set for non-installed / standard apps.
+// too) — resolveAppIcon (scripts/lib.js) installs it into Voltage's private icon theme under
+// scalable/apps as either .svg OR .png (a private app's icon copied from a system theme is often a
+// .png there). appIconCandidates also probes the legacy hicolor location for older installs.
+// Falls back to the bundled assets/webapps/<icon> set for non-installed / standard apps.
 function appIconDataUrl(pkg) {
-  const hicolor = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')
-  const iconBase = appName(pkg.profile)
-  const candidates = [
-    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.svg`), 'image/svg+xml'],
-    [path.join(hicolor, 'scalable', 'apps', `${iconBase}.png`), 'image/png'],
-    [path.join(hicolor, '48x48',    'apps', `${iconBase}.png`), 'image/png'],
-  ]
+  const candidates = appIconCandidates(appName(pkg.profile))
   if (pkg.icon) candidates.push(
     [path.join(__dirname, '..', 'assets', 'webapps', pkg.icon + '.svg'), 'image/svg+xml'],
     [path.join(__dirname, '..', 'assets', 'webapps', pkg.icon + '.png'), 'image/png'],
