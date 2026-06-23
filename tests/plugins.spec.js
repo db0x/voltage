@@ -486,6 +486,36 @@ test('edit dialog: css-inject overrides persist as a repeatable list under plugi
   ] } })
 })
 
+// Setup:    Edit dialog for test-user-app with the css-inject plugin added and its config dialog
+//           opened (the free-text "Custom CSS" textarea is empty on a fresh config).
+// Action:   Type a CSS snippet into the textarea, then Apply + Save.
+// Expected: The snippet round-trips into pluginConfig as config.customCss — proving the host's
+//           generic textarea[data-config-key] binding persists a multi-line free-text field.
+test('edit dialog: css-inject custom CSS free-text persists under pluginConfig', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'css-inject' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'css-inject' })
+    .locator('.domain-configure-btn').click()
+
+  const overlay = managerPage.locator('.plugin-config-overlay')
+  const snippet = '.ad-banner { display: none; }'
+  await overlay.locator('textarea[data-config-key="customCss"]').fill(snippet)
+
+  await overlay.locator('.plugin-config-apply').click()
+  await expect(managerPage.locator('#edit-save')).toBeEnabled()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  // rules is [] because the host always syncs the (empty) override list alongside the textarea.
+  }).toEqual({ 'plugins/css-inject/css-inject.js': { rules: [], customCss: snippet } })
+})
+
 // Setup:    css-inject added to test-user-app with two override rows stored (from the test above's
 //           sibling setup, rebuilt here so the test stands alone).
 // Action:   Re-open the config dialog, remove the first row, Apply + Save.

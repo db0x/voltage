@@ -56,6 +56,17 @@ function resolveColor(raw) {
   return COLOR_RE.test(color) ? color : null
 }
 
+// Reads the free-text custom CSS block (config.customCss) and returns it verbatim, or null when
+// empty. Unlike the variable/colour rules — which are validated so a stray config value can't break
+// out of a controlled declaration — this block is injected as-is: it is the user hand-writing CSS
+// for their own wrapped app, so arbitrary CSS is the whole point. The trust boundary is the same as
+// any other field in the user's own config; we only trim and drop it when blank.
+function resolveCustomCss(raw) {
+  if (typeof raw !== 'string') return null
+  const css = raw.trim()
+  return css ? css : null
+}
+
 // Reads the configured overrides into a clean [{ name, color }] list. The config stores them under
 // `rules` (an array of { varName, color }); a single legacy { varName, color } at the top level is
 // accepted as a one-entry list so configs written before the multi-row dialog still work. Rows with
@@ -73,10 +84,12 @@ function resolveRules(config) {
   return rules
 }
 
-// Builds the injected stylesheet from the configured variable overrides and the optional
-// focus-ring suppression, or null when neither is active (then the plugin attaches but injects
-// nothing). The variable overrides share one :root, body block — each overridden variable
-// cascades to every rule that resolves it via var().
+// Builds the injected stylesheet from the configured variable overrides, the optional focus-ring
+// suppression and the free-text custom CSS block, or null when none is active (then the plugin
+// attaches but injects nothing). The variable overrides share one :root, body block — each
+// overridden variable cascades to every rule that resolves it via var(). The custom CSS is appended
+// last so it has the final say (later rules win at equal specificity), matching its purpose as a
+// user-authored override on top of the structured fields.
 function buildCss(config) {
   const parts = []
   const rules = resolveRules(config)
@@ -85,6 +98,8 @@ function buildCss(config) {
     parts.push(`:root, body { ${decls} }`)
   }
   if (resolveRemoveFocusRing(config)) parts.push(FOCUS_RING_OFF_CSS)
+  const customCss = resolveCustomCss(config?.customCss)
+  if (customCss) parts.push(customCss)
   return parts.length ? parts.join('\n') : null
 }
 

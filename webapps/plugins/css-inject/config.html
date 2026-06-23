@@ -40,6 +40,15 @@
         </template>
         <button type="button" class="plugin-config-add-row" data-config-add>+ {{cssInjectConfigAddRow}}</button>
       </div>
+      <!-- Free-text CSS appended verbatim to the injected stylesheet. Bound by the host's generic
+           value-control handling (textarea[data-config-key]); css-inject.js reads config.customCss
+           and appends it last so it overrides the structured variable rules above. Unvalidated by
+           design — it is the user authoring CSS for their own wrapped app. -->
+      <div class="plugin-config-custom-css">
+        <label class="plugin-config-custom-css-label">{{cssInjectConfigCustomCss}}<span class="field-help" data-tooltip="{{cssInjectConfigCustomCssHint}}">?</span></label>
+        <textarea class="plugin-config-custom-css-input" data-config-key="customCss" spellcheck="false"
+                  rows="6" placeholder="{{cssInjectConfigCustomCssPlaceholder}}"></textarea>
+      </div>
       <!-- OFF by default: removing the keyboard focus ring suppresses the page's own
            keyboard-focus affordance (an accessibility trade-off), so it is opt-in. The "?" hint
            spells that out. Bound by the host's generic .dialog-field-toggle handling; css-inject.js

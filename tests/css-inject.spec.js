@@ -50,3 +50,37 @@ test('buildCss combines variable overrides and the focus-ring rule', () => {
   const css = buildCss({ rules: [{ varName: '--color-bg', color: '#112233' }], removeFocusRing: true })
   expect(css).toBe(':root, body { --color-bg: #112233 !important; }\n:focus-visible { outline: none !important; }')
 })
+
+// Setup:    Only the free-text custom CSS block configured (no overrides, focus-ring off).
+// Action:   Build the stylesheet.
+// Expected: The custom CSS verbatim — it is injected as-is (user-authored CSS for their own app),
+//           trimmed of surrounding whitespace.
+test('buildCss emits the custom CSS block verbatim', () => {
+  expect(buildCss({ customCss: '  .ad { display: none; }  ' })).toBe('.ad { display: none; }')
+})
+
+// Setup:    A blank / whitespace-only custom CSS field and nothing else configured.
+// Action:   Build the stylesheet.
+// Expected: null — an empty free-text field must not turn an otherwise-unconfigured app into an
+//           injection target.
+test('buildCss ignores blank custom CSS', () => {
+  expect(buildCss({ customCss: '   ' })).toBeNull()
+  expect(buildCss({ customCss: '' })).toBeNull()
+})
+
+// Setup:    A variable override, the focus-ring toggle on, and a custom CSS block — all three.
+// Action:   Build the stylesheet.
+// Expected: All three present in order (variable block, focus-ring rule, then custom CSS last) — the
+//           custom block is appended last so it wins at equal specificity over the structured rules.
+test('buildCss appends custom CSS after the variable and focus-ring rules', () => {
+  const css = buildCss({
+    rules: [{ varName: '--color-bg', color: '#112233' }],
+    removeFocusRing: true,
+    customCss: '.ad { display: none; }',
+  })
+  expect(css).toBe(
+    ':root, body { --color-bg: #112233 !important; }\n' +
+    ':focus-visible { outline: none !important; }\n' +
+    '.ad { display: none; }'
+  )
+})
