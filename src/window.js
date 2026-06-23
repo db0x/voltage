@@ -489,12 +489,15 @@ function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg, a
   for (const rel of pkg.plugins ?? []) {
     try {
       const mod = require(path.join(__dirname, '..', 'webapps', rel))
-      // attachPlugin is optional: a plugin may only contribute windowOptions() (applied
-      // earlier in collectPluginWindowOptions), e.g. the widget plugin. Only flag a module
-      // that exports neither hook.
+      // attachPlugin is optional: a plugin may only contribute an early hook collected before the
+      // window loads — windowOptions() (widget), viewConfig() (view mode), or preloadArgs()
+      // (css-inject's document-start injection). Only a module exporting NO recognised hook at all
+      // is a real misconfiguration worth flagging.
       if (typeof mod.attachPlugin !== 'function') {
-        if (typeof mod.windowOptions !== 'function')
-          console.error(`[plugin] ${rel} exports neither attachPlugin() nor windowOptions() — skipped`)
+        const hasEarlyHook = ['windowOptions', 'viewConfig', 'preloadArgs']
+          .some(h => typeof mod[h] === 'function')
+        if (!hasEarlyHook)
+          console.error(`[plugin] ${rel} exports no attachPlugin() or early hook — skipped`)
         continue
       }
       const config = pkg.pluginConfig?.[rel] || {}
@@ -525,6 +528,28 @@ function collectPluginWindowOptions(pkg) {
     }
   }
   return merged
+}
+
+// Collects the additionalArguments that plugins inject into the app's webPreferences. A plugin may
+// export preloadArgs(config) → string[]; these reach the preload as process.argv entries (the same
+// channel as --voltage-file-handler), which is the only way to hand the preload data it needs
+// SYNCHRONOUSLY at document-start — before any page script or paint. Used by css-inject to inject
+// its stylesheet flicker-free (a sync IPC would race the plugin's post-load attach; additionalArgs
+// are baked into webPreferences before the window exists, so they are always already there).
+function collectPluginPreloadArgs(pkg) {
+  const args = []
+  for (const rel of pkg.plugins ?? []) {
+    try {
+      const mod = require(path.join(__dirname, '..', 'webapps', rel))
+      if (typeof mod.preloadArgs === 'function') {
+        const config = pkg.pluginConfig?.[rel] || {}
+        for (const a of mod.preloadArgs(config) || []) if (typeof a === 'string') args.push(a)
+      }
+    } catch (err) {
+      console.error(`[plugin] preloadArgs failed for ${rel}:`, err)
+    }
+  }
+  return args
 }
 
 // True when the app loads the widget plugin (frameless window). A few behaviours key off this,
@@ -583,7 +608,16 @@ function createWindow(pkg, opts = {}) {
     nodeIntegrationInSubFrames: true,
     session: customSession,
     ...(pkg.crossOriginIsolation && { enableBlinkFeatures: 'SharedArrayBuffer' }),
-    ...(pkg.fileHandler && { additionalArguments: ['--voltage-file-handler'] }),
+    // additionalArguments reach the preload as process.argv. --voltage-file-handler gates the
+    // draw.io IPC bridge; plugin preloadArgs (e.g. css-inject's document-start stylesheet) ride the
+    // same channel. Omitted entirely when nothing contributes, to keep argv clean.
+    ...(() => {
+      const extra = [
+        ...(pkg.fileHandler ? ['--voltage-file-handler'] : []),
+        ...collectPluginPreloadArgs(pkg),
+      ]
+      return extra.length ? { additionalArguments: extra } : {}
+    })(),
   }
 
   const viewMode = collectPluginViewMode(pkg)

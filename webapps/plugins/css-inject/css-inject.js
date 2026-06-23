@@ -1,20 +1,27 @@
 // css-inject plugin (main-process module). Lets an app override one or more CSS custom properties
-// of the page it wraps — a per-app list of (variable name → colour) rules configured in the manager
-// (config.html). Purely cosmetic: it can recolour the wrapped site through its own theme variables,
-// but cannot reach into cross-origin iframes (same boundary limitation as no-select and the other
-// page-injected plugins — the renderer can't apply CSS across that boundary).
+// of the page it wraps — a per-app list of (variable name → colour) rules plus a free-text CSS
+// block, configured in the manager (config.html). Purely cosmetic: it can recolour or hide parts of
+// the wrapped site, but cannot reach into cross-origin iframes (same boundary limitation as
+// no-select and the other page-injected plugins — only the top document is styled).
 //
-// Why insertCSS (not executeJavaScript with a <style>): insertCSS survives SPA soft-navigations
-// without re-injection, so the styling stays applied as the user moves around the app. We still
-// re-apply on every full navigation (did-finish-load), because a full document load drops the
-// previously inserted stylesheet.
+// Injection timing — document-start, not post-load. The stylesheet does NOT ride in through an
+// attachPlugin/did-finish-load insertCSS anymore: that fires after first paint, so a `display:none`
+// rule let the target element flash visible for a frame (FOUC) before it vanished. Instead the CSS
+// is handed to the preload via additionalArguments (preloadArgs() below → process.argv), and the
+// preload calls webFrame.insertCSS() synchronously at document-start — before the page paints, so
+// hidden/restyled elements never flash. The CSS is fixed at window-creation time (per-app config),
+// which is why additionalArguments (baked into webPreferences up front) work where a sync IPC would
+// race the plugin's late attach. webFrame.insertCSS persists across SPA soft-navigations, and the
+// preload re-runs (re-injecting) on every full document load, so coverage matches the old approach.
 //
 // Why override the variable (not individual rules): setting e.g. --color-bg-primary once cascades
 // to every rule that resolves var(--color-bg-primary), so a single declaration restyles the whole
 // site. We set it on both :root and body with !important so it wins regardless of where the page
 // declares the variable (Mastodon, for instance, sets it on :root).
 
-const TAG = '[css-inject-plugin]'
+// Prefix of the additionalArgument that carries the injected stylesheet to the preload. Must match
+// the reader in preload.js. The CSS is URI-encoded after this prefix (argv is a flat string list).
+const PRELOAD_ARG = '--voltage-css-inject='
 
 // CSS custom-property name pattern: two leading dashes then identifier chars. Validating before
 // interpolation keeps a stray config value from breaking out of the declaration (CSS injection),
@@ -103,26 +110,18 @@ function buildCss(config) {
   return parts.length ? parts.join('\n') : null
 }
 
-function attachPlugin(win, api) {
-  // Inject into the APP's webContents — api.webContents is the window's own webContents normally,
-  // but the inset WebContentsView when another plugin (e.g. widget) runs the app in view mode.
-  // win.webContents would hit the empty host/shadow page in that case → the CSS silently never
-  // lands. See window.js loadPlugins() for the api.webContents contract.
-  const wc  = api.webContents
-  const css = buildCss(api.config)
-
-  if (!css) {
-    console.log(TAG, 'attached (no valid variable/colour configured)')
-    return
-  }
-
-  // Re-apply after every full load: insertCSS persists across in-page navigation but a full
-  // document load replaces the page and drops the inserted stylesheet.
-  const apply = () => { wc.insertCSS(css).catch(() => {}) }
-  wc.on('did-finish-load', apply)
-  console.log(TAG, 'attached')
+// Early plugin hook (collected by window.js before the window is created, like windowOptions/
+// viewConfig). Returns the additionalArguments this plugin contributes to the app's webPreferences:
+// a single --voltage-css-inject=<encoded-css> entry the preload reads and injects at document-start,
+// or [] when nothing is configured (the arg is then absent and the preload no-ops). URI-encoding is
+// required because the CSS is arbitrary text and argv entries are plain strings — the preload
+// decodes it back. Passed the per-app plugin config (window.js resolves pkg.pluginConfig[rel]).
+function preloadArgs(config) {
+  const css = buildCss(config)
+  return css ? [`${PRELOAD_ARG}${encodeURIComponent(css)}`] : []
 }
 
-// configurable: the chip's configure button opens config.html, where the variable name and colour
-// are set per app.
-module.exports = { attachPlugin, configurable: true, buildCss }
+// configurable: the chip's configure button opens config.html, where the overrides + custom CSS are
+// set per app. No attachPlugin: injection happens entirely at document-start via preloadArgs (see
+// the timing note at the top), so this plugin only contributes an early hook, not a post-load one.
+module.exports = { preloadArgs, configurable: true, buildCss, PRELOAD_ARG }
