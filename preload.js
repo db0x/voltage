@@ -49,6 +49,22 @@ if (_blockClose) {
   ).catch(() => {})
 }
 
+// css-inject: apply the per-app stylesheet at document-start, before the first paint, so a
+// `display:none`/recolour rule never lets its target flash visible for a frame (the FOUC the old
+// post-load insertCSS left). The CSS rides in via additionalArguments (process.argv) — the same
+// mechanism as --voltage-file-handler — because it must be in hand SYNCHRONOUSLY here, before any
+// page script runs; a sync IPC would race the plugin's post-load attach. Main frame only: css-inject
+// styles only the top document (its long-standing cross-origin limitation), and additionalArguments
+// reach the main frame but not out-of-process iframes anyway. webFrame.insertCSS persists across the
+// app's in-page navigations; this preload re-runs and re-injects on every full document load.
+if (process.isMainFrame) {
+  const CSS_ARG = '--voltage-css-inject='
+  const cssArg = process.argv.find(a => a.startsWith(CSS_ARG))
+  if (cssArg) {
+    try { webFrame.insertCSS(decodeURIComponent(cssArg.slice(CSS_ARG.length))) } catch {}
+  }
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Renderer→main bridge for the zoom plugin: a page can't reach its own webContents zoom, so the
   // injected ctrl+wheel listener signals the direction here and the plugin steps the zoom factor.
