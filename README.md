@@ -230,6 +230,10 @@ npm run install-app                  # all configs
 
 Output lands in `dist/` as a self-contained AppImage, named after the profile with a leading `v` and an upper-cased first letter — e.g. profile `teams` builds `dist/vTeams`, installs `vTeams.desktop`, and registers the icon `vTeams.svg`. The profile itself stays lowercase and is the stable identity for the app's session directory under `~/.config/voltage/<profile>/`.
 
+### Launcher indirection (encrypted AppImage directories)
+
+Every app's `.desktop` file does **not** point `Exec=` at the AppImage directly. Instead it routes through one shared launcher script at `~/.local/share/voltage/voltage-launch`, passing the AppImage path as its first argument. The reason is GNOME/GIO: it drops a `.desktop` entry entirely when the `Exec=` binary cannot be resolved on disk — so if the AppImage lives in an **encrypted/locked** directory, the starter silently disappears and is **not** restored after unlocking (the app index is cached until the `.desktop` file itself changes). Because the shared launcher always lives in the unencrypted home, GIO can always resolve it and keeps the entry visible. If the real AppImage is unreachable when launched (project still locked), the script shows a desktop notification (DE/EN) instead of failing silently. The launcher is (re)written automatically on every install.
+
 ## Manual config (advanced)
 
 Apps can also be configured by hand — useful for bulk setup, version-controlled shared configs, or options not yet exposed in the UI. Configs live in `webapps/`; use `webapps/build.private.<name>.json` for ones you don't want to commit (gitignored automatically).

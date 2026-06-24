@@ -6,6 +6,7 @@ const { primaryKeyFromUrl, routingUrlKeys } = require('../src/routing-match')
 const { appName, wmClass } = require('../src/app-naming')
 const { appImagePath, profileDir } = require('../src/app-paths')
 const { voltageIconThemeDir } = require('../src/icon-paths')
+const { ensureLauncher, desktopExec } = require('../src/launcher')
 
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 
@@ -161,12 +162,17 @@ function installDesktop(app) {
   const icon = resolveAppIcon(app.icon || 'voltage', desktopName)
   const mimeTypes = app.mimeTypes?.length ? app.mimeTypes.join(';') + ';' : null
 
+  // Route the launcher through Voltage's shared indirection script so GNOME never drops the entry
+  // when the AppImage's directory is encrypted/locked (see src/launcher.js). Ensure the script
+  // exists before the .desktop references it.
+  ensureLauncher()
+
   const lines = [
     '[Desktop Entry]',
     'Version=1.0',
     `Name=${displayName}`,
     `Comment=${displayName}`,
-    `Exec=${appImageFile} --no-sandbox %u`,
+    `Exec=${desktopExec(appImageFile)}`,
     'Terminal=false',
     'Type=Application',
     `Icon=${icon}`,
