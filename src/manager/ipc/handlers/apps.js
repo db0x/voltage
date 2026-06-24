@@ -13,6 +13,7 @@ const { getDefaultMailDesktop }                            = require('./mail')
 const { urlToRoutingKey, keyOverlaps, primaryKeyFromUrl, routingUrlKeys } = require('../../../routing-match')
 const { appName }                                          = require('../../../app-naming')
 const { appImagePath, profileDir }                         = require('../../../app-paths')
+const { ensureLauncher, desktopExec }                      = require('../../../launcher')
 
 // Default locations the per-app overrides fall back to.
 const DIST_DIR     = path.join(APP_ROOT, 'dist')
@@ -264,7 +265,10 @@ module.exports = function registerAppHandlers() {
         if (fs.existsSync(`${oldImg}.version`)) movePath(`${oldImg}.version`, `${newImg}.version`)
         const desktopFile = path.join(os.homedir(), '.local', 'share', 'applications', `${appName(data.profile)}.desktop`)
         if (fs.existsSync(desktopFile)) {
-          const patched = fs.readFileSync(desktopFile, 'utf8').replace(/^Exec=.*$/m, `Exec=${newImg} --no-sandbox %u`)
+          // Keep routing through the shared launcher (see src/launcher.js); only the AppImage path
+          // argument changes. ensureLauncher() guards against an entry that predates the launcher.
+          ensureLauncher()
+          const patched = fs.readFileSync(desktopFile, 'utf8').replace(/^Exec=.*$/m, `Exec=${desktopExec(newImg)}`)
           fs.writeFileSync(desktopFile, patched, 'utf8')
         }
       }

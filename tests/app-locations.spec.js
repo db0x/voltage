@@ -2,6 +2,7 @@ const { test, expect } = require('./fixtures')
 const fs   = require('node:fs')
 const os   = require('node:os')
 const path = require('node:path')
+const { desktopExec } = require('../src/launcher')
 
 // Per-app custom locations: where the AppImage is built (outputDir) and where the app keeps its
 // profile/session data (profileDir). Both are chosen via a native folder dialog, so these tests
@@ -86,7 +87,7 @@ test('edit dialog: moving the AppImage folder relocates the artifact and fixes t
     await expect.poll(() => fs.existsSync(movedArtifact)).toBe(true)
     expect(fs.existsSync(artifact)).toBe(false)                         // moved, not copied
     expect(fs.existsSync(`${movedArtifact}.version`)).toBe(true)
-    expect(fs.readFileSync(desktop, 'utf8')).toContain(`Exec=${movedArtifact} --no-sandbox %u`)
+    expect(fs.readFileSync(desktop, 'utf8')).toContain(`Exec=${desktopExec(movedArtifact)}`)
   } finally {
     fs.rmSync(desktop, { force: true })
     fs.rmSync(artifact, { force: true })
