@@ -52,7 +52,7 @@ test.describe('ensureLauncher — installed script', () => {
       const p = launcher.ensureLauncher()
       expect(p).toBe(launcher.launcherPath())
       expect(fs.existsSync(p)).toBe(true)
-      expect(fs.readFileSync(p, 'utf8')).toBe(launcher.LAUNCHER_SCRIPT)
+      expect(fs.readFileSync(p, 'utf8')).toBe(launcher.buildLauncherScript(launcher.repoRoot()))
       expect(fs.readFileSync(p, 'utf8').startsWith('#!/bin/sh')).toBe(true)
       expect(fs.statSync(p).mode & 0o111).toBeTruthy()   // executable bit set
 
@@ -78,15 +78,16 @@ test.describe('ensureLauncher — installed script', () => {
   })
 
   // Setup:    an installed launcher pointed at a non-existent AppImage (the encrypted/locked case).
+  //           VOLTAGE_TEST=1 suppresses the notice-window spawn so the unit test never boots Electron.
   // Action:   invoke the launcher.
-  // Expected: it exits non-zero (127) instead of crashing — the notify-send hint is best-effort and
-  //           swallowed, so the script behaves the same whether or not notify-send is installed.
+  // Expected: it exits non-zero (127) instead of crashing, signalling the failure to GIO/GNOME.
   test('exits non-zero when the AppImage is unreachable', () => {
     withTempDataHome((tmp, launcher) => {
       const p = launcher.ensureLauncher()
       let status = 0
       try {
-        execFileSync('sh', [p, path.join(tmp, 'does-not-exist'), '--no-sandbox'], { stdio: 'ignore' })
+        execFileSync('sh', [p, path.join(tmp, 'does-not-exist'), '--no-sandbox'],
+          { stdio: 'ignore', env: { ...process.env, VOLTAGE_TEST: '1' } })
       } catch (err) {
         status = err.status
       }

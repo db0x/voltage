@@ -289,5 +289,9 @@
   "updateNoticeTitle":  "Update available",
   "updateNoticeBody":   "<p>voltage <strong>{version}</strong> is available.</p><p style=\"margin-top:8px\">To update, run <code>git pull</code> in the voltage directory and then rebuild all AppImages.</p>",
   "updateNoticeGithub": "Open on GitHub",
-  "updateNoticeOk":     "Got it"
+  "updateNoticeOk":     "Got it",
+
+  "noticeUnavailableTitle": "{name} can't be started",
+  "noticeUnavailableBody":  "The AppImage for {name} could not be found.",
+  "noticeOk":               "Close"
 }

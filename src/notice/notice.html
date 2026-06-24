@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <!-- Reuse the Manager stylesheet so the notice carries the exact Voltage tokens + button styles. -->
+  <link rel="stylesheet" href="../manager/manager.css">
+  <style>
+    /* The window is frameless AND transparent (see src/notice/window.js), so the rounded card's
+       corners and its drop shadow show through instead of being squared off by an opaque frame —
+       the same technique the widget plugin's host window uses. The body is just a transparent
+       gutter wide enough that the box-shadow is not clipped at the window edge. */
+    html, body { background: transparent; margin: 0; }
+    body.notice {
+      height: 100vh;
+      box-sizing: border-box;
+      padding: 22px;                       /* shadow gutter */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+    .notice-card {
+      visibility: visible;                 /* lift manager.css's body{visibility:hidden} gate */
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--card-bg);
+      color: var(--card-fg);
+      border-radius: 14px;                 /* like the widget plugin */
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      padding: 22px 26px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .notice-title { margin: 0; display: flex; align-items: center; gap: 10px; font-size: 17px; }
+    #notice-body { font-size: 14px; line-height: 1.5; color: var(--card-url); }
+  </style>
+</head>
+<body class="notice">
+  <div class="notice-card">
+    <h2 class="notice-title">
+      <img id="notice-icon" width="26" height="26" alt="">
+      <span id="notice-title"></span>
+    </h2>
+    <div id="notice-body"></div>
+    <div class="confirm-actions">
+      <button class="btn-secondary" id="notice-ok"></button>
+    </div>
+  </div>
+  <script src="notice.js"></script>
+</body>
+</html>

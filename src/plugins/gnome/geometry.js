@@ -42,6 +42,17 @@ export function isRectVisible(rect, workAreas, inset = 1) {
   return corners.every(([px, py]) => workAreas.some(w => pointInRect(px, py, w)))
 }
 
+// Top-left {x, y} that centres `rect` within work area `area`. Used for the transient "app
+// unavailable" notice window, which carries no saved geometry and just wants to sit in the middle
+// of the screen. Clamped to the area origin so an oversized window never gets a negative offset
+// (which would push it off the top/left edge). Pure so it can be unit-tested without a live Shell.
+export function centerRectIn(area, rect) {
+  if (!area || !rect || !(rect.width > 0) || !(rect.height > 0)) return null
+  const x = area.x + Math.max(0, Math.floor((area.width  - rect.width)  / 2))
+  const y = area.y + Math.max(0, Math.floor((area.height - rect.height) / 2))
+  return { x, y }
+}
+
 // "vMastodon.desktop" -> "mastodon". Mirrors src/app-naming.js (appName / profileFromAppName) so
 // the extension can derive a widget's default profile-data folder from its launcher id when an
 // older launcher predates the explicit X-Voltage-ProfileDir line. Returns null for an id that does

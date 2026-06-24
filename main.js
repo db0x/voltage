@@ -18,7 +18,15 @@ if (!process.env.VOLTAGE_TEST) {
   app.commandLine.appendSwitch('enable-webrtc-pipewire-capturer')
 }
 
-if (pkg.profile) {
+// Notice mode: the generic launcher (src/launcher.js) starts the app this way when a target
+// AppImage is unreachable (e.g. its project directory is still encrypted), to show a Voltage-styled
+// "app unavailable" dialog instead of failing silently. Checked first because it overrides whichever
+// of the two normal modes package.json would otherwise select.
+const noticeArg = process.argv.find(a => a.startsWith('--voltage-notice='))
+
+if (noticeArg !== undefined) {
+  require('./src/notice/window')(noticeArg.slice('--voltage-notice='.length))
+} else if (pkg.profile) {
   // App-window mode: profile is set — run as a single packaged web app.
   require('./src/app-window')()
 } else {

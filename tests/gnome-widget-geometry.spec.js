@@ -12,6 +12,7 @@ let sanitizeRect
 let profileFromDesktopId
 let planWidgetReposition
 let isCycleAbnormalState
+let centerRectIn
 test.beforeAll(async () => {
   const url = pathToFileURL(path.join(__dirname, '..', 'src', 'plugins', 'gnome', 'geometry.js')).href
   const mod = await import(url)
@@ -20,6 +21,7 @@ test.beforeAll(async () => {
   profileFromDesktopId = mod.profileFromDesktopId
   planWidgetReposition = mod.planWidgetReposition
   isCycleAbnormalState = mod.isCycleAbnormalState
+  centerRectIn = mod.centerRectIn
 })
 
 // Meta.MaximizeFlags values Mutter reports: none / horizontal / vertical / both.
@@ -213,4 +215,39 @@ test('planWidgetReposition + isCycleAbnormalState: an edge-tiled widget returns 
   expect(step(false, MAX_BOTH,     { x: 0, y: 40, width: 1920, height: 1040 })).toBeNull() // F11 maximize
   expect(step(true,  MAX_BOTH,     { x: 0, y: 0,  width: 1920, height: 1080 })).toBeNull() // F11 fullscreen
   expect(step(false, MAX_NONE,     { x: 0, y: 0,  width: 1920, height: 1080 })).toEqual(TILED) // F11 back → edge
+})
+
+// Setup:    The notice window (460×230) on the single 1920×1080 work area (40px top panel).
+// Action:   Compute its centered top-left.
+// Expected: horizontally centered across the full width, and vertically centered WITHIN the work
+//           area (offset added to the area's y), so the panel is never overlapped.
+test('centerRectIn: centers within the work area, respecting the panel offset', () => {
+  expect(centerRectIn(SINGLE[0], { x: 0, y: 0, width: 460, height: 230 }))
+    .toEqual({ x: (1920 - 460) / 2, y: 40 + (1040 - 230) / 2 })
+})
+
+// Setup:    The notice window placed on the secondary monitor's work area (x origin 1920).
+// Action:   Center it there.
+// Expected: the centered position is offset by that monitor's origin, so it lands on the monitor
+//           GNOME put it on rather than jumping to the primary.
+test('centerRectIn: honors a non-zero monitor origin', () => {
+  expect(centerRectIn(DUAL[1], { x: 0, y: 0, width: 480, height: 240 }))
+    .toEqual({ x: 1920 + (1920 - 480) / 2, y: (1080 - 240) / 2 })
+})
+
+// Setup:    A window wider/taller than the work area (degenerate, e.g. a tiny monitor).
+// Action:   Center it.
+// Expected: offsets clamp to the area origin (never negative), so the window's top-left stays on
+//           screen instead of being pushed off the top/left edge.
+test('centerRectIn: clamps an oversized window to the area origin', () => {
+  expect(centerRectIn({ x: 100, y: 50, width: 300, height: 200 }, { x: 0, y: 0, width: 800, height: 600 }))
+    .toEqual({ x: 100, y: 50 })
+})
+
+// Setup:    Missing area or a zero-area rect (defensive: a window with no usable frame yet).
+// Action:   Request a center.
+// Expected: null, so the caller leaves placement to GNOME instead of moving to a bogus spot.
+test('centerRectIn: returns null for invalid input', () => {
+  expect(centerRectIn(null, { x: 0, y: 0, width: 10, height: 10 })).toBeNull()
+  expect(centerRectIn(SINGLE[0], { x: 0, y: 0, width: 0, height: 10 })).toBeNull()
 })

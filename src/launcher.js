@@ -10,12 +10,20 @@
 // The fix is indirection: every Voltage .desktop points its Exec= at ONE shared launcher script that
 // always lives in the unencrypted home. GIO can therefore always resolve the binary and keeps the
 // entry visible regardless of the AppImage's directory state. The real AppImage path is passed as
-// the launcher's first argument and only touched at click time, so a still-locked project yields a
-// helpful notification instead of a vanished starter.
+// the launcher's first argument and only touched at click time; if it is unreachable, the launcher
+// asks the Manager app to show a Voltage-styled "app unavailable" dialog (see src/notice) instead of
+// a vanished starter.
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+
+// Repo root baked into the launcher so it can start the Manager app for the notice dialog. This file
+// lives at <repo>/src/launcher.js, so one level up is the repo. Mirrors install.sh, which likewise
+// bakes the install dir into the Manager .desktop (a moved repo breaks both equally — acceptable).
+function repoRoot() {
+  return path.resolve(__dirname, '..')
+}
 
 // XDG_DATA_HOME (default ~/.local/share) keeps the script in the user's data tree, next to other
 // installed Voltage artifacts (the private icon theme) and guaranteed outside any encrypted project.
@@ -29,10 +37,12 @@ function launcherPath() {
   return path.join(launcherDir(), 'voltage-launch')
 }
 
-// The launcher itself. Self-contained POSIX sh so it has no runtime dependency on Node/Electron and
-// works even while the app's own files are unreachable. DE/EN message is picked from $LANG because a
-// standalone launcher cannot read the Electron app's i18n bundle.
-const LAUNCHER_SCRIPT = `#!/bin/sh
+// The launcher itself. Self-contained POSIX sh so it has no runtime dependency on the app being
+// reachable. On an unreachable AppImage it boots the Manager app (notice mode) for the dialog; the
+// node/nvm bootstrap mirrors the Manager .desktop (install.sh) because GIO launchers run with a
+// minimal PATH that usually lacks the nvm-managed node.
+function buildLauncherScript(root) {
+  return `#!/bin/sh
 # voltage-launch — generic indirection launcher for Voltage app .desktop entries.
 # Managed by Voltage; do not edit (reinstalling an app overwrites this file).
 #
@@ -48,29 +58,35 @@ APP="\${1:-}"
 
 if [ ! -x "$APP" ]; then
   # AppImage unreachable: most commonly its project directory is still encrypted / not unlocked.
-  # Inform the user in their language rather than failing silently (GNOME would otherwise show a
-  # bare "could not launch" or nothing at all).
+  # Show a Voltage-styled notice via the Manager app (src/notice) instead of failing silently.
+  # Pass the artifact basename (e.g. vTeams) verbatim; the notice window derives both the display
+  # name and the app's installed icon from it. Backgrounded so this launcher exits at once; skipped
+  # under VOLTAGE_TEST so the test suite never spawns a real window.
   name=$(basename "\${APP:-?}")
-  case "\${LANG:-}" in
-    de*) title="Voltage"; body="$name lässt sich nicht starten – liegt das Projektverzeichnis evtl. noch verschlüsselt/gesperrt vor?" ;;
-    *)   title="Voltage"; body="$name could not be started – is its project directory still encrypted/locked?" ;;
-  esac
-  notify-send -i dialog-warning "$title" "$body" 2>/dev/null || true
+  if [ -z "\${VOLTAGE_TEST:-}" ]; then
+    (
+      export NVM_DIR="$HOME/.nvm"
+      if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh"; fi
+      cd "${root}" && node scripts/notice.js "$name"
+    ) >/dev/null 2>&1 &
+  fi
   exit 127
 fi
 
 exec "$APP" "$@"
 `
+}
 
 // Writes the launcher to disk (idempotent) and returns its path. Rewrites only when the content
 // differs so we do not needlessly bump the file's mtime on every install, but always repairs a
 // missing/outdated copy. chmod 0o755 is required: GIO/the script must be executable.
 function ensureLauncher() {
   const file = launcherPath()
+  const script = buildLauncherScript(repoRoot())
   const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
-  if (current !== LAUNCHER_SCRIPT) {
+  if (current !== script) {
     fs.mkdirSync(launcherDir(), { recursive: true })
-    fs.writeFileSync(file, LAUNCHER_SCRIPT, { mode: 0o755 })
+    fs.writeFileSync(file, script, { mode: 0o755 })
   }
   // writeFileSync's mode is ignored when the file already exists, so enforce the bit unconditionally.
   fs.chmodSync(file, 0o755)
@@ -84,4 +100,4 @@ function desktopExec(appImageFile, args = '--no-sandbox %u') {
   return `${launcherPath()} "${appImageFile}" ${args}`
 }
 
-module.exports = { launcherDir, launcherPath, ensureLauncher, desktopExec, LAUNCHER_SCRIPT }
+module.exports = { repoRoot, launcherDir, launcherPath, buildLauncherScript, ensureLauncher, desktopExec }

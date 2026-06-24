@@ -35,7 +35,13 @@ import Shell from 'gi://Shell'
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js'
 
-import { isRectVisible, sanitizeRect, profileFromDesktopId, planWidgetReposition, isCycleAbnormalState } from './geometry.js'
+import { isRectVisible, sanitizeRect, profileFromDesktopId, planWidgetReposition, isCycleAbnormalState, centerRectIn } from './geometry.js'
+
+// Window title the Voltage app sets ONLY on its transient "app unavailable" notice window (see
+// src/notice/window.js — NOTICE_WINDOW_TITLE there). It is a stable, non-localized sentinel, never
+// shown to the user (the window is frameless + skip-taskbar), so the shell can recognise that one
+// window and centre it without confusing it for the Manager window (which shares the WM class).
+const NOTICE_WINDOW_TITLE = 'voltage-notice'
 
 // Directory holding the user's .desktop launchers — the Voltage manager installs app
 // launchers here, and this is what we scan/watch.
@@ -209,14 +215,42 @@ export default class VoltageExtension extends Extension {
     if (actor) {
       const id = actor.connect('first-frame', () => {
         actor.disconnect(id)
-        this._restoreAndTrack(win)
+        this._onWindowReady(win)
       })
     } else {
       GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-        this._restoreAndTrack(win)
+        this._onWindowReady(win)
         return GLib.SOURCE_REMOVE
       })
     }
+  }
+
+  // First moment we can trust the window's title and geometry. The transient notice window only
+  // needs centring and must NOT be tracked for geometry (it has no per-app identity); every other
+  // Voltage app window takes the normal restore + save-on-close path.
+  _onWindowReady(win) {
+    if (this._isNoticeWindow(win)) {
+      this._centerWindow(win)
+      return
+    }
+    this._restoreAndTrack(win)
+  }
+
+  // The notice window is identified by its sentinel title (set in src/notice/window.js). Matching on
+  // title — rather than WM class — is what separates it from the Manager window, which shares the
+  // 'voltage' WM class but carries a different title.
+  _isNoticeWindow(win) {
+    try { return win?.get_title() === NOTICE_WINDOW_TITLE } catch { return false }
+  }
+
+  // Centre the notice on the monitor GNOME placed it on. The shell IS the compositor, so move_frame
+  // positions the toplevel even under Wayland — exactly the capability a client lacks, which is why
+  // centring the notice has to happen here rather than in the Electron process.
+  _centerWindow(win) {
+    const areas = this._workAreas()
+    const area = areas[win.get_monitor()] ?? areas[0]
+    const target = area && centerRectIn(area, win.get_frame_rect())
+    if (target) win.move_frame(true, target.x, target.y)
   }
 
   // Restore a freshly shown Voltage window to its saved frame, then track it for save-on-close.
