@@ -69,6 +69,10 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  /* The window itself never scrolls — the grid manages its own scroll area. Pinning this prevents a
+     stray body scrollbar (which also kept the off-canvas drawer, now positioned within .window-shell,
+     from reaching the true window edge). */
+  overflow: hidden;
   transition: background 0.2s, color 0.2s;
   /* Kept hidden until manager.js finishes wiring up the UI, then revealed by
      toggling body.ready. Prevents users from seeing the layout assemble piece
@@ -80,6 +84,85 @@ body {
 }
 body.ready {
   visibility: visible;
+}
+
+/* Single wrapper around the whole UI (manager.html). Normally a transparent passthrough that fills
+   the window; in custom-chrome mode it becomes the rounded, shadowed card. position:relative makes
+   it the containing block for the absolutely-positioned drawer/backdrop (drawer.js appends them
+   here), so in custom-chrome they stay inside the card and get clipped to its rounded corners
+   instead of spilling into the transparent shadow gutter. */
+.window-shell {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Custom chrome: a frameless, transparent window rendered as a rounded card with a soft drop
+   shadow — the EXACT structure of the notice dialog (src/notice/notice.html): a transparent, padded
+   body whose padding is the gutter, and the shadow on an INNER card element (.window-shell), not on
+   the body. (box-shadow on <body> renders as a hard block; on a child element it fades softly — this
+   is the whole reason it must live on .window-shell.) The gutter is where the soft shadow fades out,
+   so the window grows by it on each side, just like the notice. Opt-in via the side menu; see
+   src/manager/window.js. */
+html.custom-chrome body {
+  background: transparent;
+  /* GUTTER — the soft shadow's room. Kept as small as the (slim) shadow allows, because the OS
+     resize edge sits at the window border, i.e. GUTTER px outside the visible card: a wide gutter
+     makes the resize grab area hard to find. The shadow below must fit within it (≤ GUTTER reach). */
+  padding: 12px;
+  box-sizing: border-box;
+}
+html.custom-chrome .window-shell {
+  background: var(--bg);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+/* Frameless mode: make the header (the title bar / drag area) ~1/3 taller. It doubles as the window
+   drag handle here, so the extra height gives an easier grab target. The persistent drawer's top
+   offset follows automatically — drawer.js measures the header and publishes it as --header-h. */
+html.custom-chrome header {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+/* Dialog backdrops are position:fixed, so they ignore the card and would paint a square over the
+   rounded window (the corners go dark when a dialog opens). Inset them to the card (= GUTTER) and
+   round them to match, so the window keeps its rounded shape while a dialog is open. */
+html.custom-chrome #build-overlay,
+html.custom-chrome .confirm-overlay,
+html.custom-chrome .dialog-overlay {
+  inset: 12px;                  /* must equal the body padding (GUTTER) above */
+  border-radius: 14px;
+}
+
+/* Frameless mode has no native window controls, so the header carries its own Close button. Hidden
+   (and inert) in normal mode, where the OS frame provides one. */
+.window-close-btn { display: none; }
+html.custom-chrome .window-close-btn {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.8;
+  transition: opacity 0.15s, background 0.15s;
+}
+html.custom-chrome .window-close-btn:hover {
+  opacity: 1;
+  background: rgba(127, 127, 127, 0.25);
 }
 
 header {
@@ -227,7 +310,7 @@ body.dark .drawer-icon-btn img {
 }
 
 .drawer-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
   background: rgba(0,0,0,0.3);
   z-index: 49;
@@ -242,7 +325,10 @@ body.dark .drawer-icon-btn img {
 }
 
 .drawer {
-  position: fixed;
+  /* Absolute (not fixed) so it is positioned within .window-shell — keeps it inside the rounded card
+     in custom-chrome mode. In normal mode the shell fills the viewport, so this matches the old
+     fixed behaviour. */
+  position: absolute;
   top: 0;
   right: 0;
   bottom: 0;

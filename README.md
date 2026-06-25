@@ -108,6 +108,8 @@ New apps are saved as `webapps/build.private.<profile>.json` and are gitignored 
 
 The menu offers light/dark mode, the visibility filters (all / embedded / user, plus one button per category in use — see [categories](#adding-a-new-app)), **Hide uninstalled**, **Profiles**, and the integration dialogs — **Mail handler**, **Google Safe Browsing**, **rclone**, **Obsidian** and **GNOME** — each shown only when relevant to your system. Each category filter carries a rebuild button on the right that recreates and installs every app in that category in one go (after a confirmation).
 
+**Frameless window** (toggle in **Settings** → *Appearance*): drops the native window decoration and renders the Manager as a rounded, shadowed card with its own header drag area and Close button — the same look as the "app unavailable" dialog. The setting is persistent; saving it recreates the window to apply. Under Wayland the window is moved via its header and resized from its edges by the compositor.
+
 ## System mail handler
 
 Voltage can register a web mail app as the system-wide default for `mailto:` links. Once set, clicking a `mailto:` link anywhere — browser, PDF viewer, terminal, Teams — opens a compose window in the configured app. No native mail client required.

@@ -14,9 +14,14 @@ export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, gn
   const menuIcon = document.getElementById('menu-icon')
   if (menuSrc) menuIcon.src = menuSrc
 
+  // Append into .window-shell (the UI wrapper) rather than <body>: in custom-chrome mode the shell is
+  // the rounded, clipped card, so the drawer + backdrop must live inside it to be confined to the
+  // card. In normal mode the shell fills the window, so behaviour is unchanged.
+  const shell = document.querySelector('.window-shell') ?? document.body
+
   const backdrop = document.createElement('div')
   backdrop.className = 'drawer-backdrop'
-  document.body.appendChild(backdrop)
+  shell.appendChild(backdrop)
 
   const drawer = document.createElement('div')
   drawer.className = 'drawer'
@@ -36,7 +41,7 @@ export function initDrawer({ i18n, icons, rcloneAvailable, obsidianAvailable, gn
   scroll.className = 'drawer-scroll'
   scroll.appendChild(wrapper)
   drawer.appendChild(scroll)
-  document.body.appendChild(drawer)
+  shell.appendChild(drawer)
 
   const menuDarkmodeBtn = document.getElementById('menu-darkmode')
 

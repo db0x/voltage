@@ -257,6 +257,11 @@ document.getElementById('menu-settings').addEventListener('click', () => {
   globalSettingsDialog.openGlobalSettingsDialog()
 })
 
+// Header Close button — only visible in custom-chrome mode, where there are no native controls.
+const windowCloseBtn = document.getElementById('window-close')
+windowCloseBtn.title = i18n.aboutPanelClose
+windowCloseBtn.addEventListener('click', () => window.managerAPI?.windowClose?.())
+
 // Only rendered when ≥1 mail-capable app is installed — guard against missing element.
 const mailHandlerBtn = document.getElementById('menu-mail-handler')
 if (mailHandlerBtn) {

@@ -46,4 +46,9 @@ contextBridge.exposeInMainWorld('managerAPI', {
   // Persisted in manager-state.json so the next cold start paints the window
   // with the correct backgroundColor before the renderer attaches.
   setDark:       (dark)        => ipcRenderer.invoke('manager:set-dark', dark),
+  // Toggle the frameless/rounded custom-chrome mode. Persisted and applied immediately by
+  // recreating the window (frame/transparent are only settable at creation).
+  setCustomChrome: (enabled)   => ipcRenderer.invoke('manager:set-custom-chrome', enabled),
+  // Close the window from the custom chrome's own Close button (no native controls in that mode).
+  windowClose:     ()          => ipcRenderer.invoke('manager:window-close'),
 })
