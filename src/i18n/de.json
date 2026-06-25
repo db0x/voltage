@@ -78,6 +78,7 @@
   "pluginConfigCancel": "Abbrechen",
 
   "globalSettingsTitle":        "Globale Einstellungen",
+  "globalSettingsAppearance":   "Darstellung",
   "globalSettingsCustomChrome": "Rahmenloses Fenster",
   "globalSettingsHideApps":     "Embedded Apps ausblenden",
   "globalSettingsHideAppsHint": "App auswählen …",
