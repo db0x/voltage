@@ -17,28 +17,40 @@
   <style>
     html          { background: #f0f0f0; }
     html.dark     { background: #1e1e1e; }
+    /* Custom-chrome mode is a frameless, transparent window: <html> must stay transparent so the
+       rounded card + its shadow gutter (drawn by manager.css) show through. Last so it wins over the
+       theme rules above regardless of the dark class. */
+    html.custom-chrome { background: transparent; }
   </style>
   <script>
     if (localStorage.getItem('dark') === '1') document.documentElement.classList.add('dark')
+    // Tag <html> before first paint so the gutter/shadow/Close-button rules resolve immediately.
+    try { if (new URLSearchParams(location.search).get('chrome') === 'custom') document.documentElement.classList.add('custom-chrome') } catch {}
   </script>
   <link rel="stylesheet" href="../../node_modules/overlayscrollbars/styles/overlayscrollbars.css">
   <link rel="stylesheet" href="../../node_modules/@melloware/coloris/dist/coloris.css">
   <link rel="stylesheet" href="manager.css">
 </head>
 <body>
-  <header>
-    <img src="../../assets/voltage.svg" alt="voltage">
-    <pre class="header-ascii">            ____
+  <!-- Single wrapper so custom-chrome mode can round + shadow + clip the whole UI as one card. In
+       normal mode it is a transparent passthrough that simply fills the window. -->
+  <div class="window-shell">
+    <header>
+      <img src="../../assets/voltage.svg" alt="voltage">
+      <pre class="header-ascii">            ____
  _  _____  / / /____ ____ ____
 | |/ / _ \/ / __/ _ `/ _ `/ -_)
 |___/\___/_/\__/\_,_/\_, /\__/ 🐧
                     /___/</pre>
-    <button id="menu-btn">
-      <img id="menu-icon" alt="Menü">
-    </button>
-  </header>
-  <div id="grid-wrapper">
-    <div class="grid" id="grid"></div>
+      <button id="menu-btn">
+        <img id="menu-icon" alt="Menü">
+      </button>
+      <!-- Only shown in custom-chrome mode (no native window controls then). -->
+      <button id="window-close" class="window-close-btn" aria-label="Close">✕</button>
+    </header>
+    <div id="grid-wrapper">
+      <div class="grid" id="grid"></div>
+    </div>
   </div>
 
   <script type="module" src="manager.js"></script>

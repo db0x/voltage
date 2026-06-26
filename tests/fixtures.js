@@ -33,7 +33,10 @@ async function launchApp(extraEnv = {}) {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-test-'))
   const app = await electron.launch({
     args: [ROOT, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${userDataDir}`],
-    env: { ...process.env, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined, ...extraEnv },
+    // Isolate appData (XDG_CONFIG_HOME) so manager-state.json / global-settings.json start fresh each
+    // run instead of inheriting the developer's real ~/.config/voltage. Keeps geometry-sensitive tests
+    // deterministic — e.g. the persisted "custom chrome" flag must not silently change the layout.
+    env: { ...process.env, XDG_CONFIG_HOME: userDataDir, VOLTAGE_TEST: '1', VOLTAGE_LANG: 'en', ELECTRON_RUN_AS_NODE: undefined, ...extraEnv },
   })
   return { app, userDataDir }
 }

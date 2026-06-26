@@ -9,10 +9,18 @@ export function initGlobalSettingsDialog({ i18n, icons, apps, appDefaultSrc, bui
   const overlay = applyTemplate(templates.globalSettings, { i18n, icons, vars: { appDefaultSrc } })
   document.body.appendChild(overlay)
 
-  const listEl     = document.getElementById('gs-hidden-list')
-  const appTrigger = document.getElementById('gs-app-trigger')
-  const uaListEl   = document.getElementById('gs-ua-list')
-  const saveBtn    = document.getElementById('global-settings-save')
+  const listEl      = document.getElementById('gs-hidden-list')
+  const appTrigger  = document.getElementById('gs-app-trigger')
+  const uaListEl    = document.getElementById('gs-ua-list')
+  const saveBtn     = document.getElementById('global-settings-save')
+  const chromeToggle = document.getElementById('gs-custom-chrome')
+
+  // Frameless "custom chrome" toggle. Unlike the other settings (stored in global-settings.json), the
+  // flag lives in manager-state.json and is read by the main process at window creation, so applying
+  // it recreates the window — done on Save, not on toggle, to fit this dialog's Save/Cancel model.
+  // `customChromeOn` is the state at open time, used on Save to detect a change.
+  let customChromeOn = false
+  chromeToggle.addEventListener('click', () => chromeToggle.classList.toggle('active'))
 
   // Portal dropdown for the hidden-apps picker.
   // Outer div is the positioned/shown-hidden host for OverlayScrollbars.
@@ -221,6 +229,13 @@ export function initGlobalSettingsDialog({ i18n, icons, apps, appDefaultSrc, bui
   saveBtn.addEventListener('click', async () => {
     await window.managerAPI.saveGlobalSettings({ hiddenProfiles, customUaPresets })
     onSave?.({ hiddenProfiles, customUaPresets })
+    const wantChrome = chromeToggle.classList.contains('active')
+    if (wantChrome !== customChromeOn) {
+      // Frameless mode changed: the main process persists the flag and recreates the window. The
+      // current window (and this dialog) is replaced, so there is nothing left to close here.
+      window.managerAPI.setCustomChrome(wantChrome)
+      return
+    }
     closeDialog()
   })
 
@@ -231,6 +246,9 @@ export function initGlobalSettingsDialog({ i18n, icons, apps, appDefaultSrc, bui
       OverlayScrollbars(document.getElementById('gs-scroll-wrapper'), { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
       scrollbarInited = true
     }
+    // Reflect the live frameless-mode state (encoded in the URL the window was loaded with).
+    customChromeOn = new URLSearchParams(location.search).get('chrome') === 'custom'
+    chromeToggle.classList.toggle('active', customChromeOn)
     const saved = await window.managerAPI.loadGlobalSettings()
     hiddenProfiles  = Array.isArray(saved.hiddenProfiles)  ? [...saved.hiddenProfiles]  : []
     customUaPresets = Array.isArray(saved.customUaPresets) ? [...saved.customUaPresets] : []

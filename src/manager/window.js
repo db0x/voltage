@@ -6,6 +6,11 @@
 // visibility gate (body becomes .ready only after all init has run), the user
 // sees a uniform theme-colored window that snaps to the fully-assembled UI
 // instead of watching components mount one by one.
+//
+// Optional "custom chrome" mode (persisted in manager-state.json, toggled from the side menu) drops
+// the native window decoration and instead renders a frameless, transparent window whose content is
+// a rounded card with a drop shadow — the same look as the notice dialog. Because frame/transparent
+// can only be chosen at BrowserWindow creation, toggling the mode recreates the window in place.
 
 const { app, BrowserWindow, Menu, ipcMain } = require('electron')
 const path = require('node:path')
@@ -19,6 +24,11 @@ const managerStatePath = path.join(app.getPath('appData'), 'voltage', 'manager-s
 // with what the renderer will draw a moment later — must mirror --bg in manager.css.
 const BG_LIGHT = '#f0f0f0'
 const BG_DARK  = '#1e1e1e'
+
+// The live manager window, tracked so a chrome-mode toggle can recreate it (open the replacement
+// before closing the old one, so the window count never hits 0 — that would trip main.js's
+// window-all-closed → app.quit() and exit the app mid-swap).
+let managerWin = null
 
 function loadManagerState() {
   try {
@@ -41,38 +51,57 @@ function saveManagerBounds(win) {
   } catch {}
 }
 
-// Persists the dark flag on every toggle so the next cold start paints
-// the correct backgroundColor before manager.js can apply the body class.
-// Registered once per process — ipc.js owns all the app-data IPC handlers, but
-// this one belongs here because it's load-bearing for the next launch's chrome.
-let darkIpcRegistered = false
-function registerDarkIpc() {
-  if (darkIpcRegistered) return
-  darkIpcRegistered = true
+// Persists the dark flag on every toggle so the next cold start paints the correct backgroundColor
+// before manager.js can apply the body class, plus the window-chrome IPC (set the persistent
+// custom-chrome flag + recreate; close the frameless window from its custom Close button).
+// Registered once per process — ipc.js owns the app-data IPC handlers, but these belong here because
+// they are load-bearing for the next launch's chrome and operate on the window this module owns.
+let windowIpcRegistered = false
+function registerWindowIpc() {
+  if (windowIpcRegistered) return
+  windowIpcRegistered = true
   ipcMain.handle('manager:set-dark', (_event, dark) => {
     saveManagerState({ dark: !!dark })
+  })
+  ipcMain.handle('manager:set-custom-chrome', (_event, enabled) => {
+    saveManagerState({ customChrome: !!enabled })
+    const old = managerWin
+    openManager()                                          // new window reads the updated flag
+    if (old && !old.isDestroyed()) old.close()             // close AFTER the replacement exists
+  })
+  ipcMain.handle('manager:window-close', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close()
   })
 }
 
 function openManager() {
-  registerDarkIpc()
+  registerWindowIpc()
   const saved = loadManagerState()
   const width  = saved.width  > 0 ? saved.width  : 780
   const height = saved.height > 0 ? saved.height : 820
   const dark   = saved.dark === true
+  const customChrome = saved.customChrome === true
+
   const win = new BrowserWindow({
     width, height,
     minWidth:  400,
     minHeight: 400,
     title: 'Voltage',
-    backgroundColor: dark ? BG_DARK : BG_LIGHT,
+    // Custom chrome: frameless + transparent so the renderer's rounded card and its shadow show
+    // through (the renderer draws its own Close button + drag region). Otherwise the native frame
+    // with a theme-colored backdrop, as before.
+    ...(customChrome
+      ? { frame: false, transparent: true, backgroundColor: '#00000000' }
+      : { backgroundColor: dark ? BG_DARK : BG_LIGHT }),
     webPreferences: {
       preload: path.join(APP_ROOT, 'src', 'manager', 'preload.js'),
       contextIsolation: true,
       nodeIntegration:  false,
     },
   })
+  managerWin = win
   win.on('close', () => saveManagerBounds(win))
+  win.on('closed', () => { if (managerWin === win) managerWin = null })
   win.webContents.on('context-menu', (_event, params) => {
     const i18n = t()
     if (params.isEditable) {
@@ -87,7 +116,10 @@ function openManager() {
       ]).popup({ window: win })
     }
   })
-  win.loadFile(path.join(APP_ROOT, 'src', 'manager', 'manager.html'))
+  // The renderer needs to know the chrome mode before first paint (to add the gutter/shadow and show
+  // its Close button); pass it on the URL so the pre-paint inline script can read it synchronously.
+  win.loadFile(path.join(APP_ROOT, 'src', 'manager', 'manager.html'),
+    customChrome ? { search: 'chrome=custom' } : {})
 }
 
 module.exports = { openManager }
