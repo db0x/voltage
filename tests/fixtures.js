@@ -26,13 +26,13 @@ const TEST_CONFIGS = [
 // Writes test configs, launches the Electron app, and returns the app instance.
 // VOLTAGE_TEST=1 disables update checks, GTK icon lookups, and other non-test behaviors.
 // A fresh temp directory is used as userData so tests never share persistent state.
-async function launchApp(extraEnv = {}) {
+async function launchApp(extraEnv = {}, extraArgs = []) {
   for (const { file, content } of TEST_CONFIGS)
     fs.writeFileSync(path.join(CONFIGS_DIR, file), JSON.stringify(content, null, 4))
 
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-test-'))
   const app = await electron.launch({
-    args: [ROOT, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${userDataDir}`],
+    args: [ROOT, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${userDataDir}`, ...extraArgs],
     // Isolate appData (XDG_CONFIG_HOME) so manager-state.json / global-settings.json start fresh each
     // run instead of inheriting the developer's real ~/.config/voltage. Keeps geometry-sensitive tests
     // deterministic — e.g. the persisted "custom chrome" flag must not silently change the layout.
@@ -336,4 +336,18 @@ const gnomeTest = base.extend({
   },
 })
 
-module.exports = { test, expect, FAKE_ICON_PATH, base, rcloneTest, mailHandlerTest, globalSettingsTest, obsidianTest, gnomeTest }
+// ── Edit-config deep-link test helper ────────────────────────────────────────
+
+// Launches the Manager with --voltage-edit-config=<profile> so it should open straight into that
+// app's edit dialog on startup.
+const editConfigTest = base.extend({
+  managerPageEditConfig: async ({}, use) => {
+    const { app, userDataDir } = await launchApp({}, ['--voltage-edit-config=test-user-app'])
+    const page = await app.firstWindow()
+    await page.waitForSelector('.card-add', { timeout: 30_000 })
+    await use(page)
+    await closeApp(app, userDataDir)
+  },
+})
+
+module.exports = { test, expect, FAKE_ICON_PATH, base, rcloneTest, mailHandlerTest, globalSettingsTest, obsidianTest, gnomeTest, editConfigTest }

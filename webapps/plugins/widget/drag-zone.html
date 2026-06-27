@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!-- Voltage widget drag-zone overlay. Rendered in its OWN WebContentsView on top of the app view
+     (see src/window.js view-mode wiring). The control is a -webkit-app-region: drag region, so
+     dragging it moves the frameless host window — independent of whatever the wrapped app renders.
+     Why a separate view and not CSS in the app: Chromium honors -webkit-app-region:drag only from a
+     top-level frame we own, NOT from the cross-origin out-of-process iframes many apps render their
+     toolbars in (e.g. the Office/WOPI editor frame). This view IS our own top frame, so its drag
+     region always works.
+
+     The view is 1px (invisible — body transparent, control at opacity 0) when idle and grown by main
+     when the cursor reaches the top-centre. The visible control is .handle, inset by DRAG_ZONE_PAD on
+     the sides and bottom (top flush with the window edge) so its border + drop shadow render INSIDE
+     the view rather than being clipped — the surrounding pad is transparent but still part of the
+     drag/hit area. It fades in/out via the `shown` class (toggled from main over IPC by
+     drag-zone-preload.js). Styling mirrors Voltage's link tooltip (src/tooltip.css): a dark,
+     translucent, blurred bar with rounded bottom corners, a GNOME-style hairline border and a
+     downward drop shadow. On the right are window-control buttons (no-drag so they stay clickable);
+     each forwards its data-action to main via the preload.
+     The 16px inset MUST match DRAG_ZONE_PAD, and .handle height (38px) DRAG_ZONE_HEIGHT, in
+     src/window.js. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  /* Body is transparent (so the idle view shows nothing); only .handle is painted. */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
+    font: 13px/1 -apple-system, system-ui, sans-serif; }
+  body { -webkit-app-region: drag; }
+  .handle {
+    position: absolute; top: 0; left: 16px; right: 16px; height: 38px;
+    box-sizing: border-box;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 6px;
+    background: rgba(30, 30, 30, 0.85);
+    backdrop-filter: blur(4px);
+    /* GNOME-style hairline border on the three free sides (top is flush with the window edge). */
+    border-left: 1px solid rgba(255, 255, 255, 0.14);
+    border-right: 1px solid rgba(255, 255, 255, 0.14);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    border-bottom-left-radius: 9px; border-bottom-right-radius: 9px;
+    /* Downward drop shadow, spreading to the left and right; renders into the transparent pad. */
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+    /* Fade duration must match DRAG_ZONE_FADE_MS in src/window.js (the height collapse is delayed by
+       that long so the fade-out is visible). */
+    opacity: 0; transition: opacity 160ms ease;
+  }
+  body.shown .handle { opacity: 1; }
+
+  /* Window-control buttons — no-drag so clicks land instead of starting a window drag. */
+  .buttons { display: flex; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
+  .btn {
+    -webkit-app-region: no-drag;
+    width: 30px; height: 26px; padding: 0; border: none; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; color: rgba(255, 255, 255, 0.85); cursor: pointer;
+  }
+  .btn:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
+  .btn-close:hover { background: #e81123; color: #fff; }
+  .btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4;
+    stroke-linecap: round; stroke-linejoin: round; }
+  /* The About button uses the filled info glyph (info.svg), not a stroked one. */
+  .btn-about svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+  /* The Configure (gear) button uses the filled configure.svg glyph. */
+  .btn-config svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+
+  /* Left-outside configure control: the gear button plus a label that reveals to its right on hover.
+     The button is no-drag (clickable) so its :hover fires; the label is decorative (pointer-events:
+     none) and collapses to zero width when not hovered. */
+  .config { display: flex; align-items: center; }
+  .config-label { margin-left: 6px; font-size: 12px; color: rgba(255, 255, 255, 0.92);
+    white-space: nowrap; pointer-events: none; max-width: 0; opacity: 0; overflow: hidden;
+    transition: max-width 140ms ease, opacity 140ms ease; }
+  .btn-config:hover ~ .config-label { max-width: 400px; opacity: 1; }
+
+  /* Decorative move glyph centred in the handle (the same icon the context menu uses). Purely a
+     visual cue that the bar is draggable; pointer-events:none so it never blocks the drag underneath. */
+  .move {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    pointer-events: none; color: rgba(255, 255, 255, 0.5); display: flex;
+  }
+  .move svg { width: 16px; height: 16px; display: block; fill: currentColor; stroke: none; }
+</style>
+</head>
+<body>
+  <div class="handle">
+    <div class="config">
+      <button class="btn btn-config" data-action="configure">
+        <svg viewBox="0 0 16 16"><path fill="currentColor" d="M 6.25 1 L 6.0957031 2.84375 A 5.5 5.5 0 0 0 4.4882812 3.7734375 L 2.8125 2.984375 L 1.0625 6.015625 L 2.5839844 7.0722656 A 5.5 5.5 0 0 0 2.5 8 A 5.5 5.5 0 0 0 2.5800781 8.9316406 L 1.0625 9.984375 L 2.8125 13.015625 L 4.484375 12.228516 A 5.5 5.5 0 0 0 6.0957031 13.152344 L 6.2460938 15.001953 L 9.7460938 15.001953 L 9.9003906 13.158203 A 5.5 5.5 0 0 0 11.507812 12.228516 L 13.183594 13.017578 L 14.933594 9.9863281 L 13.412109 8.9296875 A 5.5 5.5 0 0 0 13.496094 8.0019531 A 5.5 5.5 0 0 0 13.416016 7.0703125 L 14.933594 6.0175781 L 13.183594 2.9863281 L 11.511719 3.7734375 A 5.5 5.5 0 0 0 9.9003906 2.8496094 L 9.75 1 L 6.25 1 z M 8 6 A 2 2 0 0 1 10 8 A 2 2 0 0 1 8 10 A 2 2 0 0 1 6 8 A 2 2 0 0 1 8 6 z"/></svg>
+      </button>
+      <span class="config-label">{{configLabel}}</span>
+    </div>
+    <div class="move"><svg viewBox="0 0 16 16"><path d="M 8 1 L 6 4 L 10 4 L 8 1 z M 4 6 L 1 8 L 4 10 L 4 6 z M 8 6 C 6.8954 6 6 6.8954 6 8 C 6 9.1046 6.8954 10 8 10 C 9.1046 10 10 9.1046 10 8 C 10 6.8954 9.1046 6 8 6 z M 12 6 L 12 10 L 15 8 L 12 6 z M 6 12 L 8 15 L 10 12 L 6 12 z"/></svg></div>
+    <div class="buttons">
+      <button class="btn btn-about" data-action="about">
+        <svg viewBox="0 0 16 16"><path d="M 8 1 A 7 7 0 0 0 1 8 A 7 7 0 0 0 8 15 A 7 7 0 0 0 15 8 A 7 7 0 0 0 8 1 z M 8 3.75 A 1.25 1.25 0 0 1 9.25 5 A 1.25 1.25 0 0 1 8 6.25 A 1.25 1.25 0 0 1 6.75 5 A 1.25 1.25 0 0 1 8 3.75 z M 7 7 L 9 7 L 9 12 L 7 12 L 7 7 z"/></svg>
+      </button>
+      <button class="btn" data-action="minimize">
+        <svg viewBox="0 0 16 16"><line x1="3.5" y1="8" x2="12.5" y2="8"/></svg>
+      </button>
+      <button class="btn" data-action="maximize">
+        <svg viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>
+      </button>
+      <button class="btn btn-close" data-action="quit">
+        <svg viewBox="0 0 16 16"><line x1="4.2" y1="4.2" x2="11.8" y2="11.8"/><line x1="11.8" y1="4.2" x2="4.2" y2="11.8"/></svg>
+      </button>
+    </div>
+  </div>
+</body>
+</html>

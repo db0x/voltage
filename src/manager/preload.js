@@ -51,4 +51,9 @@ contextBridge.exposeInMainWorld('managerAPI', {
   setCustomChrome: (enabled)   => ipcRenderer.invoke('manager:set-custom-chrome', enabled),
   // Close the window from the custom chrome's own Close button (no native controls in that mode).
   windowClose:     ()          => ipcRenderer.invoke('manager:window-close'),
+  // Deep-link to the edit dialog (an app's "configure" button relaunches the Manager with
+  // --voltage-edit-config=<profile>). Cold start: pull the pending profile once. Already running:
+  // receive a profile pushed by the second-instance handler.
+  getInitialEditProfile: ()    => ipcRenderer.invoke('manager:initial-edit-profile'),
+  onOpenEdit:      (cb)        => ipcRenderer.on('manager:open-edit', (_e, profile) => cb(profile)),
 })

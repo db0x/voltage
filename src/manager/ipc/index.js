@@ -15,8 +15,10 @@ const registerRclone    = require('./handlers/rclone')
 const registerSettings  = require('./handlers/settings')
 const registerPlugins   = require('./handlers/plugins')
 const registerProfiles  = require('./handlers/profiles')
+const { registerEditConfigIpc } = require('../edit-config')
 
 module.exports = function registerManagerIpc() {
+  registerEditConfigIpc()
   registerMeta()
   registerApps()
   registerLifecycle()

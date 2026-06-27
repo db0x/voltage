@@ -315,3 +315,16 @@ initTooltip()
 // see a partial assembly. rAF would be cleaner but Electron throttles it while the
 // BrowserWindow is still in its pre-ready-to-show hidden state, causing test hangs.
 document.body.classList.add('ready')
+
+// Deep-link: open a specific app straight in the edit dialog. An app's "configure" button relaunches
+// the Manager with --voltage-edit-config=<profile>; we reuse the card's own edit action so the flow
+// is identical to a manual click. Prefer the editable private card (an embedded card has no edit
+// action). Cold start pulls the pending profile once; a second launch pushes it via onOpenEdit.
+function openEditForProfile(profile) {
+  if (!profile) return
+  const sel = `.card[data-profile="${CSS.escape(profile)}"]`
+  const card = document.querySelector(`${sel}[data-private="true"]`) || document.querySelector(sel)
+  card?.querySelector('[data-action="edit"]')?.click()
+}
+window.managerAPI.onOpenEdit(openEditForProfile)
+window.managerAPI.getInitialEditProfile().then(openEditForProfile)

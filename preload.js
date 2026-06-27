@@ -65,6 +65,39 @@ if (process.isMainFrame) {
   }
 }
 
+// Widget drag-zone reveal: report the cursor position so main can show/hide its overlay drag strip
+// (see src/window.js). The strip itself can't sense hover — its -webkit-app-region:drag surface
+// swallows pointer events — and on Wayland main can't query the global cursor position, but the app's
+// own content DOES get mousemove. Runs in EVERY frame because the toolbar the strip overlaps may live
+// in a cross-origin subframe (e.g. the Office editor): clientX/Y there still equal the window-relative
+// coords for a frame aligned to the top, which is the case that matters. main ignores reports for
+// windows that have no drag strip.
+//
+// We report EVERY move (not just near the top): the hide must fire when the cursor leaves the strip
+// in ANY direction, and a near-top gate would drop the very report that signals a fast downward exit,
+// leaving the strip stuck open. A leading+trailing throttle keeps the volume low while GUARANTEEING
+// the final resting position is sent (a plain throttle drops the last event, so a quick flick-out
+// would never be reported and the strip would never hide). We deliberately do NOT report a "pointer
+// left" event: once revealed the strip is its own WebContentsView, so moving from the app onto it
+// looks to the app like leaving the document — reporting that would hide the strip the instant it
+// appears. main hides only on a later report placing the cursor outside the strip.
+{
+  let lastSent = 0, pending = null, timer = null
+  const flush = () => {
+    timer = null
+    if (!pending) return
+    lastSent = Date.now()
+    const { x, y } = pending; pending = null
+    try { ipcRenderer.send('voltage:dragzone-cursor', x, y) } catch {}
+  }
+  addEventListener('mousemove', (e) => {
+    pending = { x: e.clientX, y: e.clientY }
+    const dt = Date.now() - lastSent
+    if (dt >= 40) flush()
+    else if (!timer) timer = setTimeout(flush, 40 - dt)
+  }, { passive: true, capture: true })
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Renderer→main bridge for the zoom plugin: a page can't reach its own webContents zoom, so the
   // injected ctrl+wheel listener signals the direction here and the plugin steps the zoom factor.

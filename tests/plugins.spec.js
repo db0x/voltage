@@ -142,6 +142,35 @@ test('edit dialog: the widget resizable toggle defaults on and persists when tur
 })
 
 // Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The top-drag-strip toggle defaults on; turn it off, Apply, and save.
+// Expected: The toggle starts active (default on — the strip is the only reliable way to move the
+//           frameless window for apps whose toolbar lives in a cross-origin OOPIF) and persists
+//           dragZone:false when disabled.
+test('edit dialog: the widget drag-zone toggle defaults on and persists when turned off', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const toggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="dragZone"]')
+  await expect(toggle).toHaveClass(/active/)  // default yes
+
+  await toggle.click()
+  await expect(toggle).not.toHaveClass(/active/)
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { dragZone: false } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
 // Action:   The suppress-app-titlebar toggle defaults off; turn it on, Apply, and save.
 // Expected: The toggle starts inactive (default off — opt-in, it changes how the page sees its
 //           environment) and persists suppressAppTitlebar:true when enabled.

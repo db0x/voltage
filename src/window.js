@@ -302,6 +302,24 @@ function routeExternalUrl(url, currentProfile) {
   return true
 }
 
+// Opens THIS app's configuration in the Voltage Manager (widget drag handle's "configure" button).
+// Relaunches the Manager from the baked repo root with --voltage-edit-config=<profile>, which opens
+// straight into the app's edit dialog — or focuses the already-running Manager and routes there, as
+// it is single-instance. The bash shell sources nvm so the managed node is found (the AppImage's own
+// launch env has a minimal PATH); root + profile are passed as positional args ($1/$2) so no value is
+// interpolated into the script. No-op when appRoot wasn't baked in (a dev run, which has no drag zone).
+function openConfigInManager(pkg) {
+  const root = pkg.appRoot
+  if (!root) return
+  const script = 'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; ' +
+                 'cd "$1" && exec node scripts/open-manager.js "$2"'
+  try {
+    spawn('bash', ['-c', script, 'voltage-open-manager', root, pkg.profile], { detached: true, stdio: 'ignore' }).unref()
+  } catch (err) {
+    console.error('[dragzone] failed to open config in manager:', err)
+  }
+}
+
 // Reads a PNG icon path into a data URL for menu items. SVG isn't supported by this path.
 function iconToDataUrl(p) { try { return p ? `data:image/png;base64,${fs.readFileSync(p).toString('base64')}` : null } catch { return null } }
 
@@ -340,6 +358,56 @@ const FULLSCREEN_ICON = themedSvgIcon(path.join(__dirname, '..', 'webapps', 'plu
 // handlers serves all windows — ipcMain.handle allows only one handler per channel — so each window
 // registers its context here and the handlers resolve it via the sender.
 const appMenuRegistry = new Map()  // appContents.id → { appContents, mainWindow, profile, actions }
+
+// Widget drag-zone geometry/timing. The strip is a 1px hairline when idle (steals nothing usable
+// from the app) and grows to DRAG_ZONE_HEIGHT once revealed. Reveal/hide run on a hysteresis band
+// against the cursor's distance from the top edge: reveal at SHOW_AT, hide once the cursor drops
+// past HIDE_BELOW (the strip plus a margin), so the strip doesn't flicker while you sit on it. FADE_MS
+// matches the overlay's CSS opacity transition so the height only collapses after the fade-out plays.
+const DRAG_ZONE_HEIGHT         = 38     // visible control height (must match .handle height in drag-zone.html)
+// Transparent room around the control inside its overlay view, so the control's border + drop shadow
+// render INSIDE the view instead of being clipped by its bounds. Must match the inset in drag-zone.html.
+const DRAG_ZONE_PAD            = 16
+const DRAG_ZONE_SHOW_AT        = 6      // reveal when the cursor is within this many px of the top
+const DRAG_ZONE_EDGE_GRACE     = 8      // grace past the view edges before hiding, so edges don't flicker
+const DRAG_ZONE_FADE_MS        = 160
+
+// Responsive control width. It aims for a comfortable absolute width, clamped between half and 90% of
+// the window — so it takes a LARGER fraction as the window narrows (down to a minimum it never goes
+// below) and settles toward 50% on wide windows. Single source of truth, used by both the layout and
+// the hover hysteresis so they always agree.
+const DRAG_ZONE_TARGET_PX     = 960
+const DRAG_ZONE_MIN_FRACTION  = 0.5
+const DRAG_ZONE_MAX_FRACTION  = 0.9
+function dragZoneHandleWidth(innerWidth) {
+  const frac = Math.min(DRAG_ZONE_MAX_FRACTION,
+    Math.max(DRAG_ZONE_MIN_FRACTION, DRAG_ZONE_TARGET_PX / Math.max(1, innerWidth)))
+  return innerWidth * frac
+}
+
+// Minimal HTML-escape for text interpolated into the drag-zone overlay markup (the app display name).
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+}
+
+// Per-window drag-zone reveal controllers, keyed by the APP webContents id. One ipcMain handler
+// serves every window (ipcMain.on allows a single handler per channel — same pattern as
+// appMenuRegistry). The app's preload reports the cursor's distance from the top edge — the overlay
+// itself can't, because a -webkit-app-region:drag surface swallows pointer events, and on Wayland the
+// global cursor position isn't queryable from main. event.sender is the app view's webContents for
+// every frame (incl. cross-origin subframes like the Office editor), so one key covers them all.
+const dragZoneControllers = new Map()  // appContents.id → { onCursor(x, y) }
+ipcMain.on('voltage:dragzone-cursor', (event, clientX, clientY) => {
+  dragZoneControllers.get(event.sender.id)?.onCursor(Number(clientX), Number(clientY))
+})
+
+// Window-control buttons on the drag-zone overlay, keyed by the OVERLAY view's webContents id (the
+// buttons live in that view, so its preload is the sender). Separate from the cursor controller,
+// which is keyed by the app webContents.
+const dragZoneActions = new Map()  // overlay webContents.id → (action: string) => void
+ipcMain.on('voltage:dragzone-action', (event, action) => {
+  dragZoneActions.get(event.sender.id)?.(String(action))
+})
 
 // Flattens a plugin's contextMenuItems() (click fns + nativeImage icons + optional submenu) into a
 // render-safe tree, recording each leaf's click under a fresh id in `actions` (the renderer only
@@ -577,7 +645,10 @@ function collectPluginViewMode(pkg) {
       if (typeof mod.viewConfig === 'function' && typeof mod.hostHtml === 'function') {
         const config = pkg.pluginConfig?.[rel] || {}
         const vc = mod.viewConfig(config) || {}
-        return { margin: vc.margin ?? 0, radius: vc.radius ?? 0, hostHtml: String(mod.hostHtml(config) ?? '') }
+        // Optional self-owned top drag strip ({ html, preload } | null); rendered by createWindow as
+        // a WebContentsView on top of the app view when present.
+        const dragZone = typeof mod.dragZone === 'function' ? mod.dragZone(config) : null
+        return { margin: vc.margin ?? 0, radius: vc.radius ?? 0, hostHtml: String(mod.hostHtml(config) ?? ''), dragZone }
       }
     } catch (err) {
       console.error(`[plugin] viewConfig failed for ${rel}:`, err)
@@ -658,11 +729,114 @@ function createWindow(pkg, opts = {}) {
     // Round the view's corners natively (Electron ≥30); guarded so an older runtime degrades to
     // square corners instead of throwing.
     if (typeof appView.setBorderRadius === 'function') appView.setBorderRadius(viewMode.radius)
-    // Keep the view inset by the shadow gutter as the window resizes.
+
+    // Self-owned window-drag strip on top of the app view (widget plugin, configurable). A drag
+    // region inside the app cannot reliably move the host window — Chromium honors -webkit-app-
+    // region:drag only from a top-level frame we own, not from the cross-origin OOPIFs many apps
+    // render their toolbars in (e.g. the Office/WOPI editor frame). This overlay IS our own top
+    // frame, so its drag region always works, for every widget app. It is a 1px hairline when idle
+    // (steals nothing usable) and grows to DRAG_ZONE_HEIGHT, fading a faint bar in, once the cursor
+    // reaches the top edge — reveal is driven by the app preload reporting the cursor Y (the overlay
+    // can't sense its own hover; its drag surface swallows pointer events).
+    let dragOverlay = null
+    let dragShown = false
+    if (viewMode.dragZone) {
+      dragOverlay = new WebContentsView({
+        webPreferences: { preload: viewMode.dragZone.preload, contextIsolation: true, nodeIntegration: false },
+      })
+      dragOverlay.setBackgroundColor('#00000000')
+      // Added AFTER appView → painted on top of it (child views composite in insertion order).
+      mainWindow.contentView.addChildView(dragOverlay)
+      // Fill the configure button's hover label with this app's name (the plugin html is app-agnostic;
+      // the name + i18n are app-level, so window.js injects them here).
+      const dragLabel = (t().widgetDragConfigLabel || 'Open Voltage configuration for {name}')
+        .replace(/\{name\}/g, displayName)
+      const dragHtml = viewMode.dragZone.html.replace('{{configLabel}}', escapeHtml(dragLabel))
+      dragOverlay.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(dragHtml))
+
+      // Reveal/hide the strip. On show: expand the view, then fade the bar in. On hide: fade out
+      // first, then collapse the height once the fade has played (so the fade-out is actually
+      // visible). A pending collapse is cancelled if the strip is re-shown meanwhile.
+      let collapseTimer = null
+      const setShown = (shown) => {
+        if (shown === dragShown) return
+        dragShown = shown
+        if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null }
+        if (shown) {
+          layoutView()
+          try { dragOverlay.webContents.send('voltage:dragzone-show', true) } catch {}
+        } else {
+          try { dragOverlay.webContents.send('voltage:dragzone-show', false) } catch {}
+          collapseTimer = setTimeout(() => { collapseTimer = null; if (!dragShown) layoutView() }, DRAG_ZONE_FADE_MS)
+        }
+      }
+      dragZoneControllers.set(appContents.id, {
+        // 2-D hysteresis. Reveal only near the very top AND within the centered control's horizontal
+        // span; hide once the cursor has clearly LEFT that control — below it, or out past either
+        // side (each with a small grace so the edges don't flicker). While the pointer sits on the
+        // strip the app sends no reports (the strip covers it), so it simply stays shown — crucially
+        // it does NOT hide on window blur, so a Wayland window-drag (which can blur the window) keeps
+        // the control visible the whole time. clientX/Y are window-relative for a top-aligned frame.
+        onCursor: (x, y) => {
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return
+          const { width } = mainWindow.getContentBounds()
+          const innerW  = Math.max(0, width - 2 * viewMode.margin)
+          const handleW = dragZoneHandleWidth(innerW)
+          const viewW   = handleW + 2 * DRAG_ZONE_PAD
+          const viewH   = DRAG_ZONE_HEIGHT + DRAG_ZONE_PAD
+          const dx      = Math.abs(x - innerW / 2)
+          if (!dragShown) {
+            // Reveal only near the very top AND over the visible control (not the transparent pad).
+            if (y < DRAG_ZONE_SHOW_AT && dx <= handleW / 2) setShown(true)
+          } else if (y > viewH + DRAG_ZONE_EDGE_GRACE || dx > viewW / 2 + DRAG_ZONE_EDGE_GRACE) {
+            // Hide once the cursor has left the whole overlay view (control + shadow pad).
+            setShown(false)
+          }
+        },
+      })
+
+      // Window-control buttons on the overlay (About/minimize/maximize/quit). The overlay preload
+      // forwards the clicked button's action here; reuse the same handlers as the context menu so
+      // behaviour stays identical. Hide the strip afterwards — its job is done for that interaction.
+      const overlayId = dragOverlay.webContents.id
+      dragZoneActions.set(overlayId, (action) => {
+        switch (action) {
+          case 'configure': openConfigInManager(pkg);     break
+          case 'about':    toggleAboutWindow(mainWindow); break
+          case 'minimize': mainWindow.minimize();         break
+          case 'maximize': toggleMaximize(mainWindow);    break
+          case 'quit':     mainWindow.close();            break
+          default: return
+        }
+        setShown(false)
+      })
+
+      mainWindow.on('closed', () => {
+        dragZoneControllers.delete(appContents.id)
+        dragZoneActions.delete(overlayId)
+        if (collapseTimer) clearTimeout(collapseTimer)
+      })
+    }
+
+    // Keep the app view inset by the shadow gutter, and the drag overlay spanning the view's top
+    // edge, as the window resizes. The overlay shares the view's horizontal inset so it lines up with
+    // the rounded app view rather than the transparent gutter; its height tracks the reveal state.
     const layoutView = () => {
       const { width, height } = mainWindow.getContentBounds()
       const m = viewMode.margin
-      appView.setBounds({ x: m, y: m, width: Math.max(0, width - 2 * m), height: Math.max(0, height - 2 * m) })
+      const innerWidth = Math.max(0, width - 2 * m)
+      appView.setBounds({ x: m, y: m, width: innerWidth, height: Math.max(0, height - 2 * m) })
+      if (dragOverlay) {
+        // Centered control (responsive width, see dragZoneHandleWidth) hanging from the top, wrapped in a
+        // view that is DRAG_ZONE_PAD wider/taller so the control's border + shadow have room to render
+        // inside it. Idle height is 1px (NOT 0): a 0-height WebContentsView gets treated as hidden and
+        // stops rendering, so it never comes back after the first collapse. 1px stays alive and is
+        // invisible anyway — the body is transparent and the control (.handle) sits at opacity 0.
+        const handleW = Math.round(dragZoneHandleWidth(innerWidth))
+        const viewW   = handleW + 2 * DRAG_ZONE_PAD
+        const viewX   = m + Math.round((innerWidth - viewW) / 2)
+        dragOverlay.setBounds({ x: viewX, y: m, width: viewW, height: dragShown ? DRAG_ZONE_HEIGHT + DRAG_ZONE_PAD : 1 })
+      }
     }
     layoutView()
     mainWindow.on('resize', layoutView)

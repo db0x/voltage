@@ -44,6 +44,9 @@ const TINT_CSS_TEMPLATE  = fs.readFileSync(path.join(__dirname, 'tint.css'), 'ut
 const HOST_TEMPLATE      = fs.readFileSync(path.join(__dirname, 'host.html'), 'utf8')
 const MOVE_SCRIPT        = fs.readFileSync(path.join(__dirname, 'move-overlay.js'), 'utf8')
 const NO_TITLEBAR_SCRIPT = fs.readFileSync(path.join(__dirname, 'no-titlebar.js'), 'utf8')
+const DRAG_ZONE_HTML     = fs.readFileSync(path.join(__dirname, 'drag-zone.html'), 'utf8')
+// Absolute path to the overlay's preload — window.js needs it to build the drag-zone WebContentsView.
+const DRAG_ZONE_PRELOAD  = path.join(__dirname, 'drag-zone-preload.js')
 
 // move.svg as a data URL — handed to the page move-overlay so no file:// path is needed in the page.
 const MOVE_ICON = (() => {
@@ -132,6 +135,13 @@ const HIDE_SCROLLBARS_CSS =
 // the lost drag affordance.
 function suppressTitlebar(config) { return config?.suppressAppTitlebar === true }
 
+// Whether to render our own invisible top drag strip. Default ON — it is the only reliable way to
+// move the frameless window for apps whose toolbar lives in a cross-origin OOPIF (e.g. the Office/
+// WOPI editor frame): an app-region:drag region inside such a frame is NOT honored for the host
+// window, but our overlay is our own top-frame view, so its drag region always works. An explicit
+// false disables it (e.g. an app whose own titlebar already moves the window fine).
+function dragZoneEnabled(config) { return config?.dragZone !== false }
+
 // Neutralises every -webkit-app-region:drag region the app declares (Teams marks a top strip as one,
 // which then moves the window and even maximises on double-click). The JS spoof (no-titlebar.js) only
 // stops apps that GATE the strip on a detected display-mode; this CSS disables the drag behaviour
@@ -169,6 +179,14 @@ function hostHtml(config) {
     .replace(/\{\{margin\}\}/g, `${margin}px`)
     .replace(/\{\{radius\}\}/g, `${resolveRadius(config)}px`)
     .replace(/\{\{shadow\}\}/g, shadow)
+}
+
+// View-mode hook (collected by window.js alongside viewConfig/hostHtml): the drag-zone overlay's
+// page + the absolute path to its preload, or null when disabled. window.js renders it as a
+// WebContentsView on top of the app view, 1px when idle, expanded on hover. Only meaningful in view
+// mode (a frameless host window), which is why it travels with the other view-mode hooks.
+function dragZone(config) {
+  return dragZoneEnabled(config) ? { html: DRAG_ZONE_HTML, preload: DRAG_ZONE_PRELOAD } : null
 }
 
 // Enters move mode: hands the overlay its parameters via window.__voltageWidgetMove, then runs
@@ -229,4 +247,4 @@ function attachPlugin(win, api) {
 
 // configurable: the dialog's plugin chip shows a configure button (dialog = config.html). The
 // widget exposes radius, tint, shadow and resizable; most plugins omit this (default false).
-module.exports = { windowOptions, viewConfig, hostHtml, attachPlugin, configurable: true }
+module.exports = { windowOptions, viewConfig, hostHtml, dragZone, attachPlugin, configurable: true }

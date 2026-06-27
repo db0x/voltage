@@ -59,6 +59,10 @@ function expandConfig(app) {
       appId,
       profile: app.profile,
       url: app.url,
+      // Repo root baked in so a running app can relaunch the Voltage Manager (e.g. the widget drag
+      // handle's "configure" button → src/window.js openConfigInManager). Mirrors how src/launcher.js
+      // bakes the repo path into the shared launcher; a moved repo breaks both equally (acceptable).
+      appRoot: path.resolve(__dirname, '..'),
       // The embedded `name` is Electron's app.getName() and electron-builder derives the
       // updaterCacheDirName (and, on some Wayland compositors, the app_id) from it — so it must be
       // the artifact name (e.g. "vTeams"). The human-readable label travels separately as displayName (UI like
@@ -147,4 +151,10 @@ async function main() {
   }
 }
 
-main().catch(err => { console.error(err); process.exit(1) })
+// Only run a build when invoked directly (node scripts/build.js); requiring the module (e.g. a unit
+// test of expandConfig) must NOT kick off electron-builder.
+if (require.main === module) {
+  main().catch(err => { console.error(err); process.exit(1) })
+}
+
+module.exports = { expandConfig }
