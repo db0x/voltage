@@ -7,7 +7,11 @@
 <head>
 <meta charset="utf-8">
 <style>
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  /* The About panel must always feel like a native dialog, never selectable web content — so it
+     disables text selection unconditionally (the no-select plugin only styles the app page, not this
+     separate overlay document). No editable fields live here, so a blanket rule is safe. */
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;
+    -webkit-user-select:none;user-select:none}
   :root{--wa-card-bg:#fff;--wa-card-fg:#1e1e1e;--wa-label:#888;--wa-div:#e4e4e4}
   @media (prefers-color-scheme: dark){
     :root{--wa-card-bg:#2c2c2c;--wa-card-fg:#f0f0f0;--wa-label:#aaa;--wa-div:#444}
@@ -17,7 +21,7 @@
      degrades to a darker (but not fully opaque) overlay. */
   html,body{height:100%;background:transparent}
   body{display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);
-    font-family:'Ubuntu',system-ui,sans-serif;color-scheme:light dark}
+    font-family:'Ubuntu',system-ui,sans-serif;color-scheme:light dark;cursor:default}
   .wa-card{background:var(--wa-card-bg);color:var(--wa-card-fg);border-radius:12px;width:440px;
     max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.5);overflow:hidden}
   .wa-header{background:linear-gradient(135deg,#5ab4f0 0%,#1a7bc4 100%);
