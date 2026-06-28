@@ -37,32 +37,45 @@ const REVEAL_AFTER_MS = 1500
 // shadow page) while the app — and thus its window.open() calls — live in api.webContents. Binding
 // the handlers to win.webContents there silently attached them to the wrong contents: no events
 // fired and every document opened as an unrouted child window.
+// Classifies a window.open target so the handler knows what to do with it:
+//   'placeholder' — about:blank or any host-less popup. OneDrive reserves such a window synchronously
+//                   on click (anti-popup-blocker) and navigates it to the real doc URL a moment later.
+//   'internal'    — the document launcher: same-origin, or a whitelisted internal domain.
+//   'external'    — a final/foreign URL to self-claim, route to another app, or hand to the browser.
+// 'placeholder' and 'internal' are both allowed hidden and routed via did-create-window; only treating
+// 'placeholder' as external (the old behaviour) made about:blank pop a stray empty browser tab.
+function popupKind(url, appOrigin, internalDomains) {
+  let t
+  try { t = new URL(url) } catch { return 'external' }
+  if (url === 'about:blank' || !t.hostname) return 'placeholder'
+  if (t.origin === appOrigin) return 'internal'
+  if ((internalDomains || []).some(d => t.hostname === d || t.hostname.endsWith('.' + d))) return 'internal'
+  return 'external'
+}
+
 function attachPlugin(win, { webContents, appOrigin, internalDomains, routeUrl, claimsUrl, openExternal }) {
   const wc = webContents
 
-  // Replace the default handler for OneDrive. Same-origin / internal popups (the document
-  // launcher) are allowed but created hidden so a routed document never flashes a window;
-  // everything else keeps the normal route-or-browser behaviour.
+  // Replace the default handler for OneDrive. The document launcher AND OneDrive's host-less
+  // placeholder popups (about:blank) are allowed hidden — so a routed document never flashes a
+  // window, and the placeholder no longer pops a stray empty browser tab — and routed once they
+  // navigate to the real doc URL (see did-create-window). Everything else keeps the normal
+  // self-claim / route / browser behaviour.
   wc.setWindowOpenHandler(({ url }) => {
+    const kind = popupKind(url, appOrigin, internalDomains)
+    if (kind === 'placeholder' || kind === 'internal') {
+      console.log(TAG, `window.open ${kind} (allowed hidden, watching child):`, url)
+      return { action: 'allow', overrideBrowserWindowOptions: { show: false } }
+    }
+    // External: the final doc URL arrives here directly (no child window). Decide in this order —
+    // the order matters:
+    //   1. THIS app owns the doc (a OneNote note opened from OneNote): keep it, load in place.
+    //      Checked FIRST and before routing, because SharePoint hosts a personal OneDrive note
+    //      under *-my.sharepoint.com too, which a broad/stale routing key in another built app
+    //      can also match — without self-first such a note is wrongly handed to that app.
+    //   2. Another built app claims it (OneDrive → a .docx → Word): route there.
+    //   3. Nobody claims it: system browser.
     try {
-      const t = new URL(url)
-      const internal = t.origin === appOrigin ||
-        internalDomains.some(d => t.hostname === d || t.hostname.endsWith('.' + d))
-      // Same-origin launcher: the real doc URL only appears on the child's later navigation,
-      // so allow it hidden and let did-create-window route it.
-      if (internal) {
-        console.log(TAG, 'window.open internal (launcher, watching child):', url)
-        return { action: 'allow', overrideBrowserWindowOptions: { show: false } }
-      }
-      // Non-internal window.open with the final doc URL right here (no child window). Decide in
-      // this order — the order matters:
-      //   1. THIS app owns the doc (a OneNote note opened from OneNote): keep it, load in place.
-      //      Checked FIRST and before routing, because SharePoint hosts a personal OneDrive note
-      //      under *-my.sharepoint.com too, which a broad/stale routing key in another built app
-      //      can also match — without self-first such a note is wrongly handed to that app.
-      //   2. Another built app claims it (OneDrive → a .docx → Word): route there.
-      //   3. Nobody claims it: system browser.
-      // Logged either way so a routing decision on this path is always visible.
       if (claimsUrl(url)) {
         console.log(TAG, 'window.open → load in app (self-claimed):', url)
         wc.loadURL(url).catch(() => {})
@@ -117,4 +130,4 @@ function attachPlugin(win, { webContents, appOrigin, internalDomains, routeUrl, 
   
 }
 
-module.exports = { attachPlugin }
+module.exports = { attachPlugin, popupKind }
