@@ -1,7 +1,7 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { execSync } = require('node:child_process')
+const { execSync, execFileSync } = require('node:child_process')
 const { primaryKeyFromUrl, routingUrlKeys } = require('../src/routing-match')
 const { appName, wmClass } = require('../src/app-naming')
 const { appImagePath, profileDir } = require('../src/app-paths')
@@ -86,6 +86,28 @@ function escapeDesktop(s) {
   return String(s).replace(/\\/g, '\\\\')
 }
 
+// Resolves a GTK icon NAME to the absolute file the active IconTheme would use — the SAME lookup the
+// manager's icon picker performs to display the choice. The picker offers every installed icon (any
+// context: apps/, mimetypes/, places/, status/, symbolic/, …), so resolving by name here is what
+// guarantees the installed icon is exactly the one the user saw. Returns null when python3/GTK is
+// unavailable (e.g. a headless CLI install), letting the caller fall back to the filesystem search.
+function gtkIconFile(name) {
+  if (!name) return null
+  const script = `
+import gi, sys
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk
+info = Gtk.IconTheme.get_default().lookup_icon(sys.argv[1], 64, 0)
+sys.stdout.write(info.get_filename() if info and info.get_filename() else '')
+`
+  try {
+    const out = execFileSync('python3', ['-c', script, name], {
+      encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    return out || null
+  } catch { return null }
+}
+
 // Installs the app's icon into Voltage's private theme and returns the ABSOLUTE path to the
 // installed file. The .desktop entry references that path directly, so the launcher never relies on
 // the icon being resolvable by *name* in the active theme — a private theme is not searched by name.
@@ -103,7 +125,29 @@ function resolveAppIcon(iconName, desktopName) {
   if (fs.existsSync(destSvg)) return destSvg
   if (fs.existsSync(destPng)) return destPng
 
-  // Search icon themes for a matching file (apps/ subdir first, then root of icons dirs)
+  // Copies a resolved source icon into the voltage theme under the app's name, refreshes the cache,
+  // and returns the absolute path the .desktop entry will reference. The extension follows the source.
+  const installFrom = (found) => {
+    const ext  = found.endsWith('.png') ? 'png' : 'svg'
+    const dest = ext === 'png' ? destPng : destSvg
+    fs.mkdirSync(appsDir, { recursive: true })
+    fs.copyFileSync(found, dest)
+    console.log(`  Icon installed to voltage theme: ${dest}`)
+    updateVoltageCache()
+    return dest
+  }
+
+  // Preferred: ask GTK for the exact file behind the chosen name, mirroring the picker. This covers
+  // icons in ANY context dir, which the apps/-only filesystem scan below misses (the old behaviour
+  // silently dropped every non-app icon back to the generic Voltage logo).
+  const themedFile = gtkIconFile(iconName)
+  if (themedFile && fs.existsSync(themedFile)) {
+    try { return installFrom(themedFile) } catch { /* fall through to filesystem search */ }
+  }
+
+  // Fallback for environments without python3/GTK: scan the icon dirs ourselves. apps/ context is
+  // tried first (an app icon outranks a same-named mimetype/place icon); a second pass matches the
+  // name in ANY context so a picked places/status/mimetypes icon is still installable.
   const searchDirs = [
     path.join(os.homedir(), '.local', 'share', 'icons'),
     '/usr/local/share/icons',
@@ -113,24 +157,24 @@ function resolveAppIcon(iconName, desktopName) {
   const candidates = []
   for (const base of searchDirs) {
     for (const ext of exts) {
-      // Standard theme path: <theme>/<size>/apps/<name>.<ext>
-      candidates.push({ cmd: `find "${base}" -name "${iconName}.${ext}" -path "*/apps/*" 2>/dev/null | head -1` })
       // Non-standard: directly in icons root, e.g. ~/.local/share/icons/<name>.<ext>
       const rootFile = path.join(base, `${iconName}.${ext}`)
-      if (fs.existsSync(rootFile)) candidates.unshift({ file: rootFile, ext })
+      if (fs.existsSync(rootFile)) candidates.push({ file: rootFile })
+      // Standard theme path with apps/ context preferred: <theme>/<size>/apps/<name>.<ext>
+      candidates.push({ cmd: `find "${base}" -name "${iconName}.${ext}" -path "*/apps/*" 2>/dev/null | head -1` })
+    }
+  }
+  for (const base of searchDirs) {
+    for (const ext of exts) {
+      // Any context: <theme>/<size>/<anything>/<name>.<ext>
+      candidates.push({ cmd: `find "${base}" -name "${iconName}.${ext}" 2>/dev/null | head -1` })
     }
   }
   for (const c of candidates) {
     try {
       const found = c.file ?? execSync(c.cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
       if (!found) continue
-      const ext = c.ext ?? (found.endsWith('.svg') ? 'svg' : 'png')
-      fs.mkdirSync(appsDir, { recursive: true })
-      const dest = ext === 'svg' ? destSvg : destPng
-      fs.copyFileSync(found, dest)
-      console.log(`  Icon installed to voltage theme: ${dest}`)
-      updateVoltageCache()
-      return dest
+      return installFrom(found)
     } catch { /* non-fatal */ }
   }
   // Bundled fallback: check assets/webapps/<iconName>.svg, then assets/voltage.svg

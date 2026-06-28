@@ -64,6 +64,27 @@ test('desktop entry references the installed icon by absolute path', () => {
   expect(fs.existsSync(iconPath)).toBe(true)
 })
 
+// Setup:    A temp HOME seeded with a chosen icon that lives in a NON-apps context dir (mimetypes/),
+//           exactly like the many such icons the manager's picker offers. python3/GTK is unavailable
+//           in CI, so this exercises the filesystem-search fallback's any-context pass.
+// Action:   Install an app whose icon= names that mimetypes icon.
+// Expected: The .desktop points at the installed icon and its bytes equal the CHOSEN source — not the
+//           generic Voltage logo. The old apps/-only search silently fell back to voltage.svg here.
+test('installs a chosen icon that lives outside an apps/ context dir', () => {
+  const themeMimetypes = path.join(home, '.local', 'share', 'icons', 'Seeded', '48x48', 'mimetypes')
+  fs.mkdirSync(themeMimetypes, { recursive: true })
+  const srcIcon = path.join(themeMimetypes, 'x-seeded-doc.svg')
+  fs.writeFileSync(srcIcon, '<svg id="seeded-chosen-icon"/>')
+
+  runInstall(home, { profile: 'e2e-ctx', name: 'E2E Ctx', url: 'https://example.com/', icon: 'x-seeded-doc' })
+
+  const desktop = fs.readFileSync(
+    path.join(home, '.local', 'share', 'applications', 'vE2e-ctx.desktop'), 'utf8')
+  const iconPath = desktop.split('\n').find(l => l.startsWith('Icon=')).slice('Icon='.length)
+  expect(fs.existsSync(iconPath)).toBe(true)
+  expect(fs.readFileSync(iconPath, 'utf8')).toBe('<svg id="seeded-chosen-icon"/>')
+})
+
 // Setup:    A temp HOME seeded with a Voltage-fabricated hicolor index.theme (its signature:
 //           Name=Hicolor with no Context= keys) plus a stale icon cache.
 // Action:   Run an install, whose migration step inspects that file.
