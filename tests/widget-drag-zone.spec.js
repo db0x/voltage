@@ -65,6 +65,21 @@ test('dragZone html includes the (zoom-plugin-gated) zoom controls', () => {
 })
 
 // Setup:    The default (enabled) descriptor.
+// Action:   Inspect the overlay markup for the DevTools button and its visibility gate.
+// Expected: The button (data-action="devtools") ships in the template wrapped in .ctl.devtools, which
+//           is hidden by default and only revealed under body.devtools-enabled — the class window.js
+//           adds from the build config's `devTools` flag (default on). So the button exists in the
+//           markup but disappears entirely when DevTools are disabled for the app.
+test('dragZone html includes the (devTools-gated) DevTools button', () => {
+  const html = dragZone({}).html
+  expect(html).toContain('data-action="devtools"')
+  expect(html).toContain('class="ctl devtools"')
+  // The gate: hidden by default, shown only with the devtools-enabled body class.
+  expect(html).toMatch(/\.ctl\.devtools\s*\{\s*display:\s*none/)
+  expect(html).toMatch(/body\.devtools-enabled\s+\.ctl\.devtools\s*\{\s*display:\s*flex/)
+})
+
+// Setup:    The default (enabled) descriptor.
 // Action:   Inspect the preload path it hands window.js for the overlay WebContentsView.
 // Expected: An absolute path to an existing drag-zone-preload.js — window.js sets it as the view's
 //           preload, so a missing/relative path would make the overlay load with no hover wiring.

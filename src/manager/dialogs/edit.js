@@ -86,6 +86,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
       profileDir:         profileDirField.get(),
       crossOriginIsolation: document.getElementById('edit-coi').classList.contains('active'),
       singleInstance:       document.getElementById('edit-single-instance').classList.contains('active'),
+      // DevTools default ON, so the toggle's *active* state maps to the absence of "devTools": false.
+      devTools:             document.getElementById('edit-devtools').classList.contains('active'),
       mailHandler:          document.getElementById('edit-mail-handler').classList.contains('active'),
       // Sorted join so the dirty check ignores checkbox ordering and only reacts to which
       // plugins are selected.
@@ -200,6 +202,10 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     e.currentTarget.classList.toggle('active')
     updateSaveBtn()
   })
+  document.getElementById('edit-devtools').addEventListener('click', e => {
+    e.currentTarget.classList.toggle('active')
+    updateSaveBtn()
+  })
 
   document.getElementById('edit-icon-btn').addEventListener('click', () => {
     iconPicker.openIconPicker((name, path) => {
@@ -284,6 +290,12 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     const siBtn = document.getElementById('edit-single-instance')
     if (app.singleInstance) siBtn.classList.add('active')
     else siBtn.classList.remove('active')
+
+    // DevTools are on unless the config explicitly disabled them, so the toggle starts active for
+    // every app that hasn't set "devTools": false.
+    const dtBtn = document.getElementById('edit-devtools')
+    if (app.devTools !== false) dtBtn.classList.add('active')
+    else dtBtn.classList.remove('active')
 
     const mailHandler = app.mimeTypes?.includes('x-scheme-handler/mailto')
     const mhBtn = document.getElementById('edit-mail-handler')

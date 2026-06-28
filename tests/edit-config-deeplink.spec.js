@@ -29,6 +29,18 @@ test('expandConfig bakes the repo root as appRoot', () => {
   expect(meta.profile).toBe('demo')
 })
 
+// Setup:    Configs with devTools unset, explicitly true, and explicitly false.
+// Action:   Read the metadata the build bakes into the AppImage's package.json.
+// Expected: Only an explicit "devTools": false travels through — DevTools default ON, so omitting the
+//           key (the common case) keeps pkg.devTools undefined → enabled at runtime. Without baking
+//           the off-state the disable would silently never reach the built app.
+test('expandConfig bakes devTools only when explicitly disabled', () => {
+  const base = { profile: 'demo', url: 'https://example.com' }
+  expect('devTools' in expandConfig(base).extraMetadata).toBe(false)
+  expect('devTools' in expandConfig({ ...base, devTools: true }).extraMetadata).toBe(false)
+  expect(expandConfig({ ...base, devTools: false }).extraMetadata.devTools).toBe(false)
+})
+
 // Setup:    Manager launched with --voltage-edit-config=test-user-app (an editable private app).
 // Action:   Wait for the UI to finish initialising.
 // Expected: The edit dialog auto-opens for exactly that app — its profile label shows the profile —

@@ -62,6 +62,8 @@
   .btn-about svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
   /* The Configure (gear) button uses the filled configure.svg glyph. */
   .btn-config svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+  /* The DevTools button uses the filled dev-tools.svg glyph. */
+  .btn-devtools svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
   /* The Maximize button uses the filled fullscreen.svg glyph. */
   .btn-max svg { width: 15px; height: 15px; fill: currentColor; stroke: none; }
   /* The Minimize button uses the filled minimize.svg glyph. */
@@ -79,7 +81,9 @@
      controls are present. The label box is centred within that zone (and capped to its width, so it
      ellipsises rather than spilling); on a narrow bar it anchors to the left edge of the zone instead. */
   .handle { --dz-right: 140px; }
+  body.devtools-enabled .handle { --dz-right: 170px; }
   body.zoom-enabled .handle { --dz-right: 256px; }
+  body.zoom-enabled.devtools-enabled .handle { --dz-right: 286px; }
   .label {
     position: absolute; top: 50%;
     left: calc((42px + 100% - var(--dz-right)) / 2);
@@ -100,6 +104,11 @@
   .sep  { display: none; width: 1px; height: 18px; margin: 0 6px; background: rgba(255, 255, 255, 0.22); }
   body.zoom-enabled .zoom { display: flex; }
   body.zoom-enabled .sep  { display: block; }
+
+  /* DevTools button — shown only when DevTools are enabled for the app (body.devtools-enabled, set
+     from the build config's "devTools" flag). Hidden entirely otherwise, matching the disabled tools. */
+  .ctl.devtools { display: none; }
+  body.devtools-enabled .ctl.devtools { display: flex; }
   .zoom-pct { min-width: 40px; text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.9);
     -webkit-app-region: no-drag; pointer-events: none; font-variant-numeric: tabular-nums; }
 
@@ -141,6 +150,13 @@
         </button>
       </div>
       <div class="sep"></div>
+      <!-- DevTools — opens Chromium's developer tools for the wrapped app view (detached). Filled
+           dev-tools.svg glyph; sits between the zoom group and the About button. -->
+      <div class="ctl devtools"><span class="label">{{devtoolsLabel}}</span>
+        <button class="btn btn-devtools" data-action="devtools">
+          <svg viewBox="0 0 16 16"><path d="M 9.5,0 5.5,15.754 6.5,16 10.5,0.246 Z M 4.2539,3 0,8 4.2539,13 6,12.291 2.3359,8 6,3.709 Z M 11.746,3 10,3.709 13.664,8 10,12.291 11.746,13 16,8 Z"/></svg>
+        </button>
+      </div>
       <div class="ctl"><span class="label">{{aboutLabel}}</span>
         <button class="btn btn-about" data-action="about">
           <svg viewBox="0 0 16 16"><path d="M 8 1 A 7 7 0 0 0 1 8 A 7 7 0 0 0 8 15 A 7 7 0 0 0 15 8 A 7 7 0 0 0 8 1 z M 8 3.75 A 1.25 1.25 0 0 1 9.25 5 A 1.25 1.25 0 0 1 8 6.25 A 1.25 1.25 0 0 1 6.75 5 A 1.25 1.25 0 0 1 8 3.75 z M 7 7 L 9 7 L 9 12 L 7 12 L 7 7 z"/></svg>

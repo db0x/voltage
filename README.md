@@ -262,6 +262,7 @@ Apps can also be configured by hand — useful for bulk setup, version-controlle
 | `crossOriginIsolation` | boolean | Enable `SharedArrayBuffer` — required for multi-threaded WASM (Google Earth) |
 | `singleInstance` | boolean | Allow only one instance; a second launch focuses the existing window |
 | `blockWindowClose` | boolean | Neutralise the page's own `window.close()`. Needed by apps like Teams that call it during login and would otherwise close themselves. The WM close and context-menu Quit still work; widget apps get this automatically |
+| `devTools` | boolean | Allow Chromium DevTools (default `true`). Set `false` to disable them entirely — the F12 shortcut, the context menu and `openDevTools()` all become no-ops, and the widget's top drag strip hides its DevTools button |
 | `mimeTypes` | array | Schemes or MIME types this app handles (e.g. `["x-scheme-handler/mailto"]`, `["application/x-drawio"]`) |
 | `mimeExtensions` | object | Maps MIME types to file extensions for system registration (e.g. `{ "application/x-drawio": ["drawio"] }`) |
 | `mimeIcons` | object | Maps MIME types to SVG asset filenames (from `assets/`) installed as file-type icons |

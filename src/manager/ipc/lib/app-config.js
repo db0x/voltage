@@ -96,6 +96,8 @@ function buildSingleApp(configFile, defaultMailDesktop) {
     icon: cfg.icon || null, geometry: cfg.geometry || null,
     userAgent: cfg.userAgent || null, crossOriginIsolation: cfg.crossOriginIsolation || false,
     singleInstance: cfg.singleInstance || false, internalDomains: cfg.internalDomains || null,
+    // DevTools default ON; the dialog toggle reflects the absence of an explicit "devTools": false.
+    devTools: cfg.devTools !== false,
     routingUrls: cfg.routingUrls || null,
     mimeTypes: cfg.mimeTypes || null, plugins: cfg.plugins || null,
     pluginConfig: cfg.pluginConfig || null,
@@ -112,14 +114,14 @@ function buildSingleApp(configFile, defaultMailDesktop) {
 // does not silently drop fields the form cannot represent.
 const FORM_MANAGED_KEYS = new Set([
   'profile', 'url', 'name', 'icon', 'geometry', 'userAgent',
-  'internalDomains', 'routingUrls', 'crossOriginIsolation', 'singleInstance',
+  'internalDomains', 'routingUrls', 'crossOriginIsolation', 'singleInstance', 'devTools',
   'mimeTypes', 'plugins', 'pluginConfig', 'category', 'outputDir', 'profileDir',
 ])
 
 // Builds a config object from create/edit form data, omitting falsy/default fields.
 // `existing` is the config currently on disk (empty for create): its non-form-managed
 // keys are preserved, and its mimeTypes are kept (the form only toggles the mailto entry).
-function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig, categories, outputDir, profileDir }, existing = {}) {
+function buildAppCfg({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, devTools, mailHandler, plugins, pluginConfig, categories, outputDir, profileDir }, existing = {}) {
   const cfg = { profile, url }
   if (name)  cfg.name = name
   if (icon)  cfg.icon = icon
@@ -132,6 +134,9 @@ function buildAppCfg({ profile, name, url, icon, width, height, userAgent, inter
   if (userAgent) cfg.userAgent = userAgent
   if (crossOriginIsolation) cfg.crossOriginIsolation = true
   if (singleInstance) cfg.singleInstance = true
+  // DevTools default ON — only an explicit off is persisted, keeping the common case out of the file.
+  // `devTools === false` (not falsy): undefined from a legacy caller must keep the enabled default.
+  if (devTools === false) cfg.devTools = false
   if (internalDomains) {
     const domains = internalDomains.split(',').map(d => d.trim()).filter(Boolean)
     if (domains.length === 1) cfg.internalDomains = domains[0]

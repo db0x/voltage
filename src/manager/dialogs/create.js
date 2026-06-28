@@ -201,6 +201,9 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
   document.getElementById('create-single-instance').addEventListener('click', e =>
     e.currentTarget.classList.toggle('active')
   )
+  document.getElementById('create-devtools').addEventListener('click', e =>
+    e.currentTarget.classList.toggle('active')
+  )
 
   document.getElementById('create-icon-btn').addEventListener('click', () => {
     iconPicker.openIconPicker((name, path) => {
@@ -248,6 +251,8 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     document.getElementById('create-coi').classList.remove('active')
     document.getElementById('create-single-instance').classList.remove('active')
     document.getElementById('create-mail-handler').classList.remove('active')
+    // DevTools default ON — a new app starts with the toggle active (only an explicit off persists).
+    document.getElementById('create-devtools').classList.add('active')
     pluginList.reset()
     pluginConfig = {}
     profileValid = false
@@ -290,13 +295,14 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     const routingUrls          = routingList.get()
     const crossOriginIsolation = document.getElementById('create-coi').classList.contains('active')
     const singleInstance       = document.getElementById('create-single-instance').classList.contains('active')
+    const devTools             = document.getElementById('create-devtools').classList.contains('active')
     const mailHandler          = document.getElementById('create-mail-handler').classList.contains('active')
     const plugins              = pluginList.get()
     const categories           = categoryList.get()
     const outputDir            = outputDirField.get()
     const profileDir           = profileDirField.get()
     saveBtn.disabled = true
-    const result = await window.managerAPI.createApp({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, mailHandler, plugins, pluginConfig, categories, outputDir, profileDir })
+    const result = await window.managerAPI.createApp({ profile, name, url, icon, width, height, userAgent, internalDomains, routingUrls, crossOriginIsolation, singleInstance, devTools, mailHandler, plugins, pluginConfig, categories, outputDir, profileDir })
     if (result.success) {
       closeCreateDialog()
       insertCard(createCard(result.app))

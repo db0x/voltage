@@ -634,6 +634,14 @@ function usesZoomPlugin(pkg) {
   return (pkg.plugins ?? []).some(p => /(^|\/)zoom\//.test(p))
 }
 
+// Whether Chromium DevTools are available for the app. Default ON — only an explicit "devTools": false
+// in the build config disables them. When off, webPreferences gets devTools:false (a hard kill: the
+// F12 shortcut, the context menu and openDevTools() all become no-ops) AND the widget drag-zone hides
+// its DevTools button. Honoured uniformly by every app config so it can be toggled per build.
+function devToolsEnabled(pkg) {
+  return pkg.devTools !== false
+}
+
 // View mode: a plugin may render the app in an inset WebContentsView so the host window can draw
 // a drop shadow + rounded corners AROUND it, leaving the app's page completely untouched (native
 // scrolling/layout — no clip-path/transform hacks). A plugin opts in by exporting viewConfig(cfg)
@@ -672,6 +680,8 @@ function createWindow(pkg, opts = {}) {
     preload: path.join(__dirname, '..', 'preload.js'),
     contextIsolation: true,
     nodeIntegration: false,
+    // Gated by the build config (default on). When off, Chromium refuses every openDevTools/toggle.
+    devTools: devToolsEnabled(pkg),
     // Load the preload in EVERY frame, not just the top one. Apps like Word for the web run the
     // actual editing surface in a cross-origin iframe (the Office/WOPI editor frame); without this
     // our Ctrl+right-click listener never exists there, so the menu only worked on the top-frame
@@ -756,10 +766,12 @@ function createWindow(pkg, opts = {}) {
       // plugin); 'light' switches the bar to its light theme (widget config, default dark).
       const dragBodyClass = [
         usesZoomPlugin(pkg) ? 'zoom-enabled' : '',
+        devToolsEnabled(pkg) ? 'devtools-enabled' : '',
         viewMode.dragZone.light ? 'light' : '',
       ].filter(Boolean).join(' ')
       const dragHtml = viewMode.dragZone.html
         .replace('{{configLabel}}', dragLabel('widgetDragConfigLabel', 'Open Voltage configuration for {name}'))
+        .replace('{{devtoolsLabel}}', dragLabel('openDevTools',     'Open developer tools'))
         .replace('{{aboutLabel}}',  dragLabel('aboutApp',        'About {name}'))
         .replace('{{minLabel}}',    dragLabel('minimizeWindow',  'Minimize'))
         .replace('{{maxLabel}}',    dragLabel('maximizeWindow',  'Maximize'))
@@ -836,6 +848,8 @@ function createWindow(pkg, opts = {}) {
         if (action === 'zoom-out') { applyDragZoom(-1); return }
         switch (action) {
           case 'configure': openConfigInManager(pkg);     break
+          // Detached so the tools don't shrink the frameless widget's own view.
+          case 'devtools': appContents.openDevTools({ mode: 'detach' }); break
           case 'about':    toggleAboutWindow(mainWindow); break
           case 'minimize': mainWindow.minimize();         break
           case 'maximize': toggleMaximize(mainWindow);    break
