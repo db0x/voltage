@@ -364,7 +364,7 @@ const appMenuRegistry = new Map()  // appContents.id → { appContents, mainWind
 // against the cursor's distance from the top edge: reveal at SHOW_AT, hide once the cursor drops
 // past HIDE_BELOW (the strip plus a margin), so the strip doesn't flicker while you sit on it. FADE_MS
 // matches the overlay's CSS opacity transition so the height only collapses after the fade-out plays.
-const DRAG_ZONE_HEIGHT         = 38     // visible control height (must match .handle height in drag-zone.html)
+const DRAG_ZONE_HEIGHT         = 42     // visible control height (must match .handle height in drag-zone.html)
 // Transparent room around the control inside its overlay view, so the control's border + drop shadow
 // render INSIDE the view instead of being clipped by its bounds. Must match the inset in drag-zone.html.
 const DRAG_ZONE_PAD            = 16
@@ -408,6 +408,7 @@ const dragZoneActions = new Map()  // overlay webContents.id → (action: string
 ipcMain.on('voltage:dragzone-action', (event, action) => {
   dragZoneActions.get(event.sender.id)?.(String(action))
 })
+
 
 // Flattens a plugin's contextMenuItems() (click fns + nativeImage icons + optional submenu) into a
 // render-safe tree, recording each leaf's click under a fresh id in `actions` (the renderer only
@@ -747,16 +748,42 @@ function createWindow(pkg, opts = {}) {
       dragOverlay.setBackgroundColor('#00000000')
       // Added AFTER appView → painted on top of it (child views composite in insertion order).
       mainWindow.contentView.addChildView(dragOverlay)
-      // Fill the configure button's hover label with this app's name (the plugin html is app-agnostic;
-      // the name + i18n are app-level, so window.js injects them here).
-      const dragLabel = (t().widgetDragConfigLabel || 'Open Voltage configuration for {name}')
-        .replace(/\{name\}/g, displayName)
-      const dragHtml = viewMode.dragZone.html.replace('{{configLabel}}', escapeHtml(dragLabel))
+      // Fill each button's hover label (the plugin html is app-agnostic; the names + i18n are
+      // app-level, so window.js injects them here). {name} → this app's display name.
+      const i18n = t()
+      const dragLabel = (s, fallback) => escapeHtml((i18n[s] || fallback).replace(/\{name\}/g, displayName))
+      // body classes: 'zoom-enabled' shows the zoom controls (only when the app loads the zoom
+      // plugin); 'light' switches the bar to its light theme (widget config, default dark).
+      const dragBodyClass = [
+        usesZoomPlugin(pkg) ? 'zoom-enabled' : '',
+        viewMode.dragZone.light ? 'light' : '',
+      ].filter(Boolean).join(' ')
+      const dragHtml = viewMode.dragZone.html
+        .replace('{{configLabel}}', dragLabel('widgetDragConfigLabel', 'Open Voltage configuration for {name}'))
+        .replace('{{aboutLabel}}',  dragLabel('aboutApp',        'About {name}'))
+        .replace('{{minLabel}}',    dragLabel('minimizeWindow',  'Minimize'))
+        .replace('{{maxLabel}}',    dragLabel('maximizeWindow',  'Maximize'))
+        .replace('{{closeLabel}}',  dragLabel('widgetQuit',      'Quit {name}'))
+        .replace('{{bodyClass}}',   dragBodyClass)
       dragOverlay.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(dragHtml))
 
       // Reveal/hide the strip. On show: expand the view, then fade the bar in. On hide: fade out
       // first, then collapse the height once the fade has played (so the fade-out is actually
       // visible). A pending collapse is cancelled if the strip is re-shown meanwhile.
+      // Pushes the current zoom level (%) to the overlay's zoom display. Read live from the app view so
+      // it reflects every source (ctrl+wheel, context menu, the drag-zone buttons). No-op in the
+      // overlay when the zoom controls aren't shown.
+      const sendZoomLevel = () => {
+        try { dragOverlay.webContents.send('voltage:dragzone-zoom', Math.round(appContents.getZoomFactor() * 100)) } catch {}
+      }
+      // Drives zoom from the drag-zone +/- buttons by reusing the zoom plugin's own applyZoom (step +
+      // min/max bounds + page OSD), then refreshes the display. direction: +1 in, -1 out.
+      const applyDragZoom = (direction) => {
+        const zoom = (mainWindow._voltagePlugins ?? []).find(p => typeof p?.applyZoom === 'function')
+        if (zoom) zoom.applyZoom(direction)
+        sendZoomLevel()
+      }
+
       let collapseTimer = null
       const setShown = (shown) => {
         if (shown === dragShown) return
@@ -765,6 +792,7 @@ function createWindow(pkg, opts = {}) {
         if (shown) {
           layoutView()
           try { dragOverlay.webContents.send('voltage:dragzone-show', true) } catch {}
+          sendZoomLevel()  // refresh the display each time the bar appears
         } else {
           try { dragOverlay.webContents.send('voltage:dragzone-show', false) } catch {}
           collapseTimer = setTimeout(() => { collapseTimer = null; if (!dragShown) layoutView() }, DRAG_ZONE_FADE_MS)
@@ -772,11 +800,14 @@ function createWindow(pkg, opts = {}) {
       }
       dragZoneControllers.set(appContents.id, {
         // 2-D hysteresis. Reveal only near the very top AND within the centered control's horizontal
-        // span; hide once the cursor has clearly LEFT that control — below it, or out past either
-        // side (each with a small grace so the edges don't flicker). While the pointer sits on the
-        // strip the app sends no reports (the strip covers it), so it simply stays shown — crucially
-        // it does NOT hide on window blur, so a Wayland window-drag (which can blur the window) keeps
-        // the control visible the whole time. clientX/Y are window-relative for a top-aligned frame.
+        // span; hide once the cursor has clearly LEFT that control — below it, or out past either side
+        // (each with a small grace so the edges don't flicker). While the pointer sits on the strip the
+        // app sends no reports (the strip covers it), so it simply stays shown — and it does NOT hide
+        // on window blur, so a Wayland window-drag (which can blur the window) keeps the control
+        // visible. The only gap is the pointer leaving the window straight off the TOP across the
+        // strip: Wayland gives a client no pointer position once it leaves the window, so we can't
+        // detect that — the strip stays until the pointer returns, then hides on the next report.
+        // clientX/Y are window-relative for a top-aligned frame.
         onCursor: (x, y) => {
           if (!Number.isFinite(x) || !Number.isFinite(y)) return
           const { width } = mainWindow.getContentBounds()
@@ -800,6 +831,9 @@ function createWindow(pkg, opts = {}) {
       // behaviour stays identical. Hide the strip afterwards — its job is done for that interaction.
       const overlayId = dragOverlay.webContents.id
       dragZoneActions.set(overlayId, (action) => {
+        // Zoom buttons keep the strip open (you usually step a few times) and only update the display.
+        if (action === 'zoom-in')  { applyDragZoom(1);  return }
+        if (action === 'zoom-out') { applyDragZoom(-1); return }
         switch (action) {
           case 'configure': openConfigInManager(pkg);     break
           case 'about':    toggleAboutWindow(mainWindow); break

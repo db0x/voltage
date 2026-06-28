@@ -122,6 +122,7 @@ const ctx = {
     rclonePlugin:   s('rclonePlugin'),
     pluginBadge:    s('pluginBadge'),
     shadow:         s('shadow'),
+    panel:          s('panel'),
   },
 }
 

@@ -25,6 +25,16 @@ test('dragZone is enabled by default and when explicitly on', () => {
   }
 })
 
+// Setup:    Configs with the drag-zone light theme unset, off and on.
+// Action:   Ask the plugin for its drag-zone descriptor.
+// Expected: light defaults to false (dark) and is true only when dragZoneLight is explicitly enabled —
+//           window.js maps this to the overlay's `light` body class.
+test('dragZone exposes the light flag (default dark)', () => {
+  expect(dragZone({}).light).toBe(false)
+  expect(dragZone({ dragZoneLight: false }).light).toBe(false)
+  expect(dragZone({ dragZoneLight: true }).light).toBe(true)
+})
+
 // Setup:    A config with the drag zone explicitly switched off.
 // Action:   Ask the plugin for its drag-zone descriptor.
 // Expected: null — window.js then renders no overlay, leaving the window with only its other move
@@ -39,6 +49,19 @@ test('dragZone returns null when explicitly disabled', () => {
 //           the strip move the host window; losing it would silently break the whole feature.
 test('dragZone html marks the surface as a window-drag region', () => {
   expect(dragZone({}).html).toMatch(/-webkit-app-region:\s*drag/)
+})
+
+// Setup:    The default (enabled) descriptor.
+// Action:   Inspect the overlay markup for the zoom controls.
+// Expected: It ships the −/+ zoom buttons and the level readout, gated behind a {{bodyClass}} token
+//           that window.js fills with "zoom-enabled" only for apps that load the zoom plugin — so the
+//           controls exist in the template but stay hidden otherwise.
+test('dragZone html includes the (zoom-plugin-gated) zoom controls', () => {
+  const html = dragZone({}).html
+  expect(html).toContain('data-action="zoom-out"')
+  expect(html).toContain('data-action="zoom-in"')
+  expect(html).toContain('class="zoom-pct"')
+  expect(html).toContain('{{bodyClass}}')
 })
 
 // Setup:    The default (enabled) descriptor.

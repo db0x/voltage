@@ -171,6 +171,54 @@ test('edit dialog: the widget drag-zone toggle defaults on and persists when tur
 })
 
 // Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The drag-bar light-theme toggle defaults off; turn it on, Apply, and save.
+// Expected: The toggle starts inactive (default off — the dark bar is the default) and persists
+//           dragZoneLight:true when enabled.
+test('edit dialog: the widget drag-zone light toggle defaults off and persists when turned on', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const toggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="dragZoneLight"]')
+  await expect(toggle).not.toHaveClass(/active/)  // default off (dark)
+
+  await toggle.click()
+  await expect(toggle).toHaveClass(/active/)
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { dragZoneLight: true } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   Inspect the title-bar fieldset legend.
+// Expected: Its icon resolves to assets/panel.svg — the data-icon="panel" must be wired in BOTH the
+//           main-process catalog (meta.js) and the renderer icon map (manager.js), else applyTemplate
+//           drops the <img> and the section header shows no icon.
+test('edit dialog: the widget title-bar section legend shows the panel icon', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  await expect(
+    managerPage.locator('.plugin-config-overlay .plugin-config-fieldset-legend img[src*="panel.svg"]')
+  ).toHaveCount(1)
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
 // Action:   The suppress-app-titlebar toggle defaults off; turn it on, Apply, and save.
 // Expected: The toggle starts inactive (default off — opt-in, it changes how the page sees its
 //           environment) and persists suppressAppTitlebar:true when enabled.

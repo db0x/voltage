@@ -94,6 +94,7 @@ module.exports = function registerMetaHandlers() {
       rclonePlugin:       a('plugins/rclone.svg'),
       pluginBadge:        a('plugins/plugin.svg'),
       shadow:             a('shadow.svg'),
+      panel:              a('panel.svg'),
     }
 
     // In tests, VOLTAGE_TEST_FILTER_ICONS replaces the category filter icons with a

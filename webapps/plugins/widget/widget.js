@@ -142,6 +142,10 @@ function suppressTitlebar(config) { return config?.suppressAppTitlebar === true 
 // false disables it (e.g. an app whose own titlebar already moves the window fine).
 function dragZoneEnabled(config) { return config?.dragZone !== false }
 
+// Whether the drag strip uses the light theme. Default OFF (dark) — the dark, translucent panel reads
+// well over any page; an explicit true switches it to a light variant (chosen per app in config.html).
+function dragZoneLight(config) { return config?.dragZoneLight === true }
+
 // Neutralises every -webkit-app-region:drag region the app declares (Teams marks a top strip as one,
 // which then moves the window and even maximises on double-click). The JS spoof (no-titlebar.js) only
 // stops apps that GATE the strip on a detected display-mode; this CSS disables the drag behaviour
@@ -186,7 +190,9 @@ function hostHtml(config) {
 // WebContentsView on top of the app view, 1px when idle, expanded on hover. Only meaningful in view
 // mode (a frameless host window), which is why it travels with the other view-mode hooks.
 function dragZone(config) {
-  return dragZoneEnabled(config) ? { html: DRAG_ZONE_HTML, preload: DRAG_ZONE_PRELOAD } : null
+  return dragZoneEnabled(config)
+    ? { html: DRAG_ZONE_HTML, preload: DRAG_ZONE_PRELOAD, light: dragZoneLight(config) }
+    : null
 }
 
 // Enters move mode: hands the overlay its parameters via window.__voltageWidgetMove, then runs

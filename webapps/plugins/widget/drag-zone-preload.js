@@ -1,14 +1,21 @@
-// Preload for the widget drag-zone overlay (its own WebContentsView, see src/window.js). The overlay
-// can't sense its own hover — a -webkit-app-region:drag surface swallows pointer events — so main
-// drives the reveal (from the app preload's cursor reports) and just tells this page when to fade the
-// faint bar in or out. We toggle the `shown` class here rather than resizing, because the view height
-// is owned by main (a WebContentsView can't resize itself).
+// Preload for the widget drag-zone overlay (its own WebContentsView, see src/window.js). main drives
+// the reveal (from the app preload's cursor reports) and tells this page when to fade the faint bar
+// in or out — we toggle the `shown` class here rather than resizing, because the view height is owned
+// by main (a WebContentsView can't resize itself).
 
 const { ipcRenderer } = require('electron')
 
 // main → overlay: fade the bar in (true) or out (false). The CSS opacity transition does the rest.
 ipcRenderer.on('voltage:dragzone-show', (_event, shown) => {
   try { document.body.classList.toggle('shown', shown === true) } catch {}
+})
+
+// main → overlay: current zoom level in percent for the zoom readout (only present for zoom-plugin apps).
+ipcRenderer.on('voltage:dragzone-zoom', (_event, pct) => {
+  try {
+    const el = document.querySelector('.zoom-pct')
+    if (el) el.textContent = `${pct}%`
+  } catch {}
 })
 
 // overlay → main: forward a window-control button click (About/minimize/maximize/quit). The buttons

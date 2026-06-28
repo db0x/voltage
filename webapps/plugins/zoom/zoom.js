@@ -81,6 +81,7 @@ function attachPlugin(win, api) {
     // yet (zoom before load finished), so the page guards the call.
     const pct = Math.round(next * 100)
     wc.executeJavaScript(`window.__voltageZoomOsd && window.__voltageZoomOsd.show(${pct})`).catch(() => {})
+    return next
   }
 
   // The event.sender guard matters because ipcMain is process-global: with more than one window in a
@@ -108,8 +109,11 @@ function attachPlugin(win, api) {
   })
 
   // Contribute a "Zoom" submenu to the context menu (window.js collects this from every plugin).
-  // Icons are { light, dark } pairs; the overlay picks the variant for its theme.
+  // Icons are { light, dark } pairs; the overlay picks the variant for its theme. applyZoom is also
+  // exposed so the widget plugin's drag-zone +/- buttons can drive the same zoom logic (window.js
+  // finds it on the plugin instance); it returns the resulting zoom factor.
   return {
+    applyZoom,
     contextMenuItems: () => {
       const t = api.t()
       const withIcon = (icon, item) => (icon ? { ...item, icon } : item)
