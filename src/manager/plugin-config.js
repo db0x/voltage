@@ -32,10 +32,28 @@ export function initPluginConfig({ i18n, icons, plugins }) {
   const catalog  = plugins || []
   const overlays = new Map()  // plugin file path -> overlay element
 
+  // Fill any <select data-config-options="<key>"> from the catalog entry's matching array (e.g. the
+  // docker plugin's discovered `stacks`: [{ id, label }]). Options are static per plugin, so this
+  // runs once at build time; bindControls later sets the selected value from the app's config. Any
+  // static <option> already in the markup (e.g. a "none" placeholder) is kept; the rest are appended.
+  function fillOptionLists(overlay, entry) {
+    for (const sel of overlay.querySelectorAll('select[data-config-options]')) {
+      const items = entry[sel.dataset.configOptions]
+      if (!Array.isArray(items)) continue
+      for (const it of items) {
+        const opt = document.createElement('option')
+        opt.value = it.id ?? it.value ?? it
+        opt.textContent = it.label ?? it.id ?? it
+        sel.appendChild(opt)
+      }
+    }
+  }
+
   function buildOverlay(entry) {
     // pluginIcon is the plugin's own icon (data URL from the catalog), shown in the dialog header.
     const overlay = applyTemplate(entry.configHtml, { i18n, icons, vars: { pluginIcon: entry.icon || '' } })
     document.body.appendChild(overlay)
+    fillOptionLists(overlay, entry)
     const close = () => overlay.classList.add('hidden')
     // ✕ and Cancel discard: they close without running the commit. The working copy lives only
     // until close; the next open re-seeds the controls from the stored config. A backdrop click is

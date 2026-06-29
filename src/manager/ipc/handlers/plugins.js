@@ -10,6 +10,7 @@ const path = require('node:path')
 const fs   = require('node:fs')
 
 const { CONFIGS_DIR } = require('../lib/paths')
+const { t }           = require('../../../i18n')
 
 // Collects each plugin directory's entry file (<dir>/<dir>.js), webapps-relative. One level of
 // nesting; helper files alongside the entry are ignored.
@@ -47,18 +48,57 @@ function pluginConfigHtml(relFile) {
   try { return fs.readFileSync(html, 'utf8') } catch { return null }
 }
 
+// Whether a plugin's prerequisites are met, read from its optional available() export (e.g.
+// docker-integration probing for Docker + Compose). Returns { available, reason } where reason is an
+// i18n key for the hover explanation. A plugin without the export — or one whose check throws — is
+// treated as available, so a buggy probe never hides a plugin entirely (it just stays selectable).
+function pluginAvailability(relFile) {
+  try {
+    const mod = require(path.join(CONFIGS_DIR, relFile))
+    if (typeof mod.available !== 'function') return { available: true, reason: null }
+    const r = mod.available()
+    if (typeof r === 'boolean') return { available: r, reason: null }
+    return { available: r?.available !== false, reason: r?.reason ?? null }
+  } catch { return { available: true, reason: null } }
+}
+
+// Whether a plugin owns the app's URL (read from its `managesUrl` export). The create/edit dialogs
+// lock the URL field while such a plugin is selected, so it isn't hand-edited out from under the
+// plugin (docker-integration routes the app to a local container).
+function pluginManagesUrl(relFile) {
+  try { return require(path.join(CONFIGS_DIR, relFile)).managesUrl === true }
+  catch { return false }
+}
+
+// Dynamic option lists a plugin offers its config dialog, read from its optional stacks() export
+// (e.g. docker-integration's curated compose stacks). The renderer has no file access, so the
+// plugin reads them main-side and the config-dialog host fills any <select data-config-options>
+// from this. Returns null when the plugin has no such list.
+function pluginStacks(relFile) {
+  try {
+    const mod = require(path.join(CONFIGS_DIR, relFile))
+    if (typeof mod.stacks !== 'function') return null
+    const list = mod.stacks()
+    return Array.isArray(list) ? list : null
+  } catch { return null }
+}
+
 module.exports = function registerPluginHandlers() {
   ipcMain.handle('manager:plugins', () => {
     const pluginsDir = path.join(CONFIGS_DIR, 'plugins')
     if (!fs.existsSync(pluginsDir)) return []
     const files = []
     collectPluginFiles(pluginsDir, CONFIGS_DIR, files)
+    // Reason keys are resolved to localized text here (main-process t() matches the manager's active
+    // language) so the renderer's plugin list can stay i18n-agnostic.
+    const i18n = t()
     // Label from the filename without extension — e.g. "plugins/onedrive/onedrive.js" → "onedrive".
     // A leading "private." (the gitignored-private naming convention) is dropped from the
     // label only; the stored `file` path keeps it so the loader still resolves the real file.
     return files
       .map(file => {
         const configurable = pluginConfigurable(file)
+        const { available, reason } = pluginAvailability(file)
         return {
           file,
           label: path.basename(file).replace(/\.js$/, '').replace(/^private\./, ''),
@@ -66,6 +106,12 @@ module.exports = function registerPluginHandlers() {
           configurable,
           // Only configurable plugins carry their config dialog markup.
           configHtml: configurable ? pluginConfigHtml(file) : null,
+          // Availability gates selection in the dropdown; managesUrl locks the dialog's URL field.
+          available,
+          unavailableReason: available ? null : (i18n[reason] || i18n.pluginUnavailable || ''),
+          managesUrl: pluginManagesUrl(file),
+          // Dynamic dropdown options for the config dialog (e.g. curated compose stacks).
+          stacks: pluginStacks(file),
         }
       })
       .sort((a, b) => a.label.localeCompare(b.label))

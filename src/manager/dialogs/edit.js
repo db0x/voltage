@@ -40,11 +40,28 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
   // Plugin selection is its own select-and-add list, independent of the mail-handler toggle.
   // The configure button opens the plugin's own dialog, scoped to this app's config for it.
   const pluginList = initPluginList('edit-plugin-trigger', 'edit-plugin-list', plugins, appDefaultSrc, icons?.configure,
-    () => updateSaveBtn(),
+    () => syncUrlLock(),
     file => openPluginConfig(file, {
       get: () => pluginConfig[file] || {},
       set: cfg => { pluginConfig[file] = cfg; updateSaveBtn() },
     }))
+
+  // A selected plugin that owns the app URL (managesUrl, e.g. docker-integration routing to a local
+  // container) locks the URL field — the plugin derives the URL, so hand-editing must be off. Always
+  // ends in updateSaveBtn() so plugin changes still drive the dialog's dirty/save state; on unlock the
+  // field is re-validated (its overlap check) before save is reconsidered.
+  function urlManagedBySelectedPlugin() {
+    return pluginList.get().some(f => (plugins || []).find(p => p.file === f)?.managesUrl)
+  }
+  function syncUrlLock() {
+    const locked = urlManagedBySelectedPlugin()
+    const wasLocked = urlInput.disabled
+    urlInput.disabled = locked
+    urlInput.classList.toggle('config-disabled', locked)
+    if (locked) urlValid = true
+    else if (wasLocked) urlInput.dispatchEvent(new Event('input'))  // re-validate now it's editable
+    updateSaveBtn()
+  }
 
   document.getElementById('edit-mail-handler').addEventListener('click', e => {
     e.currentTarget.classList.toggle('active')
@@ -302,6 +319,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     if (mailHandler) mhBtn.classList.add('active')
     else mhBtn.classList.remove('active')
     pluginList.set(app.plugins || [])
+    // Lock the URL field up front if the app already has a URL-managing plugin (e.g. docker-integration).
+    syncUrlLock()
     // Deep copy so editing in the config dialog doesn't mutate the app object until save.
     pluginConfig = app.pluginConfig ? JSON.parse(JSON.stringify(app.pluginConfig)) : {}
 

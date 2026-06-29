@@ -13,6 +13,7 @@ const { createWindow, dispatchLaunchArg } = require('./window')
 const { parseMailtoFields }         = require('./mailto')
 const { wmClass }                   = require('./app-naming')
 const { profileDir }                = require('./app-paths')
+const { t }                         = require('./i18n')
 
 // draw.io SVG files embed the diagram XML as HTML-escaped content= attribute value.
 function extractXmlFromDrawioSvg(content) {
@@ -101,6 +102,60 @@ function registerBlockCloseHandler() {
   ipcMain.on('voltage:should-block-close', (event) => { event.returnValue = block })
 }
 
+// Async pre-launch hook. Some apps don't load their baked pkg.url directly — a plugin first resolves
+// the real target (e.g. docker-integration brings up a local container and routes there). A plugin
+// opts in by exporting resolveLaunch(pkg, { config, profile }) → { url } | null; the FIRST such plugin
+// wins. Returns a pkg with the URL overridden (the same {...pkg, url} pattern createWindow already
+// handles, so appOrigin/internalDomains/loadURL all see the final URL), or the input unchanged when
+// no plugin resolves one (→ the online pkg.url stays as a graceful fallback).
+async function resolvePluginLaunch(basePkg) {
+  for (const rel of basePkg.plugins ?? []) {
+    let mod
+    try { mod = require(path.join(__dirname, '..', 'webapps', rel)) }
+    catch (err) { console.error(`[plugin] load failed for ${rel}:`, err); continue }
+    if (typeof mod.resolveLaunch !== 'function') continue
+    try {
+      const config = basePkg.pluginConfig?.[rel] || {}
+      const result = await mod.resolveLaunch(basePkg, { config, profile: basePkg.profile })
+      if (result?.url) return { ...basePkg, url: result.url }
+    } catch (err) {
+      console.error(`[plugin] resolveLaunch failed for ${rel}:`, err)
+    }
+    return basePkg  // a resolveLaunch plugin ran but produced no URL → fall back to pkg.url
+  }
+  return basePkg
+}
+
+// Whether any selected plugin will resolve the launch URL asynchronously — used only to decide if a
+// "starting…" splash is worth showing (that async step can take a while, e.g. a first docker pull).
+function hasLaunchResolver(basePkg) {
+  return (basePkg.plugins ?? []).some(rel => {
+    try { return typeof require(path.join(__dirname, '..', 'webapps', rel)).resolveLaunch === 'function' }
+    catch { return false }
+  })
+}
+
+// A tiny frameless splash shown while resolvePluginLaunch works, so a slow container start isn't a
+// blank screen. Purely cosmetic — any failure here is swallowed; the real window replaces it.
+function showStartingSplash(name) {
+  try {
+    const win = new BrowserWindow({
+      width: 380, height: 140, frame: false, resizable: false, center: true,
+      show: false, backgroundColor: '#1e1e1e', skipTaskbar: true,
+    })
+    const label = (t().appStarting || 'Starting {name}…').replace('{name}', name)
+    const html = `<!doctype html><meta charset="utf-8"><style>
+      html,body{margin:0;height:100%;display:flex;align-items:center;justify-content:center;gap:14px;
+        background:#1e1e1e;color:#f0f0f0;font:14px/1.3 system-ui,sans-serif}
+      .s{width:22px;height:22px;border:3px solid #555;border-top-color:#4285f4;border-radius:50%;
+        animation:r .8s linear infinite}@keyframes r{to{transform:rotate(360deg)}}
+      </style><body><div class="s"></div><span>${label.replace(/</g, '&lt;')}</span></body>`
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    win.once('ready-to-show', () => win.show())
+    return win
+  } catch { return null }
+}
+
 module.exports = function setupAppWindow() {
   registerBlockCloseHandler()
 
@@ -150,7 +205,13 @@ module.exports = function setupAppWindow() {
     // A resolvable URL/file (draw.io) loads directly; otherwise pkg.url. A file destined for a
     // plugin (rclone-sync) leaves urlArg null and reaches the plugin via launchArg, which takes
     // over the initial load itself.
-    createWindow(urlArg ? { ...pkg, url: urlArg } : pkg, { launchArg: rawArg ?? null })
+    const basePkg = urlArg ? { ...pkg, url: urlArg } : pkg
+    // A plugin may resolve the real URL asynchronously (e.g. start a container). Show a splash while
+    // it works, then create the window with the (possibly URL-overridden) pkg.
+    const splash = hasLaunchResolver(basePkg) ? showStartingSplash(pkg.displayName || pkg.profile) : null
+    const launchPkg = await resolvePluginLaunch(basePkg)
+    createWindow(launchPkg, { launchArg: rawArg ?? null })
+    if (splash) { try { splash.close() } catch {} }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(pkg)

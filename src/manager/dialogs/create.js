@@ -45,11 +45,29 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
   // Plugin selection is its own select-and-add list, independent of the mail-handler toggle.
   // The configure button opens the plugin's own dialog, scoped to this app's config for it.
   const pluginList = initPluginList('create-plugin-trigger', 'create-plugin-list', plugins, appDefaultSrc, icons?.configure,
-    () => {},
+    () => syncUrlLock(),
     file => openPluginConfig(file, {
       get: () => pluginConfig[file] || {},
       set: cfg => { pluginConfig[file] = cfg },
     }))
+
+  // A selected plugin that owns the app URL (managesUrl, e.g. docker-integration routing to a local
+  // container) locks the URL field — the plugin derives the URL, so hand-editing must be off. While
+  // locked the URL requirement counts as met so picking such a plugin can't brick save; on unlock the
+  // field is re-validated so an empty/invalid URL re-blocks save again.
+  function urlManagedBySelectedPlugin() {
+    return pluginList.get().some(f => (plugins || []).find(p => p.file === f)?.managesUrl)
+  }
+  function syncUrlLock() {
+    const urlEl  = document.getElementById('create-url')
+    const locked = urlManagedBySelectedPlugin()
+    const wasLocked = urlEl.disabled
+    urlEl.disabled = locked
+    urlEl.classList.toggle('config-disabled', locked)
+    if (locked) urlValid = true
+    else if (wasLocked) urlEl.dispatchEvent(new Event('input'))  // re-run validation now it's editable
+    updateSaveBtn()
+  }
 
   document.getElementById('create-mail-handler').addEventListener('click', e => {
     e.currentTarget.classList.toggle('active')
@@ -259,6 +277,7 @@ export function initCreateDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, 
     urlValid     = false
     widthValid   = true
     heightValid  = true
+    syncUrlLock()  // no plugin selected after reset → URL field unlocked
     updateSaveBtn()
     overlay.classList.remove('hidden')
     // Init once after the wrapper is visible so OverlayScrollbars can measure it.

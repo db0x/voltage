@@ -1,0 +1,6 @@
+{
+    "label": "draw.io",
+    "service": "drawio",
+    "containerPort": 8080,
+    "healthPath": "/"
+}

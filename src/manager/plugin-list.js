@@ -58,22 +58,33 @@ export function initPluginList(triggerId, listId, plugins, appDefaultSrc, config
   }
 
   // Rebuild the dropdown with plugins not yet chosen (prevents duplicates); disable the
-  // trigger when nothing is left to add (or none shipped at all).
+  // trigger when nothing is left to add (or none shipped at all). A plugin whose prerequisites are
+  // unmet (entry.available === false) stays in the list but greyed and unselectable — it gets no
+  // click handler, just a tooltip explaining why (e.g. Docker not installed). Unavailable plugins
+  // still count toward "something to show", so the trigger stays enabled to reveal them.
   function refreshDropdown() {
     dropdownInner.innerHTML = ''
-    const available = catalog.filter(p => !selected.includes(p.file))
-    trigger.disabled = available.length === 0
-    for (const p of available) {
+    const remaining = catalog.filter(p => !selected.includes(p.file))
+    trigger.disabled = remaining.length === 0
+    for (const p of remaining) {
       const li = document.createElement('li')
       li.className = 'app-select-item'
       li.innerHTML = `${IMG(iconFor(p))}<span>${p.label}</span>`
-      li.addEventListener('click', () => {
-        selected.push(p.file)
-        closeDropdown()
-        renderChips()
-        refreshDropdown()
-        onChange()
-      })
+      if (p.available === false) {
+        li.classList.add('app-select-item-disabled')
+        li.setAttribute('aria-disabled', 'true')
+        // pointer-events stays on (no CSS suppression) so the tooltip still fires on hover; the
+        // missing click handler is what makes it unselectable.
+        if (p.unavailableReason) li.dataset.tooltip = p.unavailableReason
+      } else {
+        li.addEventListener('click', () => {
+          selected.push(p.file)
+          closeDropdown()
+          renderChips()
+          refreshDropdown()
+          onChange()
+        })
+      }
       dropdownInner.appendChild(li)
     }
   }

@@ -1,0 +1,64 @@
+<!-- Config dialog shipped by the docker-integration plugin. The manager's plugin-config host
+     (src/manager/plugin-config.js) renders this into the manager DOM and owns the generic
+     open/close + Apply/Cancel wiring; the markup reuses the manager's .dialog-* classes so it
+     matches every other dialog. {{pluginIcon}} is the plugin's icon (a var); {{docker*}} are i18n keys.
+
+     Hybrid sourcing: the common path is a curated Stack (the dropdown, whose options are filled by
+     the host from the plugin's discovered `stacks` via data-config-options) plus a couple of simple
+     knobs (Port, Data folder). The Advanced section exposes a custom compose-file path for power
+     users; when set it overrides the stack at runtime. All controls bind generically via
+     data-config-key — no plugin JS runs in the renderer. See zoom/config.html for the conventions. -->
+<div class="dialog-overlay plugin-config-overlay hidden">
+  <div class="dialog">
+    <div class="dialog-header">
+      <img src="{{pluginIcon}}" alt="">
+      <span class="dialog-title">{{dockerConfigTitle}}</span>
+      <button class="dialog-close" type="button">✕</button>
+    </div>
+    <div class="dialog-fields">
+      <!-- Stack: the curated compose stack. The empty placeholder stays as the "none chosen" value;
+           the host appends one <option> per discovered stack (data-config-options="stacks"). -->
+      <div class="dialog-field">
+        <label for="docker-config-stack">{{dockerConfigStack}}
+          <span class="field-help" data-tooltip="{{dockerConfigStackHint}}">?</span>
+        </label>
+        <select id="docker-config-stack" data-config-key="stack" data-config-options="stacks">
+          <option value="">{{dockerConfigStackNone}}</option>
+        </select>
+      </div>
+      <!-- Optional bind-mount for persistent data; blank = a Voltage-managed default location. -->
+      <div class="dialog-field">
+        <label for="docker-config-datadir">{{dockerConfigDataDir}}
+          <span class="field-help" data-tooltip="{{dockerConfigDataDirHint}}">?</span>
+        </label>
+        <input type="text" id="docker-config-datadir" autocomplete="off" spellcheck="false"
+               placeholder="{{dockerConfigDataDirPlaceholder}}" data-config-key="dataDir">
+      </div>
+      <!-- Advanced: a fixed port (default is auto — the next free port is chosen at startup) and a
+           custom compose file for power users (overrides the curated stack when set). -->
+      <details class="docker-config-advanced">
+        <summary>{{dockerConfigAdvanced}}</summary>
+        <div class="dialog-field">
+          <label for="docker-config-port">{{dockerConfigPort}}
+            <span class="field-help" data-tooltip="{{dockerConfigPortHint}}">?</span>
+          </label>
+          <input type="number" id="docker-config-port" min="1" max="65535"
+                 placeholder="{{dockerConfigPortPlaceholder}}" data-config-key="port">
+        </div>
+        <div class="dialog-field">
+          <label for="docker-config-composefile">{{dockerConfigComposeFile}}
+            <span class="field-help" data-tooltip="{{dockerConfigComposeFileHint}}">?</span>
+          </label>
+          <input type="text" id="docker-config-composefile" autocomplete="off" spellcheck="false"
+                 placeholder="/path/to/compose.yaml" data-config-key="composeFile">
+        </div>
+      </details>
+    </div>
+    <!-- Apply commits the edit to the app's config; Cancel/✕/Esc discard. The host wires these by
+         class (.plugin-config-apply / .plugin-config-cancel). -->
+    <div class="confirm-actions">
+      <button class="btn-cancel plugin-config-cancel" type="button">{{pluginConfigCancel}}</button>
+      <button class="btn-save plugin-config-apply" type="button">{{pluginConfigApply}}</button>
+    </div>
+  </div>
+</div>

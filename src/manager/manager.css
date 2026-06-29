@@ -1499,6 +1499,17 @@ body.dark .btn-reveal img {
   background: var(--card-hover);
 }
 
+/* A plugin whose prerequisites are unmet: shown but greyed and unselectable. cursor:not-allowed +
+   no hover highlight signal it can't be picked; pointer-events stay on so its tooltip still works. */
+.app-select-item-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.app-select-item-disabled:hover {
+  background: transparent;
+}
+
 .dialog-section-divider {
   border: none;
   border-top: 1px solid var(--card-shadow);
