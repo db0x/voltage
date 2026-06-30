@@ -1,4 +1,35 @@
 import { applyTemplate } from './template.js'
+import { OverlayScrollbars } from '../../node_modules/overlayscrollbars/overlayscrollbars.mjs'
+
+// Minimal, dependency-free YAML highlighter for the docker stack preview (we don't pull in a
+// highlight library for one read-only panel). Tokenises each line left-to-right — never regex over
+// already-inserted HTML — so quotes inside the markup can't break it. Emits <span class="tok-*">.
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+const tok = (cls, text) => `<span class="tok-${cls}">${escapeHtml(text)}</span>`
+
+function highlightYamlLine(line) {
+  let html = ''
+  let rest = line
+  // Leading "key:" (optionally after a list dash), highlighted as a key.
+  const key = rest.match(/^(\s*(?:-\s+)?)([A-Za-z0-9_.\-/]+)(:)(?=\s|$)/)
+  if (key) { html += escapeHtml(key[1]) + tok('key', key[2]) + escapeHtml(key[3]); rest = rest.slice(key[0].length) }
+  let i = 0
+  while (i < rest.length) {
+    const s = rest.slice(i)
+    let m
+    if (s[0] === '#')                                   { html += tok('comment', s); break }
+    if ((m = s.match(/^"(?:[^"\\]|\\.)*"/)) || (m = s.match(/^'[^']*'/))) { html += tok('str', m[0]); i += m[0].length; continue }
+    if ((m = s.match(/^\$\{[^}]*\}/)))                  { html += tok('var', m[0]); i += m[0].length; continue }
+    if ((m = s.match(/^\d+(?:\.\d+)?/)))                { html += tok('num', m[0]); i += m[0].length; continue }
+    m = s.match(/^[^#"'$\d]+/)                           // plain run up to the next interesting char
+    const chunk = m ? m[0] : s[0]
+    html += escapeHtml(chunk)
+    i += chunk.length
+  }
+  return html
+}
+const highlightYaml = src => String(src).split('\n').map(highlightYamlLine).join('\n')
 
 // Hosts the config dialog that a configurable plugin ships as its own config.html (surfaced as
 // entry.configHtml by the manager:plugins discovery — see ipc/handlers/plugins.js). The dialog's
@@ -17,6 +48,11 @@ import { applyTemplate } from './template.js'
 //   [data-config-swatch]                   — a colour-preview element; gets the value as the CSS
 //                                            var --swatch-color (style the element to use it)
 //   [data-config-enabled-by="<toggleKey>"] — dimmed + disabled while that toggle is off
+//   [data-config-stacks="<key>"]           — a clickable icon+label chooser whose selection is
+//                                            config[key], filled from the plugin's discovered stacks
+//                                            ({ id, label, icon, content }); native <select> can't
+//                                            show icons. Pair with:
+//   [data-config-stack-preview]            —   a read-only field showing the chosen stack's content
 //
 // Repeatable rows — for a config value that is an array of small objects (e.g. css-inject's list
 // of variable→colour overrides):
@@ -54,6 +90,9 @@ export function initPluginConfig({ i18n, icons, plugins }) {
     const overlay = applyTemplate(entry.configHtml, { i18n, icons, vars: { pluginIcon: entry.icon || '' } })
     document.body.appendChild(overlay)
     fillOptionLists(overlay, entry)
+    // Stash the plugin's discovered stacks ({ id, label, icon, content }) for the stack chooser
+    // (bindStackLists) — bound per open, like the option lists above.
+    overlay._stacks = Array.isArray(entry.stacks) ? entry.stacks : []
     const close = () => overlay.classList.add('hidden')
     // ✕ and Cancel discard: they close without running the commit. The working copy lives only
     // until close; the next open re-seeds the controls from the stored config. A backdrop click is
@@ -142,6 +181,42 @@ export function initPluginConfig({ i18n, icons, plugins }) {
     }
   }
 
+  // Custom stack chooser: clickable icon+label rows bound to config[key], plus a read-only preview of
+  // the chosen stack's compose content. Native <select> can't show per-entry icons, so the docker
+  // plugin uses this instead. Reads the stacks (with icon + content) the discovery put on _stacks.
+  function bindStackLists(overlay, cfg) {
+    const stacks = overlay._stacks || []
+    for (const listEl of overlay.querySelectorAll('[data-config-stacks]')) {
+      const key     = listEl.dataset.configStacks
+      const preview = overlay.querySelector('[data-config-stack-preview]')
+      const codeEl  = preview?.querySelector('code')
+      // Attach OverlayScrollbars once (matches the rest of the UI); the highlighted <code> scrolls inside.
+      if (preview && !preview._osInited) {
+        OverlayScrollbars(preview, { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
+        preview._osInited = true
+      }
+      listEl.replaceChildren()  // drop rows from a previous open before reseeding
+      const apply = (id) => {
+        cfg[key] = id || ''
+        for (const row of listEl.children) row.classList.toggle('active', row.dataset.id === id)
+        if (codeEl) codeEl.innerHTML = highlightYaml((stacks.find(s => s.id === id) || {}).content || '')
+      }
+      for (const s of stacks) {
+        const row = document.createElement('div')
+        row.className = 'docker-stack-row'
+        row.dataset.id = s.id
+        const img = document.createElement('img')
+        img.src = s.icon || ''; img.width = 20; img.height = 20; img.alt = ''
+        const span = document.createElement('span')
+        span.textContent = s.label
+        row.append(img, span)
+        row.addEventListener('click', () => apply(s.id))
+        listEl.appendChild(row)
+      }
+      apply(cfg[key] || '')  // reflect the stored selection + its preview on open
+    }
+  }
+
   // (Re)bind every control to `access` for the app being edited. cfg is a working copy that edits
   // accumulate into; nothing is written back until Apply runs overlay._commit (so Cancel discards
   // by simply closing). oninput (property, not addEventListener) is reassigned per open, so
@@ -181,6 +256,7 @@ export function initPluginConfig({ i18n, icons, plugins }) {
     }
 
     bindLists(overlay, cfg)
+    bindStackLists(overlay, cfg)
     applyGating(overlay)
     overlay._commit = () => access.set({ ...cfg })
   }

@@ -76,12 +76,12 @@ test('create dialog: docker-integration config dialog opens and closes', async (
 })
 
 // Setup:    Create dialog open (Docker available), docker-integration added, its config opened.
-// Action:   Inspect the Stack dropdown and where the Port field lives.
-// Expected: The dropdown carries the bundled "draw.io" stack option (proving the host filled it from
-//           the plugin's discovered stacks via data-config-options — the renderer has no file access
-//           of its own), and the Port field sits inside the Advanced section as an optional override
-//           (placeholder = Auto), since the AppImage now picks the port itself.
-test('create dialog: docker config dialog is populated with bundled stacks', async ({ managerPageDockerOn: page }) => {
+// Action:   Inspect the stack chooser, the (removed) advanced/port/data fields, and click the stack.
+// Expected: A clickable "draw.io" row with an icon (the host filled it from the plugin's discovered
+//           stacks — the renderer has no file access of its own); the data-folder and Advanced fields
+//           are gone (auto port, no extra knobs); selecting the stack fills the read-only compose
+//           preview with the bundled compose.yaml.
+test('create dialog: docker config dialog shows the stack chooser + compose preview', async ({ managerPageDockerOn: page }) => {
   await page.click('.card-add')
   await page.click('#create-plugin-trigger')
   await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
@@ -90,11 +90,14 @@ test('create dialog: docker config dialog is populated with bundled stacks', asy
 
   const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
   await expect(overlay).toHaveCount(1)
-  await expect(overlay.locator('#docker-config-stack option[value="drawio"]')).toHaveText('draw.io')
-  // Port is now an optional Advanced override (auto by default), not a prominent required field.
-  await expect(overlay.locator('details.docker-config-advanced #docker-config-port')).toHaveCount(1)
-  await expect(overlay.locator('#docker-config-port')).toHaveAttribute('placeholder', /Auto/)
-  await expect(overlay.locator('#docker-config-port')).toHaveValue('')
+  const row = overlay.locator('.docker-stack-row[data-id="drawio"]')
+  await expect(row).toHaveText('draw.io')
+  await expect(row.locator('img')).toHaveCount(1)
+  // The data-folder field and the whole Advanced section (incl. fixed port) are gone.
+  await expect(overlay.locator('#docker-config-datadir, #docker-config-port, .docker-config-advanced')).toHaveCount(0)
+  // Selecting the stack fills the read-only, highlighted compose preview with its compose.yaml.
+  await row.click()
+  await expect(overlay.locator('.docker-compose-preview')).toContainText('jgraph/drawio')
 })
 
 // Setup:    Edit dialog for the private test-user-app (Docker available), docker-integration added.
@@ -110,7 +113,7 @@ test('edit dialog: a chosen docker stack persists to the private config', async 
   await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
   await page.locator('#edit-plugin-list .domain-item', { hasText: 'docker-integration' })
     .locator('.domain-configure-btn').click()
-  await page.locator('#docker-config-stack').selectOption('drawio')
+  await page.locator('.docker-stack-row[data-id="drawio"]').click()
   await page.locator('.plugin-config-overlay .plugin-config-apply').click()
   await page.click('#edit-save')
 
@@ -118,6 +121,29 @@ test('edit dialog: a chosen docker stack persists to the private config', async 
   await expect.poll(() => {
     try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig?.[DOCKER_PLUGIN]?.stack } catch { return undefined }
   }).toBe('drawio')
+})
+
+// Setup:    Edit dialog for the private test-user-app (url https://example.com), Docker available.
+// Action:   Add the docker-integration plugin (which manages the URL), inspect the field, then save.
+// Expected: The locked field shows the non-editable "-docker-" marker (not the real URL), yet the
+//           saved config keeps the real URL — the marker is display-only and never overwrites it.
+test('edit dialog: a URL-managing plugin shows "-docker-" but preserves the real URL', async ({ managerPageDockerOn: page }) => {
+  const card = page.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await page.click('#edit-plugin-trigger')
+  await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
+
+  await expect(page.locator('#edit-url')).toBeDisabled()
+  await expect(page.locator('#edit-url')).toHaveValue('-docker-')
+
+  await page.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).url } catch { return undefined }
+  }).toBe('https://example.com')
 })
 
 // Setup:    Create dialog open (Docker available); the URL field is editable to start.
