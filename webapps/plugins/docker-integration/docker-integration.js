@@ -13,6 +13,8 @@ const fs   = require('node:fs')
 const path = require('node:path')
 const container = require('./container')
 
+const log = (...a) => console.log('[docker-integration]', ...a)
+
 // Curated compose stacks shipped under stacks/<id>/ (each a compose.yaml + a stack.json describing
 // it). Listed for the config dialog's Stack dropdown as [{ id, label }]; read live (cheap, and adding
 // a stack dir then needs no code change). The framework injects this into the dialog via discovery —
@@ -42,7 +44,10 @@ function dockerAvailable() {
   if (override === '0') return false
   if (override === '1') return true
   if (dockerProbe === undefined) {
-    try { execFileSync('docker', ['compose', 'version'], { stdio: 'ignore' }); dockerProbe = true }
+    // Same PATH augmentation as the runtime (container.withEnv) so the Manager's availability probe
+    // finds docker in /snap/bin etc. too — otherwise a GUI-launched Manager could falsely grey the
+    // plugin out on a machine where the runtime would actually find docker.
+    try { execFileSync('docker', ['compose', 'version'], { stdio: 'ignore', env: container.withEnv() }); dockerProbe = true }
     catch { dockerProbe = false }
   }
   return dockerProbe
@@ -72,16 +77,34 @@ function resolveStack(config) {
   return { file, meta, bundled: true }
 }
 
-// Bundled compose files live inside app.asar, which the external `docker` process can't read. Copy the
-// file to a real on-disk path under the app's userData and run docker against that. electron is
-// required lazily so this module still loads in plain-Node unit tests (which never reach here).
-function materializeCompose(stackId, srcFile) {
-  const { app } = require('electron')
-  const dir = path.join(app.getPath('userData'), 'docker-integration', stackId)
-  fs.mkdirSync(dir, { recursive: true })
-  const dst = path.join(dir, 'compose.yaml')
-  fs.writeFileSync(dst, fs.readFileSync(srcFile))  // fs reads the asar source transparently
-  return dst
+// plugin.svg as a data URL for the "starting…" splash — the self-coloured whale-on-blue glyph reads
+// on both the light and dark card backgrounds, so no recolouring is needed.
+function dockerIconDataUrl() {
+  try {
+    return `data:image/svg+xml;base64,${fs.readFileSync(path.join(__dirname, 'plugin.svg')).toString('base64')}`
+  } catch { return null }
+}
+
+// Splash info read by the core (app-window.js) BEFORE resolveLaunch runs, to render the in-window
+// "starting…" page: the docker glyph + wording that says the required container is being started.
+// Returns {} when no container is configured, so a misconfigured app just gets the generic splash.
+function launchInfo(pkg, { config = {}, i18n = {} } = {}) {
+  if (!resolveStack(config)) return {}
+  const name = pkg.displayName || pkg.profile
+  return {
+    iconSrc: dockerIconDataUrl(),
+    title:   (i18n.appStarting || 'Starting {name}…').replace('{name}', name),
+    hint:    i18n.dockerStartingHint || 'The required Docker container is being started…',
+  }
+}
+
+// Build the compose source for the runtime: a bundled stack passes its CONTENT (read from inside
+// app.asar via fs, then piped to docker over stdin — no on-disk file, so neither asar nor snap-docker
+// home-confinement can block it); a custom file passes its real path.
+function composeSpecFor(stack) {
+  if (!stack.bundled) return { file: stack.file }
+  try { return { content: fs.readFileSync(stack.file, 'utf8') } }
+  catch (err) { log('reading bundled compose failed:', err.message); return null }
 }
 
 // Set when THIS process started the container (drives teardown); the reuse path leaves it null so a
@@ -95,48 +118,52 @@ let windowCount = 0  // open windows of this app in this process — refcount fo
 async function resolveLaunch(pkg, api = {}) {
   const config = api.config || {}
   const stack = resolveStack(config)
-  if (!stack) return null
+  if (!stack) { log('no stack configured → online fallback'); return null }
 
   const project = `voltage-${pkg.profile}`
   const { service, containerPort, healthPath = '/', portRange } = stack.meta
   const range = portRange || container.DEFAULT_PORT_RANGE
+  log(`stack=${config.stack || '(custom)'} project=${project}`)
 
-  // Bundled stacks ship inside app.asar; copy to a real path docker can read. Custom files are real.
-  let composeFile = stack.file
-  try { if (stack.bundled) composeFile = materializeCompose(config.stack, stack.file) }
-  catch { return null }
+  // The compose definition is piped to docker over stdin (bundled) or referenced by path (custom).
+  const spec = composeSpecFor(stack)
+  if (!spec) return null
 
   // Already up (a second window, or a leftover from a previous session)? Reuse its published port and
   // do NOT mark it as ours, so we won't tear it down.
   if (service && containerPort) {
-    const existing = await container.composeHostPort(composeFile, project, service, containerPort)
-    if (existing) return { url: `http://localhost:${existing}` }
+    const existing = await container.composeHostPort(spec, project, service, containerPort)
+    if (existing) { log('reusing already-running container on port', existing); return { url: `http://localhost:${existing}` } }
   }
 
   // Fresh start: a user-fixed port if set, else the next free port in the range.
   const fixed = Number(config.port) > 0 ? Number(config.port) : null
   let port = fixed ?? await container.findFreePort(range)
-  if (!port) return null
+  if (!port) { log('no free port in range', range); return null }
 
   const env = { VOLTAGE_PORT: String(port) }
   if (config.dataDir) env.VOLTAGE_DATA_DIR = config.dataDir
 
   try {
-    await container.composeUp(composeFile, project, env)
-  } catch {
+    log('compose up on port', port, '…')
+    await container.composeUp(spec, project, env)
+  } catch (err) {
+    log('compose up failed:', (err.stderr || err.message || '').toString().trim())
     // Free-at-probe but taken-at-up (the brief race): retry once with another free port — but only
     // when auto-picking. A user-fixed port that's busy is a real conflict, so fall back instead.
     if (fixed) return null
     port = await container.findFreePort(range)
     if (!port) return null
     env.VOLTAGE_PORT = String(port)
-    try { await container.composeUp(composeFile, project, env) } catch { return null }
+    try { await container.composeUp(spec, project, env) }
+    catch (err2) { log('compose up retry failed:', (err2.stderr || err2.message || '').toString().trim()); return null }
   }
 
-  session = { file: composeFile, project }  // we own it now → tear down on last window close
+  session = { spec, project }  // we own it now → tear down on last window close
   // Best-effort readiness gate; if it never answers we still return the URL and the window's load
   // guard surfaces the connection error (better than hanging the launch indefinitely).
-  await container.waitHealthy(port, healthPath)
+  const healthy = await container.waitHealthy(port, healthPath)
+  log(`container ready=${healthy} → http://localhost:${port}`)
   return { url: `http://localhost:${port}` }
 }
 
@@ -148,7 +175,7 @@ function attachPlugin(win, api) {
   win.on('closed', () => {
     windowCount--
     if (windowCount <= 0 && session) {
-      container.composeDownSync(session.file, session.project)
+      container.composeDownSync(session.spec, session.project)
       session = null
     }
   })
@@ -159,4 +186,4 @@ function attachPlugin(win, api) {
 // (currently empty). resolveLaunch is exported now so the contract is visible, even though the core
 // hook that invokes it is not wired yet. managesUrl: this plugin owns the app's URL (it routes to a
 // container), so the Manager locks the URL field while it's selected.
-module.exports = { attachPlugin, resolveLaunch, available, stacks, managesUrl: true, configurable: true }
+module.exports = { attachPlugin, resolveLaunch, launchInfo, available, stacks, managesUrl: true, configurable: true }

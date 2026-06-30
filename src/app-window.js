@@ -105,10 +105,10 @@ function registerBlockCloseHandler() {
 // Async pre-launch hook. Some apps don't load their baked pkg.url directly — a plugin first resolves
 // the real target (e.g. docker-integration brings up a local container and routes there). A plugin
 // opts in by exporting resolveLaunch(pkg, { config, profile }) → { url } | null; the FIRST such plugin
-// wins. Returns a pkg with the URL overridden (the same {...pkg, url} pattern createWindow already
-// handles, so appOrigin/internalDomains/loadURL all see the final URL), or the input unchanged when
-// no plugin resolves one (→ the online pkg.url stays as a graceful fallback).
-async function resolvePluginLaunch(basePkg) {
+// wins. Returns the resolved URL string, or null when no plugin resolves one (→ createWindow falls
+// back to the baked pkg.url). createWindow awaits this and shows its in-window "starting…" page while
+// it runs, so the slow async step (e.g. a first docker pull) isn't a blank screen.
+async function resolvePluginUrl(basePkg) {
   for (const rel of basePkg.plugins ?? []) {
     let mod
     try { mod = require(path.join(__dirname, '..', 'webapps', rel)) }
@@ -117,17 +117,17 @@ async function resolvePluginLaunch(basePkg) {
     try {
       const config = basePkg.pluginConfig?.[rel] || {}
       const result = await mod.resolveLaunch(basePkg, { config, profile: basePkg.profile })
-      if (result?.url) return { ...basePkg, url: result.url }
+      if (result?.url) return result.url
     } catch (err) {
       console.error(`[plugin] resolveLaunch failed for ${rel}:`, err)
     }
-    return basePkg  // a resolveLaunch plugin ran but produced no URL → fall back to pkg.url
+    return null  // a resolveLaunch plugin ran but produced no URL → fall back to pkg.url
   }
-  return basePkg
+  return null
 }
 
-// Whether any selected plugin will resolve the launch URL asynchronously — used only to decide if a
-// "starting…" splash is worth showing (that async step can take a while, e.g. a first docker pull).
+// Whether any selected plugin resolves the launch URL asynchronously — gates whether createWindow is
+// handed a resolver (and thus shows its "starting…" page) at all.
 function hasLaunchResolver(basePkg) {
   return (basePkg.plugins ?? []).some(rel => {
     try { return typeof require(path.join(__dirname, '..', 'webapps', rel)).resolveLaunch === 'function' }
@@ -135,25 +135,18 @@ function hasLaunchResolver(basePkg) {
   })
 }
 
-// A tiny frameless splash shown while resolvePluginLaunch works, so a slow container start isn't a
-// blank screen. Purely cosmetic — any failure here is swallowed; the real window replaces it.
-function showStartingSplash(name) {
-  try {
-    const win = new BrowserWindow({
-      width: 380, height: 140, frame: false, resizable: false, center: true,
-      show: false, backgroundColor: '#1e1e1e', skipTaskbar: true,
-    })
-    const label = (t().appStarting || 'Starting {name}…').replace('{name}', name)
-    const html = `<!doctype html><meta charset="utf-8"><style>
-      html,body{margin:0;height:100%;display:flex;align-items:center;justify-content:center;gap:14px;
-        background:#1e1e1e;color:#f0f0f0;font:14px/1.3 system-ui,sans-serif}
-      .s{width:22px;height:22px;border:3px solid #555;border-top-color:#4285f4;border-radius:50%;
-        animation:r .8s linear infinite}@keyframes r{to{transform:rotate(360deg)}}
-      </style><body><div class="s"></div><span>${label.replace(/</g, '&lt;')}</span></body>`
-    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
-    win.once('ready-to-show', () => win.show())
-    return win
-  } catch { return null }
+// Optional splash customisation from the launch-resolving plugin (icon + wording for the "starting…"
+// page), gathered before the window opens. The plugin gets the active i18n strings so its text is
+// localised. Returns {} when no plugin provides any — createWindow then uses the generic splash.
+function launchInfoFor(basePkg) {
+  for (const rel of basePkg.plugins ?? []) {
+    let mod
+    try { mod = require(path.join(__dirname, '..', 'webapps', rel)) } catch { continue }
+    if (typeof mod.launchInfo !== 'function') continue
+    try { return mod.launchInfo(basePkg, { config: basePkg.pluginConfig?.[rel] || {}, i18n: t() }) || {} }
+    catch { return {} }
+  }
+  return {}
 }
 
 module.exports = function setupAppWindow() {
@@ -206,12 +199,13 @@ module.exports = function setupAppWindow() {
     // plugin (rclone-sync) leaves urlArg null and reaches the plugin via launchArg, which takes
     // over the initial load itself.
     const basePkg = urlArg ? { ...pkg, url: urlArg } : pkg
-    // A plugin may resolve the real URL asynchronously (e.g. start a container). Show a splash while
-    // it works, then create the window with the (possibly URL-overridden) pkg.
-    const splash = hasLaunchResolver(basePkg) ? showStartingSplash(pkg.displayName || pkg.profile) : null
-    const launchPkg = await resolvePluginLaunch(basePkg)
-    createWindow(launchPkg, { launchArg: rawArg ?? null })
-    if (splash) { try { splash.close() } catch {} }
+    // A plugin may resolve the real URL asynchronously (e.g. start a container). Hand createWindow a
+    // resolver so it shows its in-window "starting…" page during the wait, then loads the resolved
+    // URL (or falls back to pkg.url). Only passed when a resolver plugin is present, so ordinary apps
+    // load directly with no splash.
+    const resolveUrl = hasLaunchResolver(basePkg) ? () => resolvePluginUrl(basePkg) : undefined
+    const startingPage = resolveUrl ? launchInfoFor(basePkg) : undefined
+    createWindow(basePkg, { launchArg: rawArg ?? null, resolveUrl, startingPage })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(pkg)
