@@ -48,7 +48,9 @@ function pathGlobMatches(pat, pathname) {
   return pat.includes('*') ? globToRegExp(pat).test(pathname) : pathname.startsWith(pat)
 }
 
-// Tests whether a routing key matches a given hostname/pathname pair.
+// Tests whether a routing key matches a given host/pathname pair. `hostname` here is the URL's
+// host INCLUDING any non-default :port (callers pass u.host, not u.hostname) so keys built with a
+// port only match the same port — local Docker apps share "localhost" and differ only by port.
 // Non-wildcard hosts keep the legacy "exact host or any subdomain" rule and
 // non-wildcard paths keep the legacy startsWith (prefix) rule, so existing
 // tables built before wildcard support behave identically.
@@ -172,7 +174,9 @@ function urlToRoutingKey(input) {
   s = s.replace(/^\/+/, '')                           // drop stray leading slashes
   if (!s) return null
   const slash = s.indexOf('/')
-  let host     = (slash === -1 ? s : s.slice(0, slash)).toLowerCase().replace(/:\d+$/, '')
+  // Keep any :port — with local Docker apps several profiles share the host "localhost" and are told
+  // apart only by port, so stripping it made them all collide (localhost:5001 vs localhost:8888).
+  let host     = (slash === -1 ? s : s.slice(0, slash)).toLowerCase()
   let rest     = (slash === -1 ? '' : s.slice(slash)).split('#')[0]  // keep '?query', drop '#frag'
   const qIdx   = rest.indexOf('?')
   // Trim a trailing slash from the path portion only (before any '?'), leaving the query intact.
@@ -184,13 +188,15 @@ function urlToRoutingKey(input) {
 }
 
 // Derives the primary routing key from a config's main URL. Primary URLs are real,
-// wildcard-free URLs, so the legacy host + first-path-segment derivation is kept to
-// leave existing routing tables unchanged.
+// wildcard-free URLs, so the legacy host + first-path-segment derivation is kept. Uses u.host (not
+// u.hostname) so a non-default :port is part of the key — required for local Docker apps that share
+// "localhost" and differ only by port. u.host normalises default ports away, so real domains without
+// an explicit port produce the same key as before (existing routing tables unchanged).
 function primaryKeyFromUrl(url) {
   try {
     const u = new URL(url)
     const first = u.pathname.replace(/^\//, '').split('/')[0]
-    return first ? `${u.hostname}/${first}` : u.hostname
+    return first ? `${u.host}/${first}` : u.host
   } catch {
     return null
   }

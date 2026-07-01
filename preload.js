@@ -50,19 +50,24 @@ if (_blockClose) {
 }
 
 // css-inject: apply the per-app stylesheet at document-start, before the first paint, so a
-// `display:none`/recolour rule never lets its target flash visible for a frame (the FOUC the old
-// post-load insertCSS left). The CSS rides in via additionalArguments (process.argv) — the same
-// mechanism as --voltage-file-handler — because it must be in hand SYNCHRONOUSLY here, before any
-// page script runs; a sync IPC would race the plugin's post-load attach. Main frame only: css-inject
-// styles only the top document (its long-standing cross-origin limitation), and additionalArguments
-// reach the main frame but not out-of-process iframes anyway. webFrame.insertCSS persists across the
-// app's in-page navigations; this preload re-runs and re-injects on every full document load.
-if (process.isMainFrame) {
+// `display:none`/recolour rule never lets its target flash visible for a frame (FOUC). Injected in
+// EVERY frame so it also reaches elements the wrapped app renders inside iframes — notably the
+// cross-origin out-of-process editor frame of Office/OnlyOffice (the top document at localhost can't
+// style that frame; only this preload, which runs inside it, can). Two delivery paths, both
+// synchronous at document-start: the main frame reads the CSS from additionalArguments (process.argv,
+// no IPC); sub-frames — which never receive additionalArguments (esp. OOPIFs) — fetch the same CSS
+// from main via a synchronous IPC (mirrors the per-frame voltage:should-block-close query).
+// webFrame.insertCSS persists across in-page navigations; this preload re-runs on every full load.
+{
   const CSS_ARG = '--voltage-css-inject='
-  const cssArg = process.argv.find(a => a.startsWith(CSS_ARG))
-  if (cssArg) {
-    try { webFrame.insertCSS(decodeURIComponent(cssArg.slice(CSS_ARG.length))) } catch {}
+  let css = null
+  if (process.isMainFrame) {
+    const cssArg = process.argv.find(a => a.startsWith(CSS_ARG))
+    if (cssArg) css = decodeURIComponent(cssArg.slice(CSS_ARG.length))
+  } else {
+    try { css = ipcRenderer.sendSync('voltage:css-inject') || null } catch {}
   }
+  if (css) { try { webFrame.insertCSS(css) } catch {} }
 }
 
 // Widget drag-zone reveal: report the cursor position so main can show/hide its overlay drag strip

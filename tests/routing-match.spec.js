@@ -59,9 +59,9 @@ test.describe('urlToRoutingKey', () => {
   //           query is PRESERVED (matching runs against pathname+search, so keys may use it).
   test('normalises inputs, keeps path, and preserves the query', () => {
     expect(urlToRoutingKey('https://docs.example.com/d/123')).toBe('docs.example.com/d/123')
-    // Port + scheme stripped, host lowercased, trailing slash trimmed from the path, '#x'
-    // dropped, but '?a=1' kept.
-    expect(urlToRoutingKey('https://Example.COM:8443/Foo/?a=1#x')).toBe('example.com/Foo?a=1')
+    // Scheme stripped, host lowercased, trailing slash trimmed from the path, '#x' dropped, but
+    // '?a=1' kept — and the :port is now PART of the key (local Docker apps differ only by port).
+    expect(urlToRoutingKey('https://Example.COM:8443/Foo/?a=1#x')).toBe('example.com:8443/Foo?a=1')
     expect(urlToRoutingKey('example.com/')).toBe('example.com')
     expect(urlToRoutingKey('*.example.com/docs/*')).toBe('*.example.com/docs/*')
     // SharePoint-style key: '.docx' lives past a '?'; the query must survive normalisation.
@@ -297,5 +297,45 @@ test.describe('globsIntersect — building block', () => {
     expect(globsIntersect('a*', '*b')).toBe(true)
     expect(globsIntersect('a*', 'b*')).toBe(false)
     expect(globsIntersect('*', 'anything/at/all')).toBe(true)
+  })
+})
+test.describe('port-aware keys — local Docker apps on localhost', () => {
+  // Setup:    two local-container URLs that share the host "localhost" but differ by port.
+  // Action:   derive their primary keys and test them for overlap.
+  // Expected: the port is part of the key, so localhost:5001 and localhost:8888 do NOT overlap —
+  //           the bug that flagged a Docker app's URL as colliding with draw.io's local URL.
+  test('same host, different port → no overlap', () => {
+    const a = primaryKeyFromUrl('http://localhost:5001/edit/beispiel.docx')
+    const b = primaryKeyFromUrl('http://localhost:8888/')
+    expect(a).toBe('localhost:5001/edit')
+    expect(b).toBe('localhost:8888')
+    expect(keyOverlaps(a, b)).toBe(false)
+  })
+
+  // Setup:    two URLs on the same host AND same port.
+  // Action:   test their keys for overlap.
+  // Expected: still overlaps — the port only distinguishes, it doesn't loosen same-port collisions.
+  test('same host, same port → still overlaps', () => {
+    expect(keyOverlaps(primaryKeyFromUrl('http://localhost:8888/edit'),
+                       primaryKeyFromUrl('http://localhost:8888/'))).toBe(true)
+  })
+
+  // Setup:    a real domain without an explicit port, and one with the default port.
+  // Action:   derive the primary key.
+  // Expected: u.host normalises default ports away, so keys match the pre-port behaviour — existing
+  //           routing tables for normal apps are unchanged.
+  test('default ports are normalised away (unchanged for real apps)', () => {
+    expect(primaryKeyFromUrl('https://example.com/')).toBe('example.com')
+    expect(primaryKeyFromUrl('http://example.com:80/')).toBe('example.com')
+    expect(primaryKeyFromUrl('https://example.com:443/x')).toBe('example.com/x')
+  })
+
+  // Setup:    a routingUrl pattern that carries a port.
+  // Action:   convert it to a routing key and match a URL by host:port.
+  // Expected: the port is kept, and keyMatches distinguishes ports (callers pass u.host).
+  test('urlToRoutingKey keeps the port; keyMatches is port-specific', () => {
+    expect(urlToRoutingKey('http://localhost:5001/edit/*')).toBe('localhost:5001/edit/*')
+    expect(keyMatches('localhost:5001/edit', 'localhost:5001', '/edit/x.docx')).toBe(true)
+    expect(keyMatches('localhost:5001/edit', 'localhost:8888', '/edit/x.docx')).toBe(false)
   })
 })

@@ -279,7 +279,9 @@ function resolveRoute(url, currentProfile) {
   // Match against pathname+search: SharePoint's generic Doc.aspx links carry the only
   // app-distinguishing token (the .docx/.xlsx/.pptx filename) in the query string, so a
   // routing key like "*Doc.aspx*.docx*" needs the query to be part of the matched text.
-  try { const u = new URL(resolved); targetHost = u.hostname; targetPath = u.pathname + u.search } catch { return null }
+  // u.host (not hostname) so a :port is part of the match — keeps local Docker apps on the same host
+  // (localhost:5001 vs :8888) from resolving to each other. Mirrors primaryKeyFromUrl's keying.
+  try { const u = new URL(resolved); targetHost = u.host; targetPath = u.pathname + u.search } catch { return null }
   // findRoute applies the routing-wins-over-base priority and skips ineligible targets
   // (this app itself, or an AppImage that isn't built) so resolution falls through.
   const match = findRoute(loadRouting(), targetHost, targetPath, (target) => {
@@ -306,7 +308,7 @@ function resolveRoute(url, currentProfile) {
 function appClaimsUrl(url, currentProfile) {
   const resolved = unwrapUrl(url)
   let targetHost, targetPath
-  try { const u = new URL(resolved); targetHost = u.hostname; targetPath = u.pathname + u.search } catch { return false }
+  try { const u = new URL(resolved); targetHost = u.host; targetPath = u.pathname + u.search } catch { return false }
   const match = findRoute(loadRouting(), targetHost, targetPath, (target) => {
     const p = typeof target === 'string' ? target : target.path
     return !!p && fs.existsSync(p)
@@ -428,6 +430,15 @@ ipcMain.on('voltage:dragzone-cursor', (event, clientX, clientY) => {
 const dragZoneActions = new Map()  // overlay webContents.id → (action: string) => void
 ipcMain.on('voltage:dragzone-action', (event, action) => {
   dragZoneActions.get(event.sender.id)?.(String(action))
+})
+
+// css-inject stylesheet per app (appContents.id → CSS). Served to EVERY frame — including cross-origin
+// out-of-process iframes (e.g. the Office/OnlyOffice editor frame) where additionalArguments never
+// arrive — via a synchronous document-start query from preload.js. event.sender is the app WebContents
+// for main and sub frames alike, so one id keys them all.
+const cssInjectByContents = new Map()
+ipcMain.on('voltage:css-inject', (event) => {
+  event.returnValue = cssInjectByContents.get(event.sender.id) || ''
 })
 
 
@@ -933,6 +944,15 @@ function createWindow(pkg, opts = {}) {
   const webContentsId = appContents.id
   windowProfiles.set(webContentsId, pkg.profile)
   mainWindow.on('closed', () => windowProfiles.delete(webContentsId))
+
+  // Publish the css-inject stylesheet (if any) so every frame — incl. cross-origin OOPIFs that never
+  // get additionalArguments — can fetch it at document-start (voltage:css-inject). Taken from the same
+  // preloadArgs the main frame reads via argv, so both paths inject identical CSS.
+  const cssArg = (appWebPreferences.additionalArguments || []).find(a => a.startsWith('--voltage-css-inject='))
+  if (cssArg) {
+    cssInjectByContents.set(webContentsId, decodeURIComponent(cssArg.slice('--voltage-css-inject='.length)))
+    mainWindow.on('closed', () => cssInjectByContents.delete(webContentsId))
+  }
 
   // Context for the custom context-menu's shared ipcMain handlers (see appMenuRegistry).
   // displayName is computed once near the top of createWindow (also used for the window title).

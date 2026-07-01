@@ -50,7 +50,8 @@ function getRouteInfo(url) {
     // Match against pathname+search so query-only discriminators (e.g. SharePoint
     // Doc.aspx?…file=X.docx) work — must stay in sync with resolveRoute in window.js.
     const u = new URL(resolved);
-    return routeEntries.find(e => keyMatches(e.key, u.hostname, u.pathname + u.search)) ?? null;
+    // u.host (incl. :port) to match routing keys that now carry the port — stays in sync with window.js.
+    return routeEntries.find(e => keyMatches(e.key, u.host, u.pathname + u.search)) ?? null;
   } catch { return null; }
 }
 

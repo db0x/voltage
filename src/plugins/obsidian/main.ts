@@ -253,7 +253,7 @@ function resolveRoute(url: string): ResolvedRoute | null {
     // app-distinguishing token (the .docx/.xlsx/.pptx filename) in the query string, so a
     // routing key like "*Doc.aspx*.docx*" needs the query as part of the matched text.
     const u = new URL(url)
-    hostname = u.hostname
+    hostname = u.host  // host (incl. :port) so routing keys carrying a port match — in sync with window.js
     pathname = u.pathname + u.search
   } catch {
     return null

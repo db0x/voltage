@@ -1,18 +1,20 @@
 // css-inject plugin (main-process module). Lets an app override one or more CSS custom properties
 // of the page it wraps — a per-app list of (variable name → colour) rules plus a free-text CSS
-// block, configured in the manager (config.html). Purely cosmetic: it can recolour or hide parts of
-// the wrapped site, but cannot reach into cross-origin iframes (same boundary limitation as
-// no-select and the other page-injected plugins — only the top document is styled).
+// block, configured in the manager (config.html). Purely cosmetic: it recolours or hides parts of the
+// wrapped site. The stylesheet is injected into EVERY frame (see preload.js), so it reaches elements
+// the app renders inside iframes too — including the cross-origin out-of-process editor frame of
+// Office/OnlyOffice. It still cannot pierce a shadow DOM (document stylesheets don't cross shadow
+// roots) — the remaining boundary for shadow-encapsulated elements.
 //
 // Injection timing — document-start, not post-load. The stylesheet does NOT ride in through an
-// attachPlugin/did-finish-load insertCSS anymore: that fires after first paint, so a `display:none`
-// rule let the target element flash visible for a frame (FOUC) before it vanished. Instead the CSS
-// is handed to the preload via additionalArguments (preloadArgs() below → process.argv), and the
-// preload calls webFrame.insertCSS() synchronously at document-start — before the page paints, so
-// hidden/restyled elements never flash. The CSS is fixed at window-creation time (per-app config),
-// which is why additionalArguments (baked into webPreferences up front) work where a sync IPC would
-// race the plugin's late attach. webFrame.insertCSS persists across SPA soft-navigations, and the
-// preload re-runs (re-injecting) on every full document load, so coverage matches the old approach.
+// attachPlugin/did-finish-load insertCSS: that fires after first paint, so a `display:none` rule let
+// the target element flash visible for a frame (FOUC) before it vanished. Instead the preload calls
+// webFrame.insertCSS() synchronously at document-start — before the page paints. Delivery to the
+// preload is per-frame: the MAIN frame reads the CSS from additionalArguments (preloadArgs() below →
+// process.argv); SUB-frames (incl. cross-origin OOPIFs, which never get additionalArguments) fetch the
+// same CSS from main via a synchronous voltage:css-inject IPC (window.js publishes it per app). The CSS
+// is fixed at window-creation time (per-app config). webFrame.insertCSS persists across SPA soft-
+// navigations, and the preload re-runs (re-injecting) on every full document load.
 //
 // Why override the variable (not individual rules): setting e.g. --color-bg-primary once cascades
 // to every rule that resolves var(--color-bg-primary), so a single declaration restyles the whole
