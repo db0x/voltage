@@ -8,7 +8,6 @@
 // window at the returned URL), and attachPlugin() tears it down when the last window closes. The
 // orchestration itself lives in container.js; this file is the interface + config resolution.
 
-const { execFileSync } = require('node:child_process')
 const fs   = require('node:fs')
 const path = require('node:path')
 const container = require('./container')
@@ -42,24 +41,16 @@ function entryIconDataUrl() {
   catch { return null }
 }
 
-// Probe whether Docker AND Compose v2 are usable: `docker compose version` validates both in one go
-// (the CLI exists and the compose subcommand is installed). Cached for the process lifetime — the
-// installed binaries don't change while the Manager is open. VOLTAGE_TEST_DOCKER forces the result in
-// tests (0 = unavailable, 1 = available) so the grey-out behaviour is deterministic without a real
-// Docker install; it is read live (not cached) so each test launch can pick its own state.
-let dockerProbe  // undefined until first real probe
+// Whether Docker + a usable Compose (v2 `docker compose` OR v1 `docker-compose`) are present. Delegates
+// to the runtime's own detection (container.detectCompose, cached + PATH-augmented) so "available" and
+// "actually starts" can't disagree — including on apt installs that ship only the legacy v1 binary.
+// VOLTAGE_TEST_DOCKER forces the result in tests (0 = unavailable, 1 = available) so the grey-out
+// behaviour is deterministic without a real Docker install.
 function dockerAvailable() {
   const override = process.env.VOLTAGE_TEST_DOCKER
   if (override === '0') return false
   if (override === '1') return true
-  if (dockerProbe === undefined) {
-    // Same PATH augmentation as the runtime (container.withEnv) so the Manager's availability probe
-    // finds docker in /snap/bin etc. too — otherwise a GUI-launched Manager could falsely grey the
-    // plugin out on a machine where the runtime would actually find docker.
-    try { execFileSync('docker', ['compose', 'version'], { stdio: 'ignore', env: container.withEnv() }); dockerProbe = true }
-    catch { dockerProbe = false }
-  }
-  return dockerProbe
+  return container.detectCompose() !== null
 }
 
 // Framework availability hook: a plugin may export available() → boolean | { available, reason }. The

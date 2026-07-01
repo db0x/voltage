@@ -4,42 +4,81 @@
 //
 // All compose calls are scoped to a per-app project name (voltage-<profile>) so a running container
 // can be detected/reused and torn down deterministically. Host port discovery + the free-port probe
-// let the AppImage own port assignment (the user never picks one): on a fresh start we bind the next
-// free port in a range; if the project is already up (a second window, or a leftover from a previous
-// session) we reuse its published port instead of starting a second instance.
+// let the AppImage own port assignment (the user never picks one).
 //
-// The compose definition is fed to docker over STDIN (`-f -`) rather than as a file path. This dodges
-// two real-world blockers at once: the bundled compose.yaml lives inside app.asar (which the external
-// docker process can't read), and snap-packaged docker is confined to non-hidden $HOME paths (so a
-// materialized copy under ~/.config is "permission denied"). Piping the content sidesteps both.
+// Compose command detection (detectCompose): prefer Compose v2 (`docker compose`), fall back to the
+// legacy v1 binary (`docker-compose`, still common on apt installs) — so availability and the runtime
+// agree regardless of how docker was installed.
+//
+// Compose file delivery differs per version to sidestep two real blockers: the bundled compose.yaml
+// lives inside app.asar (unreadable by the external docker process), and snap-packaged docker (always
+// v2) is confined away from hidden $HOME paths. So v2 gets the content over STDIN (`-f -`), which
+// dodges both; v1 (no dependable stdin, and never snap) gets a real temp file written from the same
+// content. A user's custom compose file passes its real path either way.
 
 const net  = require('node:net')
 const http = require('node:http')
+const os   = require('node:os')
+const path = require('node:path')
+const fs   = require('node:fs')
 const { spawn, execFileSync } = require('node:child_process')
 
 // Default host-port search range. Deliberately away from common service ports (8080 etc.) to avoid
 // clashes; a stack may override it via stack.json "portRange": [start, end].
 const DEFAULT_PORT_RANGE = [18000, 18099]
 
-// GUI/.desktop-launched AppImages often start with a minimal PATH that lacks docker — notably the
-// snap location /snap/bin — which would make the spawn fail with ENOENT. Prepend the usual binary
-// locations so docker resolves the same way it does in an interactive shell.
+// GUI/.desktop-launched AppImages often start with a minimal PATH that lacks docker (snap's /snap/bin,
+// or apt's /usr/bin depending on the session). Prepend the usual locations so docker/docker-compose
+// resolve the same way they do in an interactive shell.
 const DOCKER_PATH = ['/usr/local/bin', '/usr/bin', '/bin', '/snap/bin', process.env.PATH || ''].join(':')
 const withEnv = (extra = {}) => ({ ...process.env, PATH: DOCKER_PATH, ...extra })
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
-// A compose source → the `-f` argument(s) + optional stdin payload. Bundled stacks pass their CONTENT
-// (piped via `-f -`); a user's custom compose passes its real file path.
-function composeSource(spec) {
-  return spec.content != null ? { fileArgs: ['-f', '-'], input: spec.content } : { fileArgs: ['-f', spec.file] }
+// Detect the compose command once: Compose v2 first, then the v1 fallback. Returns the argv prefix
+// (['docker','compose'] or ['docker-compose']) or null if neither is usable. Cached for the process.
+let composeCmd  // undefined until probed; null = none found
+function detectCompose() {
+  if (composeCmd !== undefined) return composeCmd
+  for (const cmd of [['docker', 'compose'], ['docker-compose']]) {
+    try {
+      execFileSync(cmd[0], [...cmd.slice(1), 'version'], { stdio: 'ignore', env: withEnv() })
+      composeCmd = cmd
+      return cmd
+    } catch {}
+  }
+  composeCmd = null
+  return null
 }
 
-// spawn-based docker runner so the compose file can be fed over stdin. Rejects on spawn error,
-// non-zero exit, or timeout; the rejection carries stderr so callers can log the real docker message.
-function run(args, { input, env, timeout } = {}) {
+// Materialize a bundled stack's content to a temp file (for the v1 path), cached on the spec so the
+// same file is reused across up/port/down within a session. v1 is never snap-confined, so /tmp is fine.
+function tmpFileFor(spec) {
+  if (!spec._tmpFile) {
+    spec._tmpFile = path.join(os.tmpdir(), `voltage-compose-${process.pid}-${Date.now()}.yaml`)
+    fs.writeFileSync(spec._tmpFile, spec.content ?? '')
+  }
+  return spec._tmpFile
+}
+
+// Build { bin, args, input } for `<compose> -p <project> <fileArgs> <tail…>`, choosing stdin (v2) or a
+// temp file (v1) for a bundled spec, or the real path for a custom file. Throws when no compose exists.
+function composeInvoke(spec, project, tail) {
+  const cmd = detectCompose()
+  if (!cmd) throw new Error('no docker compose (v2 or v1) found')
+  const v2 = cmd[cmd.length - 1] === 'compose'
+  let fileArgs, input
+  if (spec.file)      fileArgs = ['-f', spec.file]
+  else if (v2)      { fileArgs = ['-f', '-']; input = spec.content }
+  else                fileArgs = ['-f', tmpFileFor(spec)]
+  return { bin: cmd[0], args: [...cmd.slice(1), '-p', project, ...fileArgs, ...tail], input }
+}
+
+// spawn-based runner so the compose file can be fed over stdin. Rejects on spawn error, non-zero exit,
+// or timeout; the rejection carries stderr so callers can log the real docker message.
+function run(bin, args, { input, env, timeout } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', args, { env: withEnv(env) })
+    const child = spawn(bin, args, { env: withEnv(env) })
     let stdout = '', stderr = ''
     const timer = timeout ? setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')) }, timeout) : null
     child.stdout.on('data', d => { stdout += d })
@@ -49,7 +88,7 @@ function run(args, { input, env, timeout } = {}) {
     child.on('close', code => {
       if (timer) clearTimeout(timer)
       if (code === 0) resolve({ stdout, stderr })
-      else { const e = new Error(`docker exited ${code}`); e.stderr = stderr; e.stdout = stdout; reject(e) }
+      else { const e = new Error(`${bin} exited ${code}`); e.stderr = stderr; e.stdout = stdout; reject(e) }
     })
     child.stdin.end(input ?? '')
   })
@@ -77,8 +116,8 @@ async function findFreePort([start, end] = DEFAULT_PORT_RANGE) {
 // result means reuse the running container instead of starting a new one.
 async function composeHostPort(spec, project, service, containerPort) {
   try {
-    const { fileArgs, input } = composeSource(spec)
-    const { stdout } = await run(['compose', '-p', project, ...fileArgs, 'port', service, String(containerPort)], { input, timeout: 10_000 })
+    const { bin, args, input } = composeInvoke(spec, project, ['port', service, String(containerPort)])
+    const { stdout } = await run(bin, args, { input, timeout: 10_000 })
     const m = stdout.trim().match(/:(\d+)\s*$/)
     return m ? Number(m[1]) : null
   } catch { return null }
@@ -88,18 +127,19 @@ async function composeHostPort(spec, project, service, containerPort) {
 // for minutes on the very first launch — the caller shows a splash meanwhile. env carries the compose
 // ${VAR} substitutions (VOLTAGE_PORT, optionally VOLTAGE_DATA_DIR). Throws on failure (e.g. port in use).
 async function composeUp(spec, project, env) {
-  const { fileArgs, input } = composeSource(spec)
-  await run(['compose', '-p', project, ...fileArgs, 'up', '-d'], { input, env, timeout: 600_000 })
+  const { bin, args, input } = composeInvoke(spec, project, ['up', '-d'])
+  await run(bin, args, { input, env, timeout: 600_000 })
 }
 
-// Tear the stack down (containers + network). Synchronous on purpose: it runs from the window's
-// 'closed' handler as the app quits, and an async call would be killed when the process exits before
-// it finishes. Best-effort — a failure here must never block shutdown.
+// Tear the stack down (containers + network) and drop any temp compose file. Synchronous on purpose:
+// it runs from the window's 'closed' handler as the app quits, and an async call would be killed when
+// the process exits before it finishes. Best-effort — a failure here must never block shutdown.
 function composeDownSync(spec, project) {
   try {
-    const { fileArgs, input } = composeSource(spec)
-    execFileSync('docker', ['compose', '-p', project, ...fileArgs, 'down'], { input, env: withEnv(), timeout: 60_000 })
+    const { bin, args, input } = composeInvoke(spec, project, ['down'])
+    execFileSync(bin, args, { input, env: withEnv(), timeout: 60_000 })
   } catch {}
+  if (spec._tmpFile) { try { fs.unlinkSync(spec._tmpFile) } catch {} }
 }
 
 // One HTTP probe against the service; resolves true on any response (even a 4xx — the server is up).
@@ -126,6 +166,6 @@ async function waitHealthy(port, healthPath, timeoutMs = 30_000) {
 }
 
 module.exports = {
-  DEFAULT_PORT_RANGE, findFreePort, isPortFree, withEnv,
+  DEFAULT_PORT_RANGE, findFreePort, isPortFree, withEnv, detectCompose,
   composeHostPort, composeUp, composeDownSync, waitHealthy,
 }
