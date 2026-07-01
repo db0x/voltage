@@ -20,7 +20,6 @@ const log = (...a) => console.log('[docker-integration]', ...a)
 // the renderer has no file access, so it can't read the directory itself.
 function stacks() {
   const dir = path.join(__dirname, 'stacks')
-  const icon = entryIconDataUrl()
   const out = []
   try {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -29,16 +28,29 @@ function stacks() {
       try { meta = JSON.parse(fs.readFileSync(path.join(dir, e.name, 'stack.json'), 'utf8')) } catch {}
       // content = the raw compose.yaml, shown read-only in the config dialog's preview.
       try { content = fs.readFileSync(path.join(dir, e.name, 'compose.yaml'), 'utf8') } catch {}
-      out.push({ id: e.name, label: meta.label || e.name, icon, content })
+      out.push({ id: e.name, label: meta.label || e.name, icon: stackIconDataUrl(meta.icon), content })
     }
   } catch {}
   return out
 }
 
-// docker.svg as a data URL — the per-entry icon for the stack chooser in the config dialog.
-function entryIconDataUrl() {
-  try { return `data:image/svg+xml;base64,${fs.readFileSync(path.join(__dirname, 'docker.svg')).toString('base64')}` }
+// Repo/AppImage root (three levels up from this plugin dir) — where the shared assets/ tree lives. A
+// stack's "icon" in stack.json is resolved relative to it (e.g. "assets/webapps/drawio.svg").
+const APP_ROOT = path.join(__dirname, '..', '..', '..')
+
+function svgDataUrl(absPath) {
+  try { return `data:image/svg+xml;base64,${fs.readFileSync(absPath).toString('base64')}` }
   catch { return null }
+}
+
+// A stack's chooser icon: the icon named in stack.json (repo-root-relative or absolute), else the
+// generic docker glyph as a fallback.
+function stackIconDataUrl(iconRel) {
+  if (iconRel) {
+    const url = svgDataUrl(path.isAbsolute(iconRel) ? iconRel : path.join(APP_ROOT, iconRel))
+    if (url) return url
+  }
+  return svgDataUrl(path.join(__dirname, 'docker.svg'))
 }
 
 // Whether Docker + a usable Compose (v2 `docker compose` OR v1 `docker-compose`) are present. Delegates

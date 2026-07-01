@@ -1,5 +1,6 @@
 {
     "label": "draw.io",
+    "icon": "assets/webapps/drawio.svg",
     "service": "drawio",
     "containerPort": 8080,
     "healthPath": "/"
