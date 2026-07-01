@@ -121,17 +121,18 @@ function resolveAppIcon(iconName, desktopName) {
 
   if (!iconName || iconName === 'voltage') return voltageDefault
 
-  // Already installed under this name
-  if (fs.existsSync(destSvg)) return destSvg
-  if (fs.existsSync(destPng)) return destPng
-
-  // Copies a resolved source icon into the voltage theme under the app's name, refreshes the cache,
-  // and returns the absolute path the .desktop entry will reference. The extension follows the source.
+  // Copies a resolved source icon into the voltage theme under the app's name and returns the absolute
+  // path the .desktop entry references. OVERWRITES any previous copy so a changed icon selection (or a
+  // reinstall) actually updates — the old early-return-on-exists left stale icons behind — and drops a
+  // stale copy in the other format so a svg→png (or reverse) switch can't leave two files. The
+  // extension follows the source; the cache refresh makes the theme lookup pick up the new file.
   const installFrom = (found) => {
-    const ext  = found.endsWith('.png') ? 'png' : 'svg'
-    const dest = ext === 'png' ? destPng : destSvg
+    const ext   = found.endsWith('.png') ? 'png' : 'svg'
+    const dest  = ext === 'png' ? destPng : destSvg
+    const other = ext === 'png' ? destSvg : destPng
     fs.mkdirSync(appsDir, { recursive: true })
     fs.copyFileSync(found, dest)
+    fs.rmSync(other, { force: true })
     console.log(`  Icon installed to voltage theme: ${dest}`)
     updateVoltageCache()
     return dest
@@ -183,14 +184,27 @@ function resolveAppIcon(iconName, desktopName) {
     ? bundledWebapp
     : path.join(PROJECT_ROOT, 'assets', 'voltage.svg')
   if (fs.existsSync(fallbackSvg)) {
-    try {
-      fs.mkdirSync(appsDir, { recursive: true })
-      fs.copyFileSync(fallbackSvg, destSvg)
-      updateVoltageCache()
-      return destSvg
-    } catch { /* non-fatal */ }
+    try { return installFrom(fallbackSvg) } catch { /* non-fatal */ }
   }
+  // Nothing resolved this run — keep a previously-installed icon if one exists, else the generic logo.
+  if (fs.existsSync(destSvg)) return destSvg
+  if (fs.existsSync(destPng)) return destPng
   return voltageDefault
+}
+
+// Removes an app's exclusively-owned icon from the voltage theme (the <desktopName>.svg/.png that
+// resolveAppIcon installs) and refreshes the theme cache, so uninstalling an app no longer leaves its
+// icon behind. Shared MIME-type icons are intentionally NOT touched — other apps may still use them.
+// Best-effort; missing files are ignored. Returns whether anything was removed.
+function uninstallAppIcon(desktopName) {
+  const appsDir = voltageAppsDir()
+  let removed = false
+  for (const ext of ['svg', 'png']) {
+    const f = path.join(appsDir, `${desktopName}.${ext}`)
+    try { if (fs.existsSync(f)) { fs.rmSync(f, { force: true }); removed = true } } catch { /* non-fatal */ }
+  }
+  if (removed) updateVoltageCache()
+  return removed
 }
 
 function installDesktop(app) {
@@ -429,4 +443,4 @@ function updateRoutingTable() {
   console.log(`  Routing table updated: ${routingFile}`)
 }
 
-module.exports = { toDisplayName, installDesktop, installIcon }
+module.exports = { toDisplayName, installDesktop, installIcon, resolveAppIcon, uninstallAppIcon }

@@ -29,6 +29,17 @@ function runInstall(home, app) {
   })
 }
 
+// Runs an arbitrary lib.js call inside a child process with HOME redirected (like runInstall) — used
+// to drive uninstallAppIcon, which the manager's delete handler calls.
+function runLib(home, snippet) {
+  const call = `const lib = require(${JSON.stringify(path.join(ROOT, 'scripts', 'lib.js'))}); ${snippet};`
+  execFileSync('node', ['-e', call], {
+    cwd: ROOT,
+    stdio: 'ignore',
+    env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, '.config') },
+  })
+}
+
 let home
 test.beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-icons-')) })
 test.afterEach(() => { fs.rmSync(home, { recursive: true, force: true }) })
@@ -116,4 +127,44 @@ test('preserves a legitimate hicolor index.theme', () => {
 
   expect(fs.existsSync(hicolorIndex(home))).toBe(true)
   expect(fs.readFileSync(hicolorIndex(home), 'utf8')).toBe(legit)
+})
+
+// A seeded icon in a NON-apps context dir (drives the filesystem-search fallback in CI where
+// python3/GTK is unavailable), used by the reinstall/uninstall tests below.
+function seedIcon(home, name, marker) {
+  const ctx = path.join(home, '.local', 'share', 'icons', 'Seeded', '48x48', 'mimetypes')
+  fs.mkdirSync(ctx, { recursive: true })
+  fs.writeFileSync(path.join(ctx, `${name}.svg`), `<svg id="${marker}"/>`)
+}
+const voltageAppIcon = (home, desktopName) =>
+  path.join(home, '.local', 'share', 'icons', 'voltage', 'scalable', 'apps', `${desktopName}.svg`)
+
+// Setup:    An app installed with icon-old, then two candidate icons on disk.
+// Action:   Reinstall the SAME app with a different icon (icon-new).
+// Expected: The installed icon is overwritten with icon-new's bytes — the old early-return-on-exists
+//           left the stale icon in place, so a changed icon selection never took effect on reinstall.
+test('reinstalling with a changed icon overwrites the stale one', () => {
+  seedIcon(home, 'icon-old', 'OLD')
+  seedIcon(home, 'icon-new', 'NEW')
+  const app = (icon) => ({ profile: 'e2e-over', name: 'E2E Over', url: 'https://example.com/', icon })
+
+  runInstall(home, app('icon-old'))
+  runInstall(home, app('icon-new'))  // reinstall with a different icon
+
+  expect(fs.readFileSync(voltageAppIcon(home, 'vE2e-over'), 'utf8')).toBe('<svg id="NEW"/>')
+})
+
+// Setup:    An app installed with a chosen icon (its exclusive <desktopName>.svg exists).
+// Action:   Call uninstallAppIcon(desktopName) — what the manager's delete handler now runs.
+// Expected: The app's icon file is removed from the voltage theme, so uninstalling no longer leaves it
+//           behind.
+test('uninstallAppIcon removes the app icon from the voltage theme', () => {
+  seedIcon(home, 'icon-x', 'X')
+  runInstall(home, { profile: 'e2e-del', name: 'E2E Del', url: 'https://example.com/', icon: 'icon-x' })
+
+  const iconFile = voltageAppIcon(home, 'vE2e-del')
+  expect(fs.existsSync(iconFile)).toBe(true)
+
+  runLib(home, `lib.uninstallAppIcon('vE2e-del')`)
+  expect(fs.existsSync(iconFile)).toBe(false)
 })

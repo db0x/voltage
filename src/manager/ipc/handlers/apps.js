@@ -14,6 +14,7 @@ const { urlToRoutingKey, keyOverlaps, primaryKeyFromUrl, routingUrlKeys } = requ
 const { appName }                                          = require('../../../app-naming')
 const { appImagePath, profileDir }                         = require('../../../app-paths')
 const { ensureLauncher, desktopExec }                      = require('../../../launcher')
+const { uninstallAppIcon }                                 = require('../../../../scripts/lib')
 
 // Default locations the per-app overrides fall back to.
 const DIST_DIR     = path.join(APP_ROOT, 'dist')
@@ -183,6 +184,8 @@ module.exports = function registerAppHandlers() {
       if (fs.existsSync(desktopFile))                                  fs.rmSync(desktopFile)
       if (fs.existsSync(appImageFile))                                 fs.rmSync(appImageFile)
       fs.rmSync(`${appImageFile}.version`, { force: true })
+      // Remove the app's exclusive icon from the voltage theme (shared MIME icons stay — see lib.js).
+      uninstallAppIcon(appName(profile))
       if (deleteConfig     && configFile && fs.existsSync(configFile)) fs.rmSync(configFile)
       if (deleteProfileData && fs.existsSync(profileData))             fs.rmSync(profileData, { recursive: true })
 
