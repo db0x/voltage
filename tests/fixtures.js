@@ -71,6 +71,21 @@ const test = base.extend({
     await closeApp(app, userDataDir)
   }, { scope: 'test' }],
 
+  // VOLTAGE_TEST_DOCKER forces the docker-integration plugin's availability probe, so the plugin
+  // list's grey-out / selectable behaviour is deterministic regardless of whether the test host has
+  // Docker installed. '1' = available (selectable), '0' = unavailable (greyed, unselectable).
+  electronAppDockerOn: [async ({}, use) => {
+    const { app, userDataDir } = await launchApp({ VOLTAGE_TEST_DOCKER: '1' })
+    await use(app)
+    await closeApp(app, userDataDir)
+  }, { scope: 'test' }],
+
+  electronAppDockerOff: [async ({}, use) => {
+    const { app, userDataDir } = await launchApp({ VOLTAGE_TEST_DOCKER: '0' })
+    await use(app)
+    await closeApp(app, userDataDir)
+  }, { scope: 'test' }],
+
   // Manager window ready for interaction — waits until all IPC data is loaded
   // and the add-card button is visible before yielding.
   managerPage: async ({ electronApp }, use) => {
@@ -87,6 +102,18 @@ const test = base.extend({
 
   managerPageDe: async ({ electronAppDe }, use) => {
     const page = await electronAppDe.firstWindow()
+    await page.waitForSelector('.card-add', { timeout: 30_000 })
+    await use(page)
+  },
+
+  managerPageDockerOn: async ({ electronAppDockerOn }, use) => {
+    const page = await electronAppDockerOn.firstWindow()
+    await page.waitForSelector('.card-add', { timeout: 30_000 })
+    await use(page)
+  },
+
+  managerPageDockerOff: async ({ electronAppDockerOff }, use) => {
+    const page = await electronAppDockerOff.firstWindow()
     await page.waitForSelector('.card-add', { timeout: 30_000 })
     await use(page)
   },

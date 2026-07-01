@@ -40,11 +40,41 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
   // Plugin selection is its own select-and-add list, independent of the mail-handler toggle.
   // The configure button opens the plugin's own dialog, scoped to this app's config for it.
   const pluginList = initPluginList('edit-plugin-trigger', 'edit-plugin-list', plugins, appDefaultSrc, icons?.configure,
-    () => updateSaveBtn(),
+    () => syncUrlLock(),
     file => openPluginConfig(file, {
       get: () => pluginConfig[file] || {},
       set: cfg => { pluginConfig[file] = cfg; updateSaveBtn() },
     }))
+
+  // A selected plugin that owns the app URL (managesUrl, e.g. docker-integration routing to a local
+  // container) locks the URL field — the plugin derives the URL, so hand-editing must be off. The
+  // real URL is stashed (lockedUrl) and the field shows a non-editable "-docker-" marker instead;
+  // snapshot()/save read the stashed value via effectiveUrl(), so the actual URL is never overwritten
+  // with the marker. Always ends in updateSaveBtn() so plugin changes still drive dirty/save state.
+  const URL_LOCKED_LABEL = '-docker-'
+  function urlManagedBySelectedPlugin() {
+    return pluginList.get().some(f => (plugins || []).find(p => p.file === f)?.managesUrl)
+  }
+  // The real URL: the stashed value while locked, otherwise the (editable) field's current value.
+  function effectiveUrl() {
+    return (lockedUrl !== null ? lockedUrl : urlInput.value).trim()
+  }
+  function syncUrlLock() {
+    const locked = urlManagedBySelectedPlugin()
+    const wasLocked = lockedUrl !== null
+    if (locked && !wasLocked) {
+      lockedUrl = urlInput.value          // stash the real URL, show the marker
+      urlInput.value = URL_LOCKED_LABEL
+    } else if (!locked && wasLocked) {
+      urlInput.value = lockedUrl           // restore the real URL for editing
+      lockedUrl = null
+    }
+    urlInput.disabled = locked
+    urlInput.classList.toggle('config-disabled', locked)
+    if (locked) urlValid = true
+    else if (wasLocked) urlInput.dispatchEvent(new Event('input'))  // re-validate the restored URL
+    updateSaveBtn()
+  }
 
   document.getElementById('edit-mail-handler').addEventListener('click', e => {
     e.currentTarget.classList.toggle('active')
@@ -61,6 +91,7 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
   let currentApp       = null
   let onUpdated        = null
   let initialSnapshot  = null
+  let lockedUrl        = null  // stashed real URL while a managesUrl plugin locks the field (else null)
 
   const urlInput     = document.getElementById('edit-url')
   const urlHint      = document.getElementById('edit-url-hint')
@@ -73,7 +104,7 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
   function snapshot() {
     return {
       name:               document.getElementById('edit-name').value.trim(),
-      url:                urlInput.value.trim(),
+      url:                effectiveUrl(),
       icon:               selectedIconName,
       width:              document.getElementById('edit-width').value.trim(),
       height:             document.getElementById('edit-height').value.trim(),
@@ -236,6 +267,7 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     currentProfile = app.profile
     currentApp     = app
     onUpdated      = onUpdatedCallback
+    lockedUrl      = null  // clear any lock left from a previous open before seeding the real URL
 
     document.getElementById('edit-profile-label').textContent = app.profile
     document.getElementById('edit-name').value = app.name || ''
@@ -302,6 +334,8 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     if (mailHandler) mhBtn.classList.add('active')
     else mhBtn.classList.remove('active')
     pluginList.set(app.plugins || [])
+    // Lock the URL field up front if the app already has a URL-managing plugin (e.g. docker-integration).
+    syncUrlLock()
     // Deep copy so editing in the config dialog doesn't mutate the app object until save.
     pluginConfig = app.pluginConfig ? JSON.parse(JSON.stringify(app.pluginConfig)) : {}
 

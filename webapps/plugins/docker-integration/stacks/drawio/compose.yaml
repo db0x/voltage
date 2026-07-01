@@ -1,0 +1,11 @@
+# Curated draw.io stack for the Voltage docker-integration plugin. draw.io's web build is a
+# client-side editor (no server-side document storage), so this is a single stateless container.
+# ${VOLTAGE_PORT} is substituted by the plugin from the dialog's Port field (default 8080); the
+# plugin runs this with `docker compose -f <this file> up -d` and waits until the service answers
+# before pointing the app window at http://localhost:${VOLTAGE_PORT}.
+services:
+  drawio:
+    image: jgraph/drawio:latest
+    restart: unless-stopped
+    ports:
+      - "${VOLTAGE_PORT:-8080}:8080"

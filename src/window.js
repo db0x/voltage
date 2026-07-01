@@ -19,6 +19,9 @@ const ROUTING_FILE = path.join(app.getPath('appData'), 'voltage', 'plugins', 'ro
 // Standardised "page unavailable" screen, shown in the app view when the base URL fails to load or
 // hangs — without it a widget-mode app would leave only the transparent shadow frame. Read once.
 const errorTemplate = fs.readFileSync(path.join(__dirname, 'error-page.html'), 'utf8')
+// "Starting…" screen shown in the app view while a launch resolver (e.g. the docker plugin) brings
+// the backend up before the real URL loads — same in-window mechanism as the error page.
+const startingTemplate = fs.readFileSync(path.join(__dirname, 'starting-page.html'), 'utf8')
 const APP_LOAD_TIMEOUT_MS = 30_000
 
 const escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
@@ -40,6 +43,24 @@ function errorPageDataUrl(pkg, reason) {
     url:     escHtml(pkg.url),
     reason:  escHtml(reason || ''),
     urlJson: JSON.stringify(pkg.url),
+  }[k] ?? ''))
+  return 'data:text/html;charset=utf-8,' + encodeURIComponent(html)
+}
+
+// The in-window "starting…" page (a data: URL), shown while opts.resolveUrl runs. Same opaque,
+// single-window approach as the error page so it never spawns a second window or disturbs geometry.
+// `info` (optional) lets the launch-resolving plugin customise the splash — { iconSrc, title, hint }
+// — e.g. the docker plugin shows its own glyph and "starting the container" wording. Anything the
+// plugin omits falls back to the generic Voltage icon + app-name text.
+function startingPageDataUrl(pkg, info = {}) {
+  const i18n = t()
+  const de   = app.getLocale().split('-')[0].toLowerCase() === 'de'
+  const name = pkg.displayName || pkg.profile
+  const html = startingTemplate.replace(/\{\{(\w+)\}\}/g, (_, k) => ({
+    lang:    de ? 'de' : 'en',
+    iconSrc: info.iconSrc || voltageIconDataUrl || '',
+    title:   escHtml(info.title || (i18n.appStarting || 'Starting {name}…').replace('{name}', name)),
+    hint:    escHtml(info.hint || i18n.appStartingHint || 'Please wait…'),
   }[k] ?? ''))
   return 'data:text/html;charset=utf-8,' + encodeURIComponent(html)
 }
@@ -922,16 +943,34 @@ function createWindow(pkg, opts = {}) {
   mainWindow.on('closed', () => appMenuRegistry.delete(webContentsId))
 
   if (pkg.userAgent) appContents.setUserAgent(pkg.userAgent)
-  // Guard the initial load (and later navigations) so an unreachable base URL shows the error page.
-  installLoadGuard(appContents, pkg)
-  // Not awaited; failures are handled by the load guard's events (a rejection here would otherwise
-  // surface as an unhandled promise rejection).
-  appContents.loadURL(pkg.url).catch(() => {})
 
-  const appOrigin = new URL(pkg.url).origin
+  // appOrigin gates same-origin popups in the window-open handler. It starts at the base URL's origin
+  // and is updated to the RESOLVED origin once a launch resolver (e.g. docker) provides the real URL —
+  // the handler reads it live via this `let`, so a dynamic container origin classifies correctly.
+  let appOrigin = new URL(pkg.url).origin
   const internalDomains = pkg.internalDomains ?
     (Array.isArray(pkg.internalDomains) ? pkg.internalDomains : [pkg.internalDomains]) :
     []
+
+  // Guard the initial load (and later navigations) so an unreachable base URL shows the error page.
+  installLoadGuard(appContents, pkg)
+  // When a plugin resolves the launch URL asynchronously (opts.resolveUrl, e.g. starting a container),
+  // show the in-window "starting…" page first (single window — no separate splash, geometry intact),
+  // then navigate to the resolved URL and point appOrigin at it. A null result / failure falls back to
+  // the baked pkg.url. Otherwise load pkg.url directly. Loads aren't awaited; the load guard's events
+  // handle failures (an unhandled rejection would otherwise surface here).
+  if (typeof opts.resolveUrl === 'function') {
+    appContents.loadURL(startingPageDataUrl(pkg, opts.startingPage)).catch(() => {})
+    Promise.resolve(opts.resolveUrl())
+      .then(resolved => {
+        const finalUrl = resolved || pkg.url
+        appOrigin = new URL(finalUrl).origin
+        appContents.loadURL(finalUrl).catch(() => {})
+      })
+      .catch(() => appContents.loadURL(pkg.url).catch(() => {}))
+  } else {
+    appContents.loadURL(pkg.url).catch(() => {})
+  }
 
   appContents.setWindowOpenHandler(({ url }) => {
     try {

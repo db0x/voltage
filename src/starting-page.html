@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Standardised "starting…" screen, shown in the app view while a launch resolver brings the app's
+     backend up (e.g. the docker-integration plugin starting a container) before the real URL loads.
+     Mirrors error-page.html: same single-window mechanism (a data: URL loaded into the app view, NOT
+     a separate window, so the app's geometry is untouched) and an OPAQUE background so a widget-mode
+     app shows this instead of just the transparent shadow frame. {{tokens}} are filled by window.js;
+     data-voltage-starting marks the document so it can be detected in tests. -->
+<html lang="{{lang}}" data-voltage-starting="1">
+<head>
+<meta charset="utf-8">
+<style>
+  *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0 }
+  :root { --bg:#f4f4f5; --fg:#1e1e1e; --muted:#777; --accent:#1a73e8; --card:#ffffff; --border:#e4e4e7 }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1e1e1e; --fg:#f0f0f0; --muted:#aaa; --accent:#5ab4f0; --card:#2c2c2c; --border:#444 }
+  }
+  html, body { height: 100% }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: 'Ubuntu', system-ui, sans-serif; color-scheme: light dark;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    max-width: 460px; width: 100%; padding: 32px 28px; text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  }
+  .glyph { width: 56px; height: 56px; margin: 0 auto 16px; display: block }
+  h1 { font-size: 18px; font-weight: 600; margin-bottom: 14px }
+  .spinner {
+    width: 26px; height: 26px; margin: 0 auto; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .hint { margin-top: 14px; font-size: 12px; color: var(--muted) }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img class="glyph" src="{{iconSrc}}" alt="">
+    <h1>{{title}}</h1>
+    <div class="spinner"></div>
+    <div class="hint">{{hint}}</div>
+  </div>
+</body>
+</html>

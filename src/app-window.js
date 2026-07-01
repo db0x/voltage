@@ -13,6 +13,7 @@ const { createWindow, dispatchLaunchArg } = require('./window')
 const { parseMailtoFields }         = require('./mailto')
 const { wmClass }                   = require('./app-naming')
 const { profileDir }                = require('./app-paths')
+const { t }                         = require('./i18n')
 
 // draw.io SVG files embed the diagram XML as HTML-escaped content= attribute value.
 function extractXmlFromDrawioSvg(content) {
@@ -101,6 +102,53 @@ function registerBlockCloseHandler() {
   ipcMain.on('voltage:should-block-close', (event) => { event.returnValue = block })
 }
 
+// Async pre-launch hook. Some apps don't load their baked pkg.url directly — a plugin first resolves
+// the real target (e.g. docker-integration brings up a local container and routes there). A plugin
+// opts in by exporting resolveLaunch(pkg, { config, profile }) → { url } | null; the FIRST such plugin
+// wins. Returns the resolved URL string, or null when no plugin resolves one (→ createWindow falls
+// back to the baked pkg.url). createWindow awaits this and shows its in-window "starting…" page while
+// it runs, so the slow async step (e.g. a first docker pull) isn't a blank screen.
+async function resolvePluginUrl(basePkg) {
+  for (const rel of basePkg.plugins ?? []) {
+    let mod
+    try { mod = require(path.join(__dirname, '..', 'webapps', rel)) }
+    catch (err) { console.error(`[plugin] load failed for ${rel}:`, err); continue }
+    if (typeof mod.resolveLaunch !== 'function') continue
+    try {
+      const config = basePkg.pluginConfig?.[rel] || {}
+      const result = await mod.resolveLaunch(basePkg, { config, profile: basePkg.profile })
+      if (result?.url) return result.url
+    } catch (err) {
+      console.error(`[plugin] resolveLaunch failed for ${rel}:`, err)
+    }
+    return null  // a resolveLaunch plugin ran but produced no URL → fall back to pkg.url
+  }
+  return null
+}
+
+// Whether any selected plugin resolves the launch URL asynchronously — gates whether createWindow is
+// handed a resolver (and thus shows its "starting…" page) at all.
+function hasLaunchResolver(basePkg) {
+  return (basePkg.plugins ?? []).some(rel => {
+    try { return typeof require(path.join(__dirname, '..', 'webapps', rel)).resolveLaunch === 'function' }
+    catch { return false }
+  })
+}
+
+// Optional splash customisation from the launch-resolving plugin (icon + wording for the "starting…"
+// page), gathered before the window opens. The plugin gets the active i18n strings so its text is
+// localised. Returns {} when no plugin provides any — createWindow then uses the generic splash.
+function launchInfoFor(basePkg) {
+  for (const rel of basePkg.plugins ?? []) {
+    let mod
+    try { mod = require(path.join(__dirname, '..', 'webapps', rel)) } catch { continue }
+    if (typeof mod.launchInfo !== 'function') continue
+    try { return mod.launchInfo(basePkg, { config: basePkg.pluginConfig?.[rel] || {}, i18n: t() }) || {} }
+    catch { return {} }
+  }
+  return {}
+}
+
 module.exports = function setupAppWindow() {
   registerBlockCloseHandler()
 
@@ -150,7 +198,14 @@ module.exports = function setupAppWindow() {
     // A resolvable URL/file (draw.io) loads directly; otherwise pkg.url. A file destined for a
     // plugin (rclone-sync) leaves urlArg null and reaches the plugin via launchArg, which takes
     // over the initial load itself.
-    createWindow(urlArg ? { ...pkg, url: urlArg } : pkg, { launchArg: rawArg ?? null })
+    const basePkg = urlArg ? { ...pkg, url: urlArg } : pkg
+    // A plugin may resolve the real URL asynchronously (e.g. start a container). Hand createWindow a
+    // resolver so it shows its in-window "starting…" page during the wait, then loads the resolved
+    // URL (or falls back to pkg.url). Only passed when a resolver plugin is present, so ordinary apps
+    // load directly with no splash.
+    const resolveUrl = hasLaunchResolver(basePkg) ? () => resolvePluginUrl(basePkg) : undefined
+    const startingPage = resolveUrl ? launchInfoFor(basePkg) : undefined
+    createWindow(basePkg, { launchArg: rawArg ?? null, resolveUrl, startingPage })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(pkg)

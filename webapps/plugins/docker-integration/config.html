@@ -1,0 +1,38 @@
+<!-- Config dialog shipped by the docker-integration plugin. The manager's plugin-config host
+     (src/manager/plugin-config.js) renders this into the manager DOM and owns the generic
+     open/close + Apply/Cancel wiring; the markup reuses the manager's .dialog-* classes so it
+     matches every other dialog. {{pluginIcon}} is the plugin's icon; {{docker*}} are i18n keys.
+
+     The only setting is the curated Stack. It's a custom icon+label chooser (data-config-stacks) —
+     not a native <select>, which can't show per-entry icons — filled by the host from the plugin's
+     discovered stacks. Below it, a read-only preview shows the chosen stack's compose file. Port is
+     auto-assigned at launch, so there are no further knobs. -->
+<div class="dialog-overlay plugin-config-overlay hidden">
+  <div class="dialog">
+    <div class="dialog-header">
+      <img src="{{pluginIcon}}" alt="">
+      <span class="dialog-title">{{dockerConfigTitle}}</span>
+      <button class="dialog-close" type="button">✕</button>
+    </div>
+    <div class="dialog-fields">
+      <div class="dialog-field">
+        <label>{{dockerConfigStack}}
+          <span class="field-help" data-tooltip="{{dockerConfigStackHint}}">?</span>
+        </label>
+        <div class="docker-stacks" data-config-stacks="stack"></div>
+      </div>
+      <div class="dialog-field">
+        <label>{{dockerConfigComposePreview}}</label>
+        <!-- Read-only, syntax-highlighted compose preview. The host fills <code> and attaches
+             OverlayScrollbars to the container (matching the rest of the UI). -->
+        <div class="docker-compose-preview" data-config-stack-preview><pre><code></code></pre></div>
+      </div>
+    </div>
+    <!-- Apply commits the edit to the app's config; Cancel/✕/Esc discard. The host wires these by
+         class (.plugin-config-apply / .plugin-config-cancel). -->
+    <div class="confirm-actions">
+      <button class="btn-cancel plugin-config-cancel" type="button">{{pluginConfigCancel}}</button>
+      <button class="btn-save plugin-config-apply" type="button">{{pluginConfigApply}}</button>
+    </div>
+  </div>
+</div>

@@ -1499,6 +1499,50 @@ body.dark .btn-reveal img {
   background: var(--card-hover);
 }
 
+/* A plugin whose prerequisites are unmet: shown but greyed and unselectable. cursor:not-allowed +
+   no hover highlight signal it can't be picked; pointer-events stay on so its tooltip still works. */
+.app-select-item-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.app-select-item-disabled:hover {
+  background: transparent;
+}
+
+/* docker-integration config: the stack chooser (icon + label rows) and the read-only compose preview. */
+.docker-stacks { display: flex; flex-direction: column; gap: 4px; }
+.docker-stack-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  border: 1px solid var(--card-shadow); border-radius: 8px; cursor: pointer;
+  font-size: 13px; color: var(--card-fg);
+}
+.docker-stack-row img { flex-shrink: 0; object-fit: contain; }
+.docker-stack-row:hover { background: var(--card-hover); }
+.docker-stack-row.active { border-color: var(--accent); }
+/* Read-only compose preview: a code panel whose palette follows the manager's light/dark theme
+   (overridden under body.dark below); OverlayScrollbars handles the overflow. */
+.docker-compose-preview {
+  --code-bg: #f6f8fa; --code-fg: #24292e;
+  --code-key: #005cc5; --code-str: #0a7d22; --code-var: #6f42c1; --code-num: #b15c00; --code-comment: #6a737d;
+  height: 320px; box-sizing: border-box; padding: 10px 12px;
+  border-radius: 8px; border: 1px solid var(--card-shadow); background: var(--code-bg);
+}
+body.dark .docker-compose-preview {
+  --code-bg: #1e1e1e; --code-fg: #d4d4d4;
+  --code-key: #9cdcfe; --code-str: #ce9178; --code-var: #dcdcaa; --code-num: #b5cea8; --code-comment: #6a9955;
+}
+.docker-compose-preview pre { margin: 0; }
+.docker-compose-preview code {
+  font-family: ui-monospace, 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.5;
+  white-space: pre; color: var(--code-fg);
+}
+.docker-compose-preview .tok-key     { color: var(--code-key); }
+.docker-compose-preview .tok-str     { color: var(--code-str); }
+.docker-compose-preview .tok-var     { color: var(--code-var); }
+.docker-compose-preview .tok-num     { color: var(--code-num); }
+.docker-compose-preview .tok-comment { color: var(--code-comment); font-style: italic; }
+
 .dialog-section-divider {
   border: none;
   border-top: 1px solid var(--card-shadow);
