@@ -171,6 +171,23 @@ function buildAppCfg({ profile, name, url, icon, width, height, userAgent, inter
     }
     if (Object.keys(pruned).length) cfg.pluginConfig = pruned
   }
+  // Save-time completion hook: a plugin may export completeConfig(config) to normalise/complete its
+  // per-app settings when the app is saved — e.g. docker-integration seeds a stack's env defaults and
+  // generates its declared secrets ONCE into pluginConfig.env (the config is the single source of the
+  // stack environment; there is no machine-local .env). Idempotent by contract: existing values are
+  // never touched, so re-saving an app keeps its generated secrets stable.
+  for (const rel of cfg.plugins ?? []) {
+    try {
+      const mod = require(path.join(CONFIGS_DIR, rel))
+      if (typeof mod.completeConfig !== 'function') continue
+      const completed = mod.completeConfig(cfg.pluginConfig?.[rel] || {})
+      if (completed && typeof completed === 'object' && Object.keys(completed).length) {
+        cfg.pluginConfig = { ...(cfg.pluginConfig || {}), [rel]: completed }
+      }
+    } catch (err) {
+      console.error(`[plugin] completeConfig failed for ${rel}:`, err)
+    }
+  }
 
   // User-assigned categories, stored as an array (the legacy single-string form, e.g. embedded
   // "microsoft", is still read everywhere via normalizeCategories). Empty selection omits the key.

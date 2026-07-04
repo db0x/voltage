@@ -103,7 +103,8 @@ test('create dialog: docker config dialog shows the stack chooser + compose prev
 // Setup:    Edit dialog for the private test-user-app (Docker available), docker-integration added.
 // Action:   Open its config, choose the draw.io stack, Apply, then Save.
 // Expected: The written config stores the choice under pluginConfig[<docker plugin>].stack — proving
-//           the dynamic-dropdown selection round-trips through the generic config binding + buildAppCfg.
+//           the dynamic-dropdown selection round-trips through the generic config binding + buildAppCfg
+//           (incl. the completeConfig save hook; drawio declares no env/secrets, so none appear).
 test('edit dialog: a chosen docker stack persists to the private config', async ({ managerPageDockerOn: page }) => {
   const card = page.locator('.card[data-private="true"][data-profile="test-user-app"]')
   await card.hover()
@@ -122,6 +123,10 @@ test('edit dialog: a chosen docker stack persists to the private config', async 
     try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig?.[DOCKER_PLUGIN]?.stack } catch { return undefined }
   }).toBe('drawio')
 })
+
+// NB: the e2e "saving generates env defaults + secrets" test left with the onlyoffice stack (the only
+// shipped stack declaring env/secrets). The completeConfig hook itself stays unit-covered in
+// docker-container.spec.js via a temp stack; re-add an e2e once a shipped stack declares secrets again.
 
 // Setup:    Edit dialog for the private test-user-app (url https://example.com), Docker available.
 // Action:   Add the docker-integration plugin (which manages the URL), inspect the field, then save.
