@@ -8,13 +8,21 @@
 // window at the returned URL), and attachPlugin() tears it down when the last window closes. The
 // orchestration itself lives in container.js; this file is the interface + config resolution.
 
-const fs   = require('node:fs')
-const path = require('node:path')
+const fs     = require('node:fs')
+const os     = require('node:os')
+const path   = require('node:path')
+const crypto = require('node:crypto')
 const container = require('./container')
 
 const log = (...a) => console.log('[docker-integration]', ...a)
 
-// Curated compose stacks shipped under stacks/<id>/ (each a compose.yaml + a stack.json describing
+// A stack's compose file may be named compose.yaml or compose.yml (both are canonical to docker).
+function composeNameIn(dir) {
+  for (const n of ['compose.yaml', 'compose.yml']) if (fs.existsSync(path.join(dir, n))) return n
+  return null
+}
+
+// Curated compose stacks shipped under stacks/<id>/ (each a compose.yaml|yml + a stack.json describing
 // it). Listed for the config dialog's Stack dropdown as [{ id, label }]; read live (cheap, and adding
 // a stack dir then needs no code change). The framework injects this into the dialog via discovery —
 // the renderer has no file access, so it can't read the directory itself.
@@ -24,10 +32,12 @@ function stacks() {
   try {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       if (!e.isDirectory()) continue
+      const stackDir = path.join(dir, e.name)
       let meta = {}, content = ''
-      try { meta = JSON.parse(fs.readFileSync(path.join(dir, e.name, 'stack.json'), 'utf8')) } catch {}
-      // content = the raw compose.yaml, shown read-only in the config dialog's preview.
-      try { content = fs.readFileSync(path.join(dir, e.name, 'compose.yaml'), 'utf8') } catch {}
+      try { meta = JSON.parse(fs.readFileSync(path.join(stackDir, 'stack.json'), 'utf8')) } catch {}
+      // content = the raw compose file, shown read-only in the config dialog's preview.
+      const composeName = composeNameIn(stackDir)
+      if (composeName) { try { content = fs.readFileSync(path.join(stackDir, composeName), 'utf8') } catch {} }
       out.push({ id: e.name, label: meta.label || e.name, icon: stackIconDataUrl(meta.icon), content })
     }
   } catch {}
@@ -76,17 +86,22 @@ function available() {
 // Per-app settings arrive as api.config (pkg.pluginConfig[<this plugin's path>]). Resolve the compose
 // file + its metadata: a curated bundled stack (stacks/<id>/), or a power-user custom compose file
 // (composeFile, which overrides the stack). null = not configured for a container → online fallback.
+// A bundled stack is "rich" when it ships more than compose + stack.json (build contexts, config
+// templates, …) — those extra files force on-disk materialization, see composeSpecFor.
 function resolveStack(config) {
   // A custom file carries no metadata we can read here; reuse-detection/health then rely on a fixed
   // port (config.port), and the compose file is expected to honour ${VOLTAGE_PORT} for the URL.
   if (config.composeFile) return { file: config.composeFile, meta: {}, bundled: false }
   if (!config.stack) return null
-  const dir  = path.join(__dirname, 'stacks', config.stack)
-  const file = path.join(dir, 'compose.yaml')
-  if (!fs.existsSync(file)) return null
+  const dir = path.join(__dirname, 'stacks', config.stack)
+  let composeName = null
+  try { composeName = composeNameIn(dir) } catch {}
+  if (!composeName) return null
   let meta = {}
   try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'stack.json'), 'utf8')) } catch {}
-  return { file, meta, bundled: true }
+  let rich = false
+  try { rich = fs.readdirSync(dir).some(n => n !== composeName && n !== 'stack.json') } catch {}
+  return { dir, composeName, meta, rich, bundled: true }
 }
 
 // plugin.svg as a data URL for the "starting…" splash — the self-coloured whale-on-blue glyph reads
@@ -110,13 +125,125 @@ function launchInfo(pkg, { config = {}, i18n = {} } = {}) {
   }
 }
 
-// Build the compose source for the runtime: a bundled stack passes its CONTENT (read from inside
-// app.asar via fs, then piped to docker over stdin — no on-disk file, so neither asar nor snap-docker
-// home-confinement can block it); a custom file passes its real path.
-function composeSpecFor(stack) {
+// Recursive copy that works out of app.asar: Electron's patched fs reads asar sources transparently,
+// but cpSync does not — so walk + read/write file by file onto real disk. A stray .env in the SOURCE
+// is never copied: secrets are generated per machine (materializeStack), and a developer's own .env
+// accidentally left in a stack dir must not ship into anyone's runtime.
+function copyTree(src, dst) {
+  fs.mkdirSync(dst, { recursive: true })
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    if (e.name === '.env') continue
+    const s = path.join(src, e.name), d = path.join(dst, e.name)
+    if (e.isDirectory()) copyTree(s, d)
+    else fs.writeFileSync(d, fs.readFileSync(s))
+  }
+}
+
+// Where a rich stack is materialized so the EXTERNAL docker process can read it. Snap-confined docker
+// cannot read hidden $HOME paths (and gets a private /tmp), but its own $SNAP_USER_COMMON
+// (~/snap/docker/common) is always readable — non-snap docker has no such restriction, so the normal
+// voltage config tree is fine there.
+function stackTargetDir(id) {
+  return container.dockerIsSnap()
+    ? path.join(os.homedir(), 'snap', 'docker', 'common', 'voltage-stacks', id)
+    : path.join(os.homedir(), '.config', 'voltage', 'docker-stacks', id)
+}
+
+// Materializes a rich stack onto real disk: copies the shipped tree (overwriting, so bundled updates
+// propagate on every launch), drops stack.json (voltage metadata, not for docker), and pre-creates
+// bind-mount dirs (createDirs) so docker doesn't create them root-owned. NO .env is written — the
+// app's config (pluginConfig.env, completed by completeConfig on Manager save) is the single source
+// of every variable incl. secrets, delivered as process env on each compose call. A stale .env from
+// the earlier design is removed so it can't shadow anything. Exported for tests.
+function materializeStack(srcDir, targetDir, meta = {}) {
+  copyTree(srcDir, targetDir)
+  fs.rmSync(path.join(targetDir, 'stack.json'), { force: true })
+  fs.rmSync(path.join(targetDir, '.env'), { force: true })
+  for (const d of meta.createDirs || []) fs.mkdirSync(path.join(targetDir, d), { recursive: true })
+}
+
+// Build the compose source for the runtime. Three shapes:
+//   custom file        → its real path (the user owns it).
+//   bundled, single    → the compose CONTENT, piped to docker over stdin — no on-disk file, so neither
+//                        asar nor snap-docker home-confinement can block it.
+//   bundled, rich      → stdin can't carry build contexts/config files, so the whole stack dir is
+//                        materialized to a docker-readable location and referenced by real path
+//                        (relative ./paths in the compose then resolve against that dir).
+function composeSpecFor(stack, stackId) {
   if (!stack.bundled) return { file: stack.file }
-  try { return { content: fs.readFileSync(stack.file, 'utf8') } }
+  if (stack.rich) {
+    const target = stackTargetDir(stackId)
+    try {
+      materializeStack(stack.dir, target, stack.meta)
+      log('materialized rich stack →', target)
+      return { file: path.join(target, stack.composeName) }
+    } catch (err) { log('materializing stack failed:', err.message); return null }
+  }
+  try { return { content: fs.readFileSync(path.join(stack.dir, stack.composeName), 'utf8') } }
   catch (err) { log('reading bundled compose failed:', err.message); return null }
+}
+
+// Manager-save hook (called from buildAppCfg for every selected plugin exporting completeConfig): the
+// app's config is the SINGLE source of the stack's variables — there is no machine-local .env — so
+// saving must complete it. Seeds the stack's env defaults for keys the user hasn't set, and generates
+// any declared-but-missing secret (64-hex) ONCE: values already present are never touched, so secrets
+// stay stable across saves/rebuilds (regenerating would orphan the containers' persisted state).
+// build.private.*.json is gitignored, so persisted secrets don't leak into the repo.
+function completeConfig(config = {}) {
+  const stack = resolveStack(config)
+  if (!stack || !stack.bundled) return config
+  const env = { ...(config.env || {}) }
+  for (const [k, v] of Object.entries(stack.meta.env || {})) if (!(k in env)) env[k] = String(v)
+  for (const name of stack.meta.secrets || []) if (!env[name]) env[name] = crypto.randomBytes(32).toString('hex')
+  return Object.keys(env).length ? { ...config, env } : config
+}
+
+// Environment handed to compose: stack env defaults, overridden by the per-app config.env (the baked
+// build.*.json is the single source — no .env on disk), plus the auto/fixed port. A declared secret
+// still missing at launch (config never saved through the Manager) gets an EPHEMERAL value so JWT
+// signing works rather than silently running with an empty secret — with a log nudge, since ephemeral
+// secrets change every launch. Keys are validated as env identifiers so a stray config value can't
+// smuggle odd strings into the child environment.
+function composeEnvFor(config, port, meta = {}) {
+  const env = {}
+  for (const [k, v] of Object.entries(meta.env || {})) env[k] = String(v)
+  if (config.dataDir) env.VOLTAGE_DATA_DIR = config.dataDir
+  for (const [k, v] of Object.entries(config.env || {})) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && ['string', 'number', 'boolean'].includes(typeof v))
+      env[k] = String(v)
+  }
+  for (const name of meta.secrets || []) {
+    if (!env[name]) {
+      env[name] = crypto.randomBytes(32).toString('hex')
+      log(`secret ${name} missing from the app config — using an ephemeral value (re-save the app in the Manager to persist one)`)
+    }
+  }
+  env.VOLTAGE_PORT = String(port)
+  return env
+}
+
+// Extra readiness gates a stack declares (stack.json "waitFor"): services the entry page depends on
+// beyond the primary one — e.g. OnlyOffice's editor is blank until the DocumentServer answers, even
+// though the backend (the routed service) is up in seconds. Each entry names a fixed `port` or a
+// `portEnv` key resolved from the compose environment, plus an optional probe path/timeout. Returns
+// the resolved [{ port, path, timeoutMs }]; entries whose port can't be resolved are skipped.
+function waitForTargets(meta, env) {
+  const out = []
+  for (const w of meta.waitFor || []) {
+    const port = Number(w.portEnv ? env[w.portEnv] : w.port)
+    if (port > 0) out.push({ port, path: w.path || '/', timeoutMs: w.timeoutMs || 60_000 })
+  }
+  return out
+}
+
+// The routed URL keeps the baked pkg.url's path+query (e.g. /edit/beispiel.docx as the entry page) —
+// only the origin is replaced by the container's localhost:<port>. A bare or root-path URL adds nothing.
+function urlSuffixFrom(pkgUrl) {
+  try {
+    const u = new URL(pkgUrl)
+    const s = u.pathname + u.search
+    return s === '/' ? '' : s
+  } catch { return '' }
 }
 
 // Set when THIS process started the container (drives teardown); the reuse path leaves it null so a
@@ -137,24 +264,30 @@ async function resolveLaunch(pkg, api = {}) {
   const range = portRange || container.DEFAULT_PORT_RANGE
   log(`stack=${config.stack || '(custom)'} project=${project}`)
 
-  // The compose definition is piped to docker over stdin (bundled) or referenced by path (custom).
-  const spec = composeSpecFor(stack)
+  // The compose definition: stdin (bundled single-file), materialized dir (bundled rich), or the
+  // user's real path (custom) — see composeSpecFor.
+  const spec = composeSpecFor(stack, config.stack)
   if (!spec) return null
+
+  // Env is also needed for the reuse probe / teardown below — compose parses ${VARS} on every
+  // subcommand; without values it spams unset-variable warnings. The port is patched in once known.
+  const env = composeEnvFor(config, 0, stack.meta)
 
   // Already up (a second window, or a leftover from a previous session)? Reuse its published port and
   // do NOT mark it as ours, so we won't tear it down.
   if (service && containerPort) {
-    const existing = await container.composeHostPort(spec, project, service, containerPort)
-    if (existing) { log('reusing already-running container on port', existing); return { url: `http://localhost:${existing}` } }
+    const existing = await container.composeHostPort(spec, project, service, containerPort, env)
+    if (existing) {
+      log('reusing already-running container on port', existing)
+      return { url: `http://localhost:${existing}${urlSuffixFrom(pkg.url)}` }
+    }
   }
 
   // Fresh start: a user-fixed port if set, else the next free port in the range.
   const fixed = Number(config.port) > 0 ? Number(config.port) : null
   let port = fixed ?? await container.findFreePort(range)
   if (!port) { log('no free port in range', range); return null }
-
-  const env = { VOLTAGE_PORT: String(port) }
-  if (config.dataDir) env.VOLTAGE_DATA_DIR = config.dataDir
+  env.VOLTAGE_PORT = String(port)
 
   try {
     log('compose up on port', port, '…')
@@ -171,12 +304,19 @@ async function resolveLaunch(pkg, api = {}) {
     catch (err2) { log('compose up retry failed:', (err2.stderr || err2.message || '').toString().trim()); return null }
   }
 
-  session = { spec, project }  // we own it now → tear down on last window close
-  // Best-effort readiness gate; if it never answers we still return the URL and the window's load
-  // guard surfaces the connection error (better than hanging the launch indefinitely).
+  session = { spec, project, env }  // we own it now → tear down on last window close
+  // Best-effort readiness gates; if something never answers we still return the URL and the window's
+  // load guard surfaces the connection error (better than hanging the launch indefinitely). Beyond the
+  // primary service, the stack may declare further waitFor targets (e.g. OnlyOffice's DocumentServer,
+  // which boots far slower than the routed backend — loading before it answers shows a blank editor).
   const healthy = await container.waitHealthy(port, healthPath)
-  log(`container ready=${healthy} → http://localhost:${port}`)
-  return { url: `http://localhost:${port}` }
+  for (const w of waitForTargets(stack.meta, env)) {
+    const ok = await container.waitHealthy(w.port, w.path, w.timeoutMs)
+    log(`waitFor :${w.port}${w.path} ready=${ok}`)
+  }
+  const url = `http://localhost:${port}${urlSuffixFrom(pkg.url)}`
+  log(`container ready=${healthy} → ${url}`)
+  return { url }
 }
 
 // Runs after the window exists (window.js loadPlugins). Refcounts windows and, when the last one
@@ -187,15 +327,19 @@ function attachPlugin(win, api) {
   win.on('closed', () => {
     windowCount--
     if (windowCount <= 0 && session) {
-      container.composeDownSync(session.spec, session.project)
+      container.composeDownSync(session.spec, session.project, session.env)
       session = null
     }
   })
   return {}
 }
 
-// configurable: surfaces the gear button on the plugin chip and loads config.html as the dialog
-// (currently empty). resolveLaunch is exported now so the contract is visible, even though the core
-// hook that invokes it is not wired yet. managesUrl: this plugin owns the app's URL (it routes to a
-// container), so the Manager locks the URL field while it's selected.
-module.exports = { attachPlugin, resolveLaunch, launchInfo, available, stacks, managesUrl: true, configurable: true }
+// configurable: surfaces the gear button on the plugin chip and loads config.html (stack chooser +
+// compose preview). managesUrl: this plugin owns the app's URL (it routes to a container), so the
+// Manager locks the URL field while it's selected. composeEnvFor/urlSuffixFrom/materializeStack are
+// exported for the unit tests.
+module.exports = {
+  attachPlugin, resolveLaunch, launchInfo, available, stacks,
+  materializeStack, composeEnvFor, urlSuffixFrom, completeConfig, waitForTargets,
+  managesUrl: true, configurable: true,
+}

@@ -35,6 +35,16 @@ const withEnv = (extra = {}) => ({ ...process.env, PATH: DOCKER_PATH, ...extra }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
+// Whether the docker CLI in use is the snap package. Decides where rich stacks (with build contexts /
+// extra files) are materialized: snap-confined docker cannot read hidden $HOME paths (~/.config, /tmp
+// is private per-snap), but its own $SNAP_USER_COMMON (~/snap/docker/common) is always readable.
+function dockerIsSnap() {
+  try {
+    const p = execFileSync('sh', ['-c', 'command -v docker'], { env: withEnv(), encoding: 'utf8' }).trim()
+    return p.startsWith('/snap/')
+  } catch { return false }
+}
+
 // Detect the compose command once: Compose v2 first, then the v1 fallback. Returns the argv prefix
 // (['docker','compose'] or ['docker-compose']) or null if neither is usable. Cached for the process.
 let composeCmd  // undefined until probed; null = none found
@@ -114,10 +124,11 @@ async function findFreePort([start, end] = DEFAULT_PORT_RANGE) {
 // The host port a running compose project publishes for <service>'s <containerPort>, or null when the
 // project isn't up (or the lookup fails). Doubles as the "is it already running?" probe — a non-null
 // result means reuse the running container instead of starting a new one.
-async function composeHostPort(spec, project, service, containerPort) {
+// `env` is optional and only silences compose's unset-${VAR} warnings while it parses the file.
+async function composeHostPort(spec, project, service, containerPort, env) {
   try {
     const { bin, args, input } = composeInvoke(spec, project, ['port', service, String(containerPort)])
-    const { stdout } = await run(bin, args, { input, timeout: 10_000 })
+    const { stdout } = await run(bin, args, { input, env, timeout: 10_000 })
     const m = stdout.trim().match(/:(\d+)\s*$/)
     return m ? Number(m[1]) : null
   } catch { return null }
@@ -134,20 +145,23 @@ async function composeUp(spec, project, env) {
 // Tear the stack down (containers + network) and drop any temp compose file. Synchronous on purpose:
 // it runs from the window's 'closed' handler as the app quits, and an async call would be killed when
 // the process exits before it finishes. Best-effort — a failure here must never block shutdown.
-function composeDownSync(spec, project) {
+function composeDownSync(spec, project, env) {
   try {
     const { bin, args, input } = composeInvoke(spec, project, ['down'])
-    execFileSync(bin, args, { input, env: withEnv(), timeout: 60_000 })
+    execFileSync(bin, args, { input, env: withEnv(env), timeout: 60_000 })
   } catch {}
   if (spec._tmpFile) { try { fs.unlinkSync(spec._tmpFile) } catch {} }
 }
 
-// One HTTP probe against the service; resolves true on any response (even a 4xx — the server is up).
+// One HTTP probe against the service. Ready = an actual 2xx/3xx answer: a 5xx must NOT count —
+// OnlyOffice's DocumentServer fronts itself with nginx, which answers 502 within seconds while the
+// DocService behind it still boots for another ~30-60s, so "any response = up" reported ready far
+// too early (the editor then loaded a dead api.js → blank page).
 function probe(port, healthPath) {
   return new Promise(resolve => {
     const req = http.get({ host: '127.0.0.1', port, path: healthPath || '/', timeout: 2_000 }, res => {
       res.resume()
-      resolve(typeof res.statusCode === 'number')
+      resolve(typeof res.statusCode === 'number' && res.statusCode < 400)
     })
     req.on('error', () => resolve(false))
     req.on('timeout', () => { req.destroy(); resolve(false) })
@@ -166,6 +180,6 @@ async function waitHealthy(port, healthPath, timeoutMs = 30_000) {
 }
 
 module.exports = {
-  DEFAULT_PORT_RANGE, findFreePort, isPortFree, withEnv, detectCompose,
+  DEFAULT_PORT_RANGE, findFreePort, isPortFree, withEnv, detectCompose, dockerIsSnap,
   composeHostPort, composeUp, composeDownSync, waitHealthy,
 }
