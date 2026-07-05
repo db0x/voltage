@@ -198,6 +198,34 @@ test('edit dialog: the widget drag-zone light toggle defaults off and persists w
   }).toEqual({ 'plugins/widget/widget.js': { dragZoneLight: true } })
 })
 
+// Setup:    Edit dialog for the private test-user-app; the widget plugin added, its config opened.
+// Action:   Turn the macOS-button-order toggle on, Apply, Save.
+// Expected: The toggle defaults OFF (the classic layout is the default) and the on-state persists to
+//           pluginConfig.macButtonOrder — which widget.js maps to the drag strip's mac-order mode.
+test('edit dialog: the widget macOS-order toggle defaults off and persists when turned on', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const toggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="macButtonOrder"]')
+  await expect(toggle).not.toHaveClass(/active/)  // default off (classic layout)
+
+  await toggle.click()
+  await expect(toggle).toHaveClass(/active/)
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { macButtonOrder: true } })
+})
+
 // Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
 // Action:   Inspect the title-bar fieldset legend.
 // Expected: Its icon resolves to assets/panel.svg — the data-icon="panel" must be wired in BOTH the

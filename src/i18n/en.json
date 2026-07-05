@@ -47,6 +47,8 @@
   "widgetConfigDragZoneHint": "Adds an invisible 1px zone at the top edge that expands on hover and lets you move the window — independent of the app. Useful for apps whose own bar can't be dragged (e.g. Office documents).",
   "widgetConfigDragZoneLight": "Light drag bar",
   "widgetConfigDragZoneLightHint": "Shows the top drag bar in a light theme instead of dark.",
+  "widgetConfigMacOrder": "macOS-style button order",
+  "widgetConfigMacOrderHint": "Window controls on the left with Close outermost (like macOS); gear, About, DevTools and zoom move to the right. Off = the classic layout.",
   "widgetDragConfigLabel": "Open Voltage configuration for {name}",
   "widgetConfigShadowSection": "Shadow",
   "widgetConfigTitlebarSection": "Title bar",

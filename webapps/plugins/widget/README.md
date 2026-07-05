@@ -60,6 +60,7 @@ drag-to-move panel.
 | `suppressAppTitlebar` | `false` | Stop the app drawing its own titlebar/drag strip (e.g. Teams): a JS spoof hides the standalone/WCO signals at document start, and every page-declared `-webkit-app-region: drag` is neutralised |
 | `dragZone` | `true` | The top drag strip (see above); disable for apps whose own titlebar already moves the window |
 | `dragZoneLight` | `false` | Light theme for the drag strip (default dark) |
+| `macButtonOrder` | `false` | macOS-style button order on the drag strip: window controls on the left with close outermost (traffic-light order), gear/About/DevTools/zoom on the right. Off = the classic layout |
 | `showInTaskbar` | `false` | Off = the Manager writes `X-Voltage-Widget=true` into the `.desktop` launcher and the GNOME extension hides the app from the dash/dock. Enable for the rare widget you want docked |
 
 Changing a value requires a rebuild (baked into the AppImage's `pluginConfig`).

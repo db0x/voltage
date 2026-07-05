@@ -146,6 +146,11 @@ function dragZoneEnabled(config) { return config?.dragZone !== false }
 // well over any page; an explicit true switches it to a light variant (chosen per app in config.html).
 function dragZoneLight(config) { return config?.dragZoneLight === true }
 
+// Whether the drag strip arranges its buttons macOS-style: the window controls move to the LEFT with
+// close outermost (traffic-light order close/min/max), gear/About/DevTools/zoom to the right. Default
+// OFF — the classic layout (gear left, window controls right) stays as-is; opt-in per app.
+function macButtonOrder(config) { return config?.macButtonOrder === true }
+
 // Neutralises every -webkit-app-region:drag region the app declares (Teams marks a top strip as one,
 // which then moves the window and even maximises on double-click). The JS spoof (no-titlebar.js) only
 // stops apps that GATE the strip on a detected display-mode; this CSS disables the drag behaviour
@@ -191,7 +196,7 @@ function hostHtml(config) {
 // mode (a frameless host window), which is why it travels with the other view-mode hooks.
 function dragZone(config) {
   return dragZoneEnabled(config)
-    ? { html: DRAG_ZONE_HTML, preload: DRAG_ZONE_PRELOAD, light: dragZoneLight(config) }
+    ? { html: DRAG_ZONE_HTML, preload: DRAG_ZONE_PRELOAD, light: dragZoneLight(config), macOrder: macButtonOrder(config) }
     : null
 }
 

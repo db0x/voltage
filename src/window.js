@@ -800,6 +800,8 @@ function createWindow(pkg, opts = {}) {
         usesZoomPlugin(pkg) ? 'zoom-enabled' : '',
         devToolsEnabled(pkg) ? 'devtools-enabled' : '',
         viewMode.dragZone.light ? 'light' : '',
+        // macOS-style button order (close/min/max on the left) — widget config, default classic.
+        viewMode.dragZone.macOrder ? 'mac-order' : '',
       ].filter(Boolean).join(' ')
       const dragHtml = viewMode.dragZone.html
         .replace('{{configLabel}}', dragLabel('widgetDragConfigLabel', 'Open Voltage configuration for {name}'))

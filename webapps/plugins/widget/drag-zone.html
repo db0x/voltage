@@ -29,7 +29,10 @@
   .handle {
     position: absolute; top: 0; left: 16px; right: 16px; height: 42px;
     box-sizing: border-box;
-    display: flex; align-items: center; justify-content: space-between;
+    /* ONE flat flex row (gear, gap, zoom, …, window controls): all controls are siblings so the
+       mac-order mode below can rearrange them purely via CSS `order` — elements can't be moved
+       between separate flex containers. The .gap spacer replaces justify-content: space-between. */
+    display: flex; align-items: center; gap: 2px;
     padding: 0 6px;
     background: rgba(30, 30, 30, 0.85);
     backdrop-filter: blur(4px);
@@ -46,8 +49,9 @@
   }
   body.shown .handle { opacity: 1; }
 
-  /* Window-control buttons — no-drag so clicks land instead of starting a window drag. */
-  .buttons { display: flex; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
+  /* Flexible spacer between the left and right control groups; stays part of the drag surface
+     (no no-drag on it), so the bar's middle keeps moving the window. */
+  .gap { flex: 1; align-self: stretch; }
   .btn {
     -webkit-app-region: no-drag;
     width: 30px; height: 26px; padding: 0; border: none; border-radius: 6px;
@@ -80,22 +84,28 @@
      it can never overlap either. --dz-right is the width that group occupies; it grows when the zoom
      controls are present. The label box is centred within that zone (and capped to its width, so it
      ellipsises rather than spilling); on a narrow bar it anchors to the left edge of the zone instead. */
-  .handle { --dz-right: 140px; }
+  .handle { --dz-left: 42px; --dz-right: 140px; }
   body.devtools-enabled .handle { --dz-right: 170px; }
   body.zoom-enabled .handle { --dz-right: 256px; }
   body.zoom-enabled.devtools-enabled .handle { --dz-right: 286px; }
+  /* mac-order free-zone widths: left = the three window controls, right = gear + About (+DevTools,
+     + zoom group) — must track the order rules at the bottom of this sheet. */
+  body.mac-order .handle { --dz-left: 104px; --dz-right: 80px; }
+  body.mac-order.devtools-enabled .handle { --dz-right: 110px; }
+  body.mac-order.zoom-enabled .handle { --dz-right: 196px; }
+  body.mac-order.zoom-enabled.devtools-enabled .handle { --dz-right: 226px; }
   .label {
     position: absolute; top: 50%;
-    left: calc((42px + 100% - var(--dz-right)) / 2);
+    left: calc((var(--dz-left) + 100% - var(--dz-right)) / 2);
     transform: translate(-50%, -50%);
-    max-width: calc(100% - 42px - var(--dz-right));
+    max-width: calc(100% - var(--dz-left) - var(--dz-right));
     font-size: 12px; color: rgba(255, 255, 255, 0.92);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     pointer-events: none; opacity: 0; transition: opacity 120ms ease;
   }
   .config:hover .label, .ctl:hover .label { opacity: 1; }
   @media (max-width: 420px) {
-    .label { left: 42px; transform: translateY(-50%); }
+    .label { left: var(--dz-left); transform: translateY(-50%); }
   }
 
   /* Zoom controls (− / level / +) plus a separator from the window buttons — both shown only for apps
@@ -127,6 +137,20 @@
   body.light .btn-close:hover { background: #e81123; color: #fff; }
   body.light .label, body.light .zoom-pct { color: rgba(0, 0, 0, 0.85); }
   body.light .sep { background: rgba(0, 0, 0, 0.18); }
+
+  /* mac-order — opt-in per app (widget config, default = the classic layout above): window controls
+     move to the LEFT with close outermost (macOS traffic-light order close/min/max), everything else
+     (zoom, DevTools, About, gear) to the right. Pure reordering of the flat flex row; EVERY child
+     needs an explicit order here, since unlisted elements (order:0) would jump to the front. */
+  body.mac-order .ctl-close { order: 1; }
+  body.mac-order .ctl-min   { order: 2; }
+  body.mac-order .ctl-max   { order: 3; }
+  body.mac-order .gap       { order: 4; }
+  body.mac-order .zoom      { order: 5; }
+  body.mac-order .sep       { order: 6; }
+  body.mac-order .devtools  { order: 7; }
+  body.mac-order .ctl-about { order: 8; }
+  body.mac-order .config    { order: 9; }
 </style>
 </head>
 <body class="{{bodyClass}}">
@@ -137,10 +161,10 @@
       </button>
       <span class="label">{{configLabel}}</span>
     </div>
-    <div class="buttons">
-      <!-- Zoom controls — shown only when the app loads the zoom plugin (body.zoom-enabled). The − / +
-           buttons drive the zoom plugin's applyZoom via main; the readout shows the live level. -->
-      <div class="zoom">
+    <div class="gap"></div>
+    <!-- Zoom controls — shown only when the app loads the zoom plugin (body.zoom-enabled). The − / +
+         buttons drive the zoom plugin's applyZoom via main; the readout shows the live level. -->
+    <div class="zoom">
         <button class="btn" data-action="zoom-out">
           <svg viewBox="0 0 16 16"><line x1="3.5" y1="8" x2="12.5" y2="8"/></svg>
         </button>
@@ -148,35 +172,34 @@
         <button class="btn" data-action="zoom-in">
           <svg viewBox="0 0 16 16"><line x1="3.5" y1="8" x2="12.5" y2="8"/><line x1="8" y1="3.5" x2="8" y2="12.5"/></svg>
         </button>
-      </div>
-      <div class="sep"></div>
-      <!-- DevTools — opens Chromium's developer tools for the wrapped app view (detached). Filled
-           dev-tools.svg glyph; sits between the zoom group and the About button. -->
-      <div class="ctl devtools"><span class="label">{{devtoolsLabel}}</span>
-        <button class="btn btn-devtools" data-action="devtools">
-          <svg viewBox="0 0 16 16"><path d="M 9.5,0 5.5,15.754 6.5,16 10.5,0.246 Z M 4.2539,3 0,8 4.2539,13 6,12.291 2.3359,8 6,3.709 Z M 11.746,3 10,3.709 13.664,8 10,12.291 11.746,13 16,8 Z"/></svg>
-        </button>
-      </div>
-      <div class="ctl"><span class="label">{{aboutLabel}}</span>
-        <button class="btn btn-about" data-action="about">
-          <svg viewBox="0 0 16 16"><path d="M 8 1 A 7 7 0 0 0 1 8 A 7 7 0 0 0 8 15 A 7 7 0 0 0 15 8 A 7 7 0 0 0 8 1 z M 8 3.75 A 1.25 1.25 0 0 1 9.25 5 A 1.25 1.25 0 0 1 8 6.25 A 1.25 1.25 0 0 1 6.75 5 A 1.25 1.25 0 0 1 8 3.75 z M 7 7 L 9 7 L 9 12 L 7 12 L 7 7 z"/></svg>
-        </button>
-      </div>
-      <div class="ctl"><span class="label">{{minLabel}}</span>
-        <button class="btn btn-min" data-action="minimize">
-          <svg viewBox="0 0 16 16"><path fill="currentColor" d="M 5 10 L 5 12 L 11 12 L 11 10 L 5 10 z"/></svg>
-        </button>
-      </div>
-      <div class="ctl"><span class="label">{{maxLabel}}</span>
-        <button class="btn btn-max" data-action="maximize">
-          <svg viewBox="0 0 16 16"><path fill="currentColor" d="M 2,2 C 1,2 1,3 1,3 V 7 H 3 V 4 H 6 V 2 Z M 10,2 V 4 H 13 V 7 H 15 V 3 C 15,2 14,2 14,2 Z M 1,9 V 13 C 1,14 2,14 2,14 H 6 V 12 H 3 V 9 Z M 13,9 V 12 H 10 V 14 H 14 C 14,14 15,14 15,13 V 9 Z"/></svg>
-        </button>
-      </div>
-      <div class="ctl"><span class="label">{{closeLabel}}</span>
-        <button class="btn btn-close" data-action="quit">
-          <svg viewBox="0 0 16 16"><line x1="4.2" y1="4.2" x2="11.8" y2="11.8"/><line x1="11.8" y1="4.2" x2="4.2" y2="11.8"/></svg>
-        </button>
-      </div>
+    </div>
+    <div class="sep"></div>
+    <!-- DevTools — opens Chromium's developer tools for the wrapped app view (detached). Filled
+         dev-tools.svg glyph; sits between the zoom group and the About button. -->
+    <div class="ctl devtools"><span class="label">{{devtoolsLabel}}</span>
+      <button class="btn btn-devtools" data-action="devtools">
+        <svg viewBox="0 0 16 16"><path d="M 9.5,0 5.5,15.754 6.5,16 10.5,0.246 Z M 4.2539,3 0,8 4.2539,13 6,12.291 2.3359,8 6,3.709 Z M 11.746,3 10,3.709 13.664,8 10,12.291 11.746,13 16,8 Z"/></svg>
+      </button>
+    </div>
+    <div class="ctl ctl-about"><span class="label">{{aboutLabel}}</span>
+      <button class="btn btn-about" data-action="about">
+        <svg viewBox="0 0 16 16"><path d="M 8 1 A 7 7 0 0 0 1 8 A 7 7 0 0 0 8 15 A 7 7 0 0 0 15 8 A 7 7 0 0 0 8 1 z M 8 3.75 A 1.25 1.25 0 0 1 9.25 5 A 1.25 1.25 0 0 1 8 6.25 A 1.25 1.25 0 0 1 6.75 5 A 1.25 1.25 0 0 1 8 3.75 z M 7 7 L 9 7 L 9 12 L 7 12 L 7 7 z"/></svg>
+      </button>
+    </div>
+    <div class="ctl ctl-min"><span class="label">{{minLabel}}</span>
+      <button class="btn btn-min" data-action="minimize">
+        <svg viewBox="0 0 16 16"><path fill="currentColor" d="M 5 10 L 5 12 L 11 12 L 11 10 L 5 10 z"/></svg>
+      </button>
+    </div>
+    <div class="ctl ctl-max"><span class="label">{{maxLabel}}</span>
+      <button class="btn btn-max" data-action="maximize">
+        <svg viewBox="0 0 16 16"><path fill="currentColor" d="M 2,2 C 1,2 1,3 1,3 V 7 H 3 V 4 H 6 V 2 Z M 10,2 V 4 H 13 V 7 H 15 V 3 C 15,2 14,2 14,2 Z M 1,9 V 13 C 1,14 2,14 2,14 H 6 V 12 H 3 V 9 Z M 13,9 V 12 H 10 V 14 H 14 C 14,14 15,14 15,13 V 9 Z"/></svg>
+      </button>
+    </div>
+    <div class="ctl ctl-close"><span class="label">{{closeLabel}}</span>
+      <button class="btn btn-close" data-action="quit">
+        <svg viewBox="0 0 16 16"><line x1="4.2" y1="4.2" x2="11.8" y2="11.8"/><line x1="11.8" y1="4.2" x2="4.2" y2="11.8"/></svg>
+      </button>
     </div>
   </div>
 </body>
