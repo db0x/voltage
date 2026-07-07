@@ -2,12 +2,41 @@
 const { build } = require('electron-builder')
 const fs = require('node:fs')
 const path = require('node:path')
+const { execSync } = require('node:child_process')
 const { installDesktop, installIcon } = require('./lib')
 const { appName } = require('../src/app-naming')
 const { appImagePath } = require('../src/app-paths')
 
 const APP_ID_BASE = 'de.db0x.voltage'
 const CONFIGS_DIR = path.join(__dirname, '..', 'webapps')
+const PKG_PATH    = path.join(__dirname, '..', 'package.json')
+
+// electron-builder rewrites the SOURCE package.json in place while building (it merges extraMetadata
+// — profile/plugins/name/appId — into it and normally restores it afterwards). If a build is killed
+// mid-flight (timeout, Ctrl+C), that restore never runs and the repo package.json is left as the app's
+// baked config: `profile` set, `scripts`/`devDependencies` gone. main.js then launches THAT app
+// instead of the Manager, and npm scripts break. Two guards below neutralise this:
+//   healPackageJson()      — heal a corrupted package.json left by a prior interrupted build.
+//   withPackageJsonGuard() — snapshot + restore around each build so a normal run never leaks it.
+
+// A source package.json carrying `profile` is corrupted (the real repo one never does). Restore it
+// from git so `npm start` opens the Manager again. Best-effort — a dirty/foreign checkout is skipped.
+function healPackageJson() {
+  try {
+    if (!JSON.parse(fs.readFileSync(PKG_PATH, 'utf8')).profile) return
+    execSync('git checkout -- package.json', { cwd: path.join(__dirname, '..'), stdio: 'ignore' })
+    console.log('  Healed package.json left corrupted by an interrupted build (restored from git)')
+  } catch { /* not a git checkout or unreadable — leave as-is */ }
+}
+
+// Runs fn with the current package.json snapshotted and restored afterwards, so electron-builder's
+// in-place rewrite can never survive a successful build (the killed case is covered by healPackageJson
+// on the next run). The snapshot is the live bytes, so legitimate uncommitted edits are preserved.
+async function withPackageJsonGuard(fn) {
+  const snapshot = fs.readFileSync(PKG_PATH)
+  try { return await fn() }
+  finally { try { fs.writeFileSync(PKG_PATH, snapshot) } catch {} }
+}
 
 // Move a file, falling back to copy+remove across filesystems (a custom output dir may sit on a
 // different mount than dist/, where rename() would fail with EXDEV).
@@ -107,11 +136,13 @@ async function buildOne(configFile) {
   // publish: 'never' — this is a local AppImage build script, never a release. Without it,
   // electron-builder auto-detects CI (e.g. a push to main) and tries to publish to GitHub Releases,
   // which fails with "GH_TOKEN is not set". Make the intent explicit (as electron-builder advises).
-  await build({ config: expandConfig(app), projectDir: process.cwd(), publish: 'never' })
+  await withPackageJsonGuard(() =>
+    build({ config: expandConfig(app), projectDir: process.cwd(), publish: 'never' }))
   // Write build metadata alongside the AppImage so the Manager can detect
   // outdated builds and query capabilities (e.g. rclone binding) without
-  // mounting or inspecting the AppImage itself.
-  const { version } = require('../package.json')
+  // mounting or inspecting the AppImage itself. Read from disk (not require cache) — the guard just
+  // restored package.json, and a stale cached copy could be the build-mangled one.
+  const { version } = JSON.parse(fs.readFileSync(PKG_PATH, 'utf8'))
   // rcloneFileHandler in the sidecar drives the manager's rclone card badge — now derived from
   // whether the app loads the rclone-sync plugin (rclone is a plugin, no longer a base flag).
   const hasRclonePlugin = (app.plugins ?? []).some(p => /(^|\/)rclone-sync\//.test(p))
@@ -133,6 +164,7 @@ async function buildOne(configFile) {
 }
 
 async function main() {
+  healPackageJson()  // repair a package.json left corrupted by a prior interrupted build
   const profile = process.argv[2]
 
   if (profile) {

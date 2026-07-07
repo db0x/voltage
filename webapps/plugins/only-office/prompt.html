@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- Generic two-button prompt for the only-office plugin (conflict on open, sync-back on close).
+     {{tokens}} are filled by only-office.js (localised there). The buttons answer through the
+     rclone-confirm preload bridge (window.electronAPI.rcloneConfirm) — plugin-agnostic plumbing
+     despite the historical name: 0 = primary (destructive/overwrite), 1 = secondary (keep). Styled
+     like src/error-page.html (opaque card) so it reads the same in widget mode. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0 }
+  :root { --bg:#f4f4f5; --fg:#1e1e1e; --muted:#777; --accent:#1a73e8; --card:#ffffff; --border:#e4e4e7 }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1e1e1e; --fg:#f0f0f0; --muted:#aaa; --accent:#5ab4f0; --card:#2c2c2c; --border:#444 }
+  }
+  html, body { height: 100% }
+  body {
+    background: var(--bg); color: var(--fg); color-scheme: light dark;
+    font-family: 'Ubuntu', system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    max-width: 460px; width: 100%; padding: 32px 28px; text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  }
+  h1 { font-size: 17px; font-weight: 600; margin-bottom: 10px }
+  p  { font-size: 13px; line-height: 1.5; color: var(--muted); word-break: break-word }
+  .actions { margin-top: 22px; display: flex; gap: 10px; justify-content: center }
+  button {
+    padding: 9px 22px; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+    background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 500;
+    transition: opacity .15s;
+  }
+  button:hover { opacity: .85 }
+  button.secondary { background: transparent; color: var(--fg); border-color: var(--border) }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>{{title}}</h1>
+    <p>{{message}}</p>
+    <div class="actions">
+      <button onclick="window.electronAPI.rcloneConfirm(0)">{{btnPrimary}}</button>
+      <button class="secondary" onclick="window.electronAPI.rcloneConfirm(1)">{{btnSecondary}}</button>
+    </div>
+  </div>
+</body>
+</html>

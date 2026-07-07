@@ -1,0 +1,40 @@
+<!-- Config dialog shipped by the only-office plugin. The manager's plugin-config host
+     (src/manager/plugin-config.js) renders this into the manager DOM and owns the generic
+     open/close + Apply/Cancel wiring; the markup reuses the manager's .dialog-* classes so it
+     matches every other dialog. {{pluginIcon}} is the plugin's icon (a var); {{oo*}} are i18n keys.
+
+     Two plain text fields bound via data-config-key: the backend's base URL and the user's API
+     token (from the backend start page's "API-Token" section). Both are baked into the AppImage's
+     pluginConfig at build time — the token is a per-user credential, so treat built AppImages as
+     personal (same trade-off as the docker plugin's secrets). -->
+<div class="dialog-overlay plugin-config-overlay hidden">
+  <div class="dialog">
+    <div class="dialog-header">
+      <img src="{{pluginIcon}}" alt="">
+      <span class="dialog-title">{{ooConfigTitle}}</span>
+      <button class="dialog-close" type="button">✕</button>
+    </div>
+    <div class="dialog-fields">
+      <div class="dialog-field">
+        <label for="oo-config-baseurl">{{ooConfigBaseUrl}}
+          <span class="field-help" data-tooltip="{{ooConfigBaseUrlHint}}">?</span>
+        </label>
+        <input type="text" id="oo-config-baseurl" autocomplete="off" spellcheck="false"
+               placeholder="http://192.168.0.33:5001" data-config-key="baseUrl">
+      </div>
+      <div class="dialog-field">
+        <label for="oo-config-apitoken">{{ooConfigApiToken}}
+          <span class="field-help" data-tooltip="{{ooConfigApiTokenHint}}">?</span>
+        </label>
+        <input type="text" id="oo-config-apitoken" autocomplete="off" spellcheck="false"
+               data-config-key="apiToken">
+      </div>
+    </div>
+    <!-- Apply commits the edit to the app's config; Cancel/✕/Esc discard. The host wires these by
+         class (.plugin-config-apply / .plugin-config-cancel). -->
+    <div class="confirm-actions">
+      <button class="btn-cancel plugin-config-cancel" type="button">{{pluginConfigCancel}}</button>
+      <button class="btn-save plugin-config-apply" type="button">{{pluginConfigApply}}</button>
+    </div>
+  </div>
+</div>
