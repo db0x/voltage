@@ -72,6 +72,9 @@ first login.
    `/edit` is served (an in-memory map). After a backend restart the key is gone → forcesave reports
    `no-session`; the plugin then waits the full window (the DS's own grace save may still be coming).
 4. Any API failure (server down, bad token) falls back to loading `pkg.url` normally.
+5. Apps that also load the **widget** plugin get a home button (this plugin's glyph) on the drag
+   strip: it routes the app back to `/` — the document list, which the editor page has no link back
+   to. It shows only while an editor page (`/edit/…`) is open and hides on the list itself.
 
 The prompt pages answer through the generic `rclone-confirm` preload bridge
 (`window.electronAPI.rcloneConfirm`) — plugin-agnostic plumbing despite the historical name, so no

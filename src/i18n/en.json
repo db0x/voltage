@@ -31,6 +31,7 @@
   "maximizeWindow": "Maximize",
   "minimizeWindow": "Minimize",
   "openDevTools": "Open developer tools",
+  "widgetDragHomeLabel": "Back to the document list",
   "widgetMove": "Move",
   "widgetMoveHint": "Drag to move",
   "widgetMoveDone": "Done",

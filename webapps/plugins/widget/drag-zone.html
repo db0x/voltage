@@ -83,8 +83,10 @@
   /* The label lives in the FREE ZONE between the gear (~42px on the left) and the right-hand group, so
      it can never overlap either. --dz-right is the width that group occupies; it grows when the zoom
      controls are present. The label box is centred within that zone (and capped to its width, so it
-     ellipsises rather than spilling); on a narrow bar it anchors to the left edge of the zone instead. */
-  .handle { --dz-left: 42px; --dz-right: 140px; }
+     ellipsises rather than spilling); on a narrow bar it anchors to the left edge of the zone instead.
+     --dz-extra widens the right group for buttons that are ORTHOGONAL to the zoom/devtools combos
+     (currently the home button), so those combos don't have to be re-enumerated per extra button. */
+  .handle { --dz-left: 42px; --dz-right: 140px; --dz-extra: 0px; }
   body.devtools-enabled .handle { --dz-right: 170px; }
   body.zoom-enabled .handle { --dz-right: 256px; }
   body.zoom-enabled.devtools-enabled .handle { --dz-right: 286px; }
@@ -94,11 +96,13 @@
   body.mac-order.devtools-enabled .handle { --dz-right: 110px; }
   body.mac-order.zoom-enabled .handle { --dz-right: 196px; }
   body.mac-order.zoom-enabled.devtools-enabled .handle { --dz-right: 226px; }
+  /* The home button sits in the right group in BOTH layouts, so its width always adds to the right. */
+  body.home-enabled .handle { --dz-extra: 30px; }
   .label {
     position: absolute; top: 50%;
-    left: calc((var(--dz-left) + 100% - var(--dz-right)) / 2);
+    left: calc((var(--dz-left) + 100% - var(--dz-right) - var(--dz-extra)) / 2);
     transform: translate(-50%, -50%);
-    max-width: calc(100% - var(--dz-left) - var(--dz-right));
+    max-width: calc(100% - var(--dz-left) - var(--dz-right) - var(--dz-extra));
     font-size: 12px; color: rgba(255, 255, 255, 0.92);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     pointer-events: none; opacity: 0; transition: opacity 120ms ease;
@@ -119,6 +123,13 @@
      from the build config's "devTools" flag). Hidden entirely otherwise, matching the disabled tools. */
   .ctl.devtools { display: none; }
   body.devtools-enabled .ctl.devtools { display: flex; }
+
+  /* Home button — shown only for apps that load the only-office plugin (body.home-enabled): routes
+     the app view back to "/" (the backend's document list). Its glyph is the only-office plugin icon,
+     which brings its own fill colors — so no currentColor stroke like the other buttons. */
+  .ctl.home { display: none; }
+  body.home-enabled .ctl.home { display: flex; }
+  .btn-home svg { width: 15px; height: 15px; fill: none; stroke: none; }
   .zoom-pct { min-width: 40px; text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.9);
     -webkit-app-region: no-drag; pointer-events: none; font-variant-numeric: tabular-nums; }
 
@@ -148,9 +159,10 @@
   body.mac-order .gap       { order: 4; }
   body.mac-order .zoom      { order: 5; }
   body.mac-order .sep       { order: 6; }
-  body.mac-order .devtools  { order: 7; }
-  body.mac-order .ctl-about { order: 8; }
-  body.mac-order .config    { order: 9; }
+  body.mac-order .home      { order: 7; }
+  body.mac-order .devtools  { order: 8; }
+  body.mac-order .ctl-about { order: 9; }
+  body.mac-order .config    { order: 10; }
 </style>
 </head>
 <body class="{{bodyClass}}">
@@ -174,6 +186,17 @@
         </button>
     </div>
     <div class="sep"></div>
+    <!-- Home — only-office apps only (body.home-enabled): navigates the app view back to "/", the
+         backend's document list. Uses the only-office plugin.svg glyph (own colors, no stroke). -->
+    <div class="ctl home"><span class="label">{{homeLabel}}</span>
+      <button class="btn btn-home" data-action="home">
+        <svg viewBox="0 0 16 16">
+          <path style="fill:#ea6e41" d="M 8.0003245,8 C 7.5360182,7.9999196 7.0716884,8.0984588 6.7280927,8.2947984 L 1.5150755,11.27316 c -0.68719247,0.392679 -0.68655411,1.061291 6.373e-4,1.453971 l 5.2123773,2.97836 c 0.6871918,0.392679 1.8572734,0.392678 2.5444641,0 l 5.2123788,-2.97836 c 0.68719,-0.392678 0.686543,-1.061294 -6.64e-4,-1.453971 L 9.2725564,8.2947984 C 8.9289607,8.0984588 8.4646312,8.0000804 8.0003245,8 Z"/>
+          <path style="fill:#aed351" d="M 8.0003245,3.9999999 C 7.5360182,3.9999195 7.0716884,4.0984587 6.7280927,4.2947983 L 1.5150755,7.2731596 C 0.82788303,7.6658384 0.82852139,8.3344512 1.5157128,8.7271305 l 5.2123773,2.9783605 c 0.6871918,0.392679 1.8572734,0.392678 2.5444641,0 L 14.484933,8.7271305 c 0.68719,-0.3926781 0.686543,-1.0612933 -6.64e-4,-1.4539709 L 9.2725564,4.2947983 C 8.9289607,4.0984587 8.4646312,4.0000803 8.0003245,3.9999999 Z"/>
+          <path style="fill:#3b9dda" d="M 8.0003245,0 C 7.5360182,-8.0400002e-5 7.0716884,0.0984588 6.7280927,0.29479841 L 1.5150755,3.2731595 C 0.82788303,3.6658383 0.82852139,4.3344511 1.5157128,4.7271304 l 5.2123773,2.9783608 c 0.6871918,0.3926784 1.8572734,0.392678 2.5444641,0 L 14.484933,4.7271304 c 0.68719,-0.3926781 0.686543,-1.0612933 -6.64e-4,-1.4539709 L 9.2725564,0.29479841 C 8.9289607,0.0984588 8.4646312,8.0400002e-5 8.0003245,0 Z"/>
+        </svg>
+      </button>
+    </div>
     <!-- DevTools — opens Chromium's developer tools for the wrapped app view (detached). Filled
          dev-tools.svg glyph; sits between the zoom group and the About button. -->
     <div class="ctl devtools"><span class="label">{{devtoolsLabel}}</span>

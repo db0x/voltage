@@ -33,6 +33,10 @@ cross-origin iframes some apps render their toolbars in (e.g. Office documents).
   (`--voltage-edit-config=<profile>` deep link).
 - **right:** window controls — DevTools (hidden when the app sets `"devTools": false`),
   About, minimize, maximize, close. For apps that also load the **zoom** plugin: − / live % / +.
+  For apps that also load the **only-office** plugin: a home button (the only-office glyph) that
+  routes the app back to `/` — the backend's document list, which the editor page has no way back to.
+  It appears only while an editor page (`/edit/…`) is open; on the list itself it would be a no-op,
+  so it is hidden there (toggled live on every navigation).
 - Hovering any button shows its label centred on the bar.
 
 As an alternative, **Move mode** (context menu → *Move*, or `F10`) overlays the page with a

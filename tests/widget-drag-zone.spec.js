@@ -57,7 +57,7 @@ test('dragZone html ships the (body.mac-order-gated) macOS button order', () => 
   expect(html).toContain('class="ctl ctl-min"')
   expect(html).toContain('class="ctl ctl-max"')
   expect(html).toMatch(/body\.mac-order \.ctl-close\s*\{\s*order:\s*1/)
-  expect(html).toMatch(/body\.mac-order \.config\s*\{\s*order:\s*9/)
+  expect(html).toMatch(/body\.mac-order \.config\s*\{\s*order:\s*10/)
 })
 
 // Setup:    A config with the drag zone explicitly switched off.
@@ -102,6 +102,26 @@ test('dragZone html includes the (devTools-gated) DevTools button', () => {
   // The gate: hidden by default, shown only with the devtools-enabled body class.
   expect(html).toMatch(/\.ctl\.devtools\s*\{\s*display:\s*none/)
   expect(html).toMatch(/body\.devtools-enabled\s+\.ctl\.devtools\s*\{\s*display:\s*flex/)
+})
+
+// Setup:    The default (enabled) descriptor.
+// Action:   Inspect the overlay markup for the home button and its visibility gate.
+// Expected: The button (data-action="home") ships wrapped in .ctl.home, hidden by default and only
+//           revealed under body.home-enabled — toggled LIVE by main (only-office apps, on every
+//           navigation): shown while an editor page (/edit/…) is open, hidden on the document list
+//           "/" itself, where the button would be a no-op. The preload must therefore wire the
+//           voltage:dragzone-home channel to that class. In mac-order the button must carry an
+//           explicit order (unlisted flex children would jump to the front).
+test('dragZone html includes the (navigation-gated) only-office home button', () => {
+  const { html, preload } = dragZone({})
+  expect(html).toContain('data-action="home"')
+  expect(html).toContain('class="ctl home"')
+  expect(html).toMatch(/\.ctl\.home\s*\{\s*display:\s*none/)
+  expect(html).toMatch(/body\.home-enabled\s+\.ctl\.home\s*\{\s*display:\s*flex/)
+  expect(html).toMatch(/body\.mac-order \.home\s*\{\s*order:\s*7/)
+  const preloadSrc = fs.readFileSync(preload, 'utf8')
+  expect(preloadSrc).toContain("'voltage:dragzone-home'")
+  expect(preloadSrc).toContain('home-enabled')
 })
 
 // Setup:    The default (enabled) descriptor.

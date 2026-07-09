@@ -10,6 +10,13 @@ ipcRenderer.on('voltage:dragzone-show', (_event, shown) => {
   try { document.body.classList.toggle('shown', shown === true) } catch {}
 })
 
+// main → overlay: whether the home button applies to the CURRENT page (only sent for only-office
+// apps, on every navigation). On the document list "/" — the very page the button routes to — it
+// would be a no-op, so main hides it there; it appears only while an editor page (/edit/…) is open.
+ipcRenderer.on('voltage:dragzone-home', (_event, enabled) => {
+  try { document.body.classList.toggle('home-enabled', enabled === true) } catch {}
+})
+
 // main → overlay: current zoom level in percent for the zoom readout (only present for zoom-plugin apps).
 ipcRenderer.on('voltage:dragzone-zoom', (_event, pct) => {
   try {

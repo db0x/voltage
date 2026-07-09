@@ -31,6 +31,7 @@
   "maximizeWindow": "Maximieren",
   "minimizeWindow": "Minimieren",
   "openDevTools": "Entwicklertools öffnen",
+  "widgetDragHomeLabel": "Zurück zur Dokumentenliste",
   "widgetMove": "Verschieben",
   "widgetMoveHint": "Zum Verschieben ziehen",
   "widgetMoveDone": "Fertig",
