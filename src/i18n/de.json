@@ -77,6 +77,8 @@
   "zoomConfigStepHint": "Wie stark sich der Zoom pro Mausrad-Schritt ändert (mit gehaltener Strg-Taste).",
   "zoomConfigMin": "Minimaler Zoom",
   "zoomConfigMax": "Maximaler Zoom",
+  "zoomConfigPathZoom": "Zoom je Seitenbereich merken",
+  "zoomConfigPathZoomHint": "Merkt sich die eingestellte Zoomstufe getrennt je Seitenbereich (erstes Segment des URL-Pfads) und stellt sie beim Seitenwechsel wieder her — z. B. Dokumentliste 100 %, Editor 140 %. Einfach im jeweiligen Bereich wie gewohnt zoomen; ein Bereich ohne gemerkte Stufe startet mit 100 %.",
   "zoomMenu": "Zoom",
   "zoomMenuReset": "Zurücksetzen",
   "zoomMenuIn": "Vergrößern",

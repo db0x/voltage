@@ -269,7 +269,7 @@ export function initPluginConfig({ i18n, icons, plugins }) {
       const gate = overlay.querySelector(`.dialog-field-toggle[data-config-key="${el.dataset.configEnabledBy}"]`)
       const enabled = gate ? gate.classList.contains('active') : true
       el.classList.toggle('config-disabled', !enabled)
-      el.querySelectorAll('input, button, select').forEach(c => { c.disabled = !enabled })
+      el.querySelectorAll('input, button, select, textarea').forEach(c => { c.disabled = !enabled })
     }
   }
 

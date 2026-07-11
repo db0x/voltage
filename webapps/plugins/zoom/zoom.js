@@ -11,7 +11,7 @@
 // The plugin also contributes a "Zoom" context-menu submenu (zoom in / out / reset) via the
 // contextMenuItems() hook — the same path the widget plugin uses for its entries.
 
-const { ipcMain } = require('electron')
+const { app, ipcMain } = require('electron')
 const fs   = require('node:fs')
 const path = require('node:path')
 
@@ -62,11 +62,36 @@ function resolveStep(config) { return clampNum(config?.step, MIN_STEP, MAX_STEP,
 function resolveMin(config)  { return clampNum(config?.min,  FLOOR_MIN, CAP_MIN, DEFAULT_MIN) }
 function resolveMax(config)  { return clampNum(config?.max,  FLOOR_MAX, CAP_MAX, DEFAULT_MAX) }
 
+// Per-area zoom — opt-in (config.pathZoom, default OFF = the classic behaviour: one manual zoom
+// level for the whole app). When enabled, the zoom the user sets is REMEMBERED per page area and
+// restored on every navigation into that area; nothing needs configuring beyond the toggle. The
+// re-apply is the point: Chromium persists zoom per ORIGIN, so when one origin serves differently
+// dense areas (e.g. only-office's document list at "/" vs. its editor at "/edit/…"), a zoom set in
+// one area would otherwise bleed into the other. An area without a remembered zoom starts at 100%.
+function pathZoomEnabled(config) { return config?.pathZoom === true }
+
+// The "area" a URL belongs to for per-area zoom: its FIRST path segment ("/edit/foo.docx" → "/edit"),
+// the root itself → "/". Coarser than the full path on purpose — every document under /edit/ shares
+// one zoom level instead of each file remembering its own. null for non-http(s) URLs (the plugins'
+// data: loading/prompt pages): those keep the current zoom rather than resetting it mid-flow.
+function zoomAreaKey(url) {
+  try {
+    const u = new URL(url)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+    const seg = u.pathname.split('/').find(Boolean)
+    return seg ? `/${seg}` : '/'
+  } catch { return null }
+}
+
 function attachPlugin(win, api) {
   const wc   = api.webContents
   const step = resolveStep(api.config)
   const min  = resolveMin(api.config)
   const max  = resolveMax(api.config)
+
+  // Set by the per-area block below (only when the feature is on): records a user-chosen zoom for
+  // the current page's area so navigation can restore it.
+  let rememberAreaZoom = null
 
   // Apply a zoom change to THIS app's view, then push the resulting percentage to the page's OSD.
   // direction: +1 zoom in, -1 zoom out, 0 reset to 100%. Shared by the ctrl+wheel ipc handler and
@@ -77,6 +102,7 @@ function attachPlugin(win, api) {
       : direction > 0 ? Math.min(current + step, max)
       : Math.max(current - step, min)
     wc.setZoomFactor(next)
+    if (rememberAreaZoom) rememberAreaZoom(next)
     // pct is an integer literal from Math.round → safe to interpolate; the OSD may not be installed
     // yet (zoom before load finished), so the page guards the call.
     const pct = Math.round(next * 100)
@@ -108,6 +134,31 @@ function attachPlugin(win, api) {
       .catch(() => {})
   })
 
+  // Per-area zoom (opt-in, see pathZoomEnabled): every user zoom is recorded for the CURRENT page's
+  // area, and each navigation restores the target area's remembered level (100% for areas never
+  // zoomed). Restores are silent — no OSD — because they set the page's baseline, not a user action.
+  // The store lives next to window-state.json in the app's profile dir; it is re-read on every use
+  // (and merged on write) so several windows of the same app share it instead of clobbering it.
+  if (pathZoomEnabled(api.config)) {
+    const storeFile = path.join(app.getPath('userData'), 'zoom-areas.json')
+    const readAreas = () => {
+      try { return JSON.parse(fs.readFileSync(storeFile, 'utf8')) } catch { return {} }
+    }
+    rememberAreaZoom = (factor) => {
+      const area = zoomAreaKey(wc.getURL())
+      if (!area) return
+      try { fs.writeFileSync(storeFile, JSON.stringify({ ...readAreas(), [area]: factor })) } catch {}
+    }
+    const applyAreaZoom = () => {
+      const area = zoomAreaKey(wc.getURL())
+      // Stored values are clamped on the way OUT so a hand-edited/corrupt store can't zoom wildly.
+      if (area) wc.setZoomFactor(clampNum(readAreas()[area], FLOOR_MIN, CAP_MAX, 1))
+    }
+    wc.on('did-navigate', applyAreaZoom)
+    // Covers client-side (history API) routing, should the wrapped app navigate without a load.
+    wc.on('did-navigate-in-page', applyAreaZoom)
+  }
+
   // Contribute a "Zoom" submenu to the context menu (window.js collects this from every plugin).
   // Icons are { light, dark } pairs; the overlay picks the variant for its theme. applyZoom is also
   // exposed so the widget plugin's drag-zone +/- buttons can drive the same zoom logic (window.js
@@ -134,6 +185,7 @@ function attachPlugin(win, api) {
   }
 }
 
-// configurable: the chip's configure button opens config.html, where the zoom step and the
-// min/max zoom factors are set per app.
-module.exports = { attachPlugin, configurable: true }
+// configurable: the chip's configure button opens config.html, where the zoom step, the min/max
+// zoom factors and the (opt-in) per-area zoom are set per app. zoomAreaKey is exported for the
+// unit tests.
+module.exports = { attachPlugin, zoomAreaKey, configurable: true }

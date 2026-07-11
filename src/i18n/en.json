@@ -77,6 +77,8 @@
   "zoomConfigStepHint": "How much the zoom changes per mouse-wheel step (while holding Ctrl).",
   "zoomConfigMin": "Minimum zoom",
   "zoomConfigMax": "Maximum zoom",
+  "zoomConfigPathZoom": "Remember zoom per page area",
+  "zoomConfigPathZoomHint": "Remembers the zoom level separately per page area (first segment of the URL path) and restores it on every navigation — e.g. document list 100 %, editor 140 %. Just zoom as usual in each area; an area without a remembered level starts at 100 %.",
   "zoomMenu": "Zoom",
   "zoomMenuReset": "Reset",
   "zoomMenuIn": "Zoom in",

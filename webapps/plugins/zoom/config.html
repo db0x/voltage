@@ -44,6 +44,14 @@
           </div>
         </div>
       </div>
+      <!-- OFF by default: the classic behaviour is one manual zoom level for the whole app. When
+           enabled, the zoom the user sets is remembered PER PAGE AREA (first URL path segment) and
+           restored on every navigation — nothing to configure beyond this switch; zoom.js keeps the
+           remembered levels in the app profile's zoom-areas.json at runtime. -->
+      <button type="button" class="dialog-field-toggle" data-config-key="pathZoom" data-config-default="false">
+        <span class="toggle-switch"></span>
+        <span>{{zoomConfigPathZoom}}<span class="field-help" data-tooltip="{{zoomConfigPathZoomHint}}">?</span></span>
+      </button>
     </div>
     <!-- Apply commits the edit to the app's config; Cancel/✕/backdrop/Esc discard. The host wires
          these by class (.plugin-config-apply / .plugin-config-cancel). -->
