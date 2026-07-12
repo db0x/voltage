@@ -310,6 +310,35 @@ async function resolveLaunchUrl(win, base, token, localPath) {
   return editUrl(base, name)
 }
 
+// ---- Host-side helpers (called by window.js, not by attachPlugin) -----------------------------
+// The widget drag-zone's home button is an only-office feature rendered by the host: window.js asks
+// THIS module about the backend's URL space instead of hardcoding it, so the layout knowledge
+// (<baseUrl>/edit/… vs. the document list at <baseUrl>/) stays in the plugin — including the
+// reverse-proxy path-prefix case (http://black/relay), where origin-root heuristics fail.
+
+// The backend root configured for a BUILT app, resolved from its baked pluginConfig; null when the
+// app doesn't load this plugin or the baseUrl is missing/garbage (the plugin is inert then).
+function configuredBaseUrl(pkg) {
+  const rel = (pkg.plugins ?? []).find(p => /(^|\/)only-office\//.test(p))
+  return rel ? resolveBaseUrl(pkg.pluginConfig?.[rel]) : null
+}
+
+// Whether `url` is one of the backend's editor pages — the drag-zone shows the home button only
+// there (on the document list it would be a no-op). Without a configured baseUrl fall back to a
+// bare-path check so manual testing against pkg.url still behaves sensibly.
+function isEditorUrl(pkg, url) {
+  const base = configuredBaseUrl(pkg)
+  if (base) return String(url ?? '').startsWith(`${base}/edit/`)
+  try { return new URL(url).pathname.startsWith('/edit/') } catch { return false }
+}
+
+// The home button's target: the backend's document list. Falls back to the app's own URL when no
+// baseUrl is configured.
+function homeUrl(pkg) {
+  const base = configuredBaseUrl(pkg)
+  return base ? `${base}/` : pkg.url
+}
+
 function attachPlugin(win, api) {
   const filePath = fileFromArg(api.launchArg)
   if (!filePath) return  // launched without a file → normal window (file list; log in there once)
@@ -336,4 +365,4 @@ function attachPlugin(win, api) {
 }
 
 // Helpers exported for the unit tests; configurable → gear dialog (config.html).
-module.exports = { attachPlugin, fileFromArg, resolveBaseUrl, apiFileUrl, editUrl, waitForSavedVersion, forceSave, buildConfirmPage, fmtBytes, configurable: true }
+module.exports = { attachPlugin, fileFromArg, resolveBaseUrl, apiFileUrl, editUrl, waitForSavedVersion, forceSave, buildConfirmPage, fmtBytes, configuredBaseUrl, isEditorUrl, homeUrl, configurable: true }

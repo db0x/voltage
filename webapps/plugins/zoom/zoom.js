@@ -70,15 +70,31 @@ function resolveMax(config)  { return clampNum(config?.max,  FLOOR_MAX, CAP_MAX,
 // one area would otherwise bleed into the other. An area without a remembered zoom starts at 100%.
 function pathZoomEnabled(config) { return config?.pathZoom === true }
 
-// The "area" a URL belongs to for per-area zoom: its FIRST path segment ("/edit/foo.docx" → "/edit"),
-// the root itself → "/". Coarser than the full path on purpose — every document under /edit/ shares
-// one zoom level instead of each file remembering its own. null for non-http(s) URLs (the plugins'
-// data: loading/prompt pages): those keep the current zoom rather than resetting it mid-flow.
-function zoomAreaKey(url) {
+// The app's base path from its configured URL ("http://black/relay" → "/relay", a root-hosted app
+// → ""). Areas are derived BELOW this base: an app served under a reverse-proxy path prefix would
+// otherwise collapse all its pages into the prefix segment ("/relay") — one shared zoom again.
+function baseAppPath(pkgUrl) {
+  try {
+    const u = new URL(String(pkgUrl ?? ''))
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return ''
+    return u.pathname.replace(/\/+$/, '')
+  } catch { return '' }
+}
+
+// The "area" a URL belongs to for per-area zoom: its first path segment below the app's base path
+// ("/relay/edit/foo.docx" with base "/relay" → "/edit"; the app root itself → "/"). Coarser than the
+// full path on purpose — every document under /edit/ shares one zoom level instead of each file
+// remembering its own. URLs outside the base keep their own first segment. null for non-http(s)
+// URLs (the plugins' data: loading/prompt pages): those keep the current zoom rather than resetting
+// it mid-flow.
+function zoomAreaKey(url, base = '') {
   try {
     const u = new URL(url)
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
-    const seg = u.pathname.split('/').find(Boolean)
+    let p = u.pathname
+    // Strip the base only on a segment boundary ("/relay" must not eat "/relayout/…").
+    if (base && (p === base || p.startsWith(`${base}/`))) p = p.slice(base.length)
+    const seg = p.split('/').find(Boolean)
     return seg ? `/${seg}` : '/'
   } catch { return null }
 }
@@ -141,16 +157,20 @@ function attachPlugin(win, api) {
   // (and merged on write) so several windows of the same app share it instead of clobbering it.
   if (pathZoomEnabled(api.config)) {
     const storeFile = path.join(app.getPath('userData'), 'zoom-areas.json')
+    // Base path from the app's configured URL, so a reverse-proxy prefix (http://black/relay) does
+    // not become the only area every page maps to. Read here, not at module level: the plugin file
+    // is also required by plain-node tests, where electron's app is not available.
+    const base = baseAppPath(require(app.getAppPath() + '/package.json').url)
     const readAreas = () => {
       try { return JSON.parse(fs.readFileSync(storeFile, 'utf8')) } catch { return {} }
     }
     rememberAreaZoom = (factor) => {
-      const area = zoomAreaKey(wc.getURL())
+      const area = zoomAreaKey(wc.getURL(), base)
       if (!area) return
       try { fs.writeFileSync(storeFile, JSON.stringify({ ...readAreas(), [area]: factor })) } catch {}
     }
     const applyAreaZoom = () => {
-      const area = zoomAreaKey(wc.getURL())
+      const area = zoomAreaKey(wc.getURL(), base)
       // Stored values are clamped on the way OUT so a hand-edited/corrupt store can't zoom wildly.
       if (area) wc.setZoomFactor(clampNum(readAreas()[area], FLOOR_MIN, CAP_MAX, 1))
     }
@@ -186,6 +206,6 @@ function attachPlugin(win, api) {
 }
 
 // configurable: the chip's configure button opens config.html, where the zoom step, the min/max
-// zoom factors and the (opt-in) per-area zoom are set per app. zoomAreaKey is exported for the
-// unit tests.
-module.exports = { attachPlugin, zoomAreaKey, configurable: true }
+// zoom factors and the (opt-in) per-area zoom are set per app. zoomAreaKey/baseAppPath are exported
+// for the unit tests.
+module.exports = { attachPlugin, zoomAreaKey, baseAppPath, configurable: true }

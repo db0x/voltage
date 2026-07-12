@@ -181,6 +181,37 @@ test('forceSave returns null when the endpoint is missing (older backend)', asyn
   } finally { await server.close() }
 })
 
+// Setup:    Built-app package.json shapes: plugin configured (with a reverse-proxy path prefix),
+//           plugin unconfigured, plugin absent.
+// Action:   Resolve the backend root / editor detection / home target window.js asks the plugin for
+//           (the drag-zone home button).
+// Expected: configuredBaseUrl normalises the baked baseUrl and is null otherwise; isEditorUrl
+//           matches ONLY <baseUrl>/edit/… (a prefix-hosted list page like /relay must not count as
+//           editor, and /relay/edit/ must count even though its origin-root path isn't /edit/);
+//           homeUrl targets the list under the prefix — not "/" of the origin — and falls back to
+//           pkg.url without a configured base.
+test('configuredBaseUrl/isEditorUrl/homeUrl honour a reverse-proxy path prefix', () => {
+  const rel = 'plugins/only-office/only-office.js'
+  const pkg = {
+    url: 'http://black/relay',
+    plugins: [rel, 'plugins/widget/widget.js'],
+    pluginConfig: { [rel]: { baseUrl: 'http://black/relay/', apiToken: 't' } },
+  }
+  expect(plugin.configuredBaseUrl(pkg)).toBe('http://black/relay')
+  expect(plugin.isEditorUrl(pkg, 'http://black/relay/edit/brief.docx')).toBe(true)
+  expect(plugin.isEditorUrl(pkg, 'http://black/relay/')).toBe(false)
+  expect(plugin.isEditorUrl(pkg, 'http://black/edit/x.docx')).toBe(false)
+  expect(plugin.isEditorUrl(pkg, 'data:text/html,spinner')).toBe(false)
+  expect(plugin.homeUrl(pkg)).toBe('http://black/relay/')
+
+  const bare = { url: 'http://x:5001/', plugins: [rel], pluginConfig: {} }
+  expect(plugin.configuredBaseUrl(bare)).toBe(null)
+  expect(plugin.isEditorUrl(bare, 'http://x:5001/edit/x.docx')).toBe(true)  // bare-path fallback
+  expect(plugin.homeUrl(bare)).toBe('http://x:5001/')
+
+  expect(plugin.configuredBaseUrl({ plugins: ['plugins/widget/widget.js'] })).toBe(null)
+})
+
 // Setup:    Byte counts across the KB/MB/GB thresholds.
 // Action:   Format them for the conflict comparison table.
 // Expected: Compact human-readable units — the table must stay legible, not print raw byte counts.

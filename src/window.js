@@ -666,12 +666,14 @@ function usesZoomPlugin(pkg) {
   return (pkg.plugins ?? []).some(p => /(^|\/)zoom\//.test(p))
 }
 
-// True when the app loads the only-office plugin. Its backend's start page ("/") is the user's
-// document list, so the widget drag-zone then shows a home button routing the app view back there —
-// the editor page itself has no way back once a document is open. The button appears only WHILE an
-// editor page is open (see the did-navigate wiring below); on the list itself it would be a no-op.
-function usesOnlyOfficePlugin(pkg) {
-  return (pkg.plugins ?? []).some(p => /(^|\/)only-office\//.test(p))
+// The only-office plugin module when the app loads it, else null (same path convention as
+// loadPlugins; the require cache makes this free after the first call). The widget drag-zone's
+// home button asks THIS module about the backend's URL space — isEditorUrl / homeUrl — because
+// that layout (<baseUrl>/edit/… vs. the document list, incl. reverse-proxy path prefixes) is the
+// plugin's business knowledge, not window.js's.
+function onlyOfficePluginModule(pkg) {
+  const rel = (pkg.plugins ?? []).find(p => /(^|\/)only-office\//.test(p))
+  try { return rel ? require(path.join(__dirname, '..', 'webapps', rel)) : null } catch { return null }
 }
 
 // Whether Chromium DevTools are available for the app. Default ON — only an explicit "devTools": false
@@ -827,10 +829,11 @@ function createWindow(pkg, opts = {}) {
       // there (and on the plugin's data: loading/prompt pages). The state is pushed on every
       // navigation, plus once when the overlay finishes loading — the app navigates before the
       // overlay page is ready, so that first push would otherwise be lost.
-      if (usesOnlyOfficePlugin(pkg)) {
+      const ooPlugin = onlyOfficePluginModule(pkg)
+      if (ooPlugin) {
         const sendHomeState = () => {
           let onEditor = false
-          try { onEditor = new URL(appContents.getURL()).pathname.startsWith('/edit/') } catch {}
+          try { onEditor = ooPlugin.isEditorUrl(pkg, appContents.getURL()) } catch {}
           try { dragOverlay.webContents.send('voltage:dragzone-home', onEditor) } catch {}
         }
         appContents.on('did-navigate', sendHomeState)
@@ -911,12 +914,10 @@ function createWindow(pkg, opts = {}) {
           case 'configure': openConfigInManager(pkg);     break
           // Detached so the tools don't shrink the frameless widget's own view.
           case 'devtools': appContents.openDevTools({ mode: 'detach' }); break
-          // Back to "/" of the CURRENT origin (the only-office backend's document list) rather than
-          // pkg.url verbatim, so a configured deep URL still lands on the list. Non-hierarchical pages
-          // (the plugin's data: loading/prompt pages) have no origin → fall back to pkg.url.
+          // Back to the only-office backend's document list — the plugin knows where that lives
+          // (its configured baseUrl, incl. reverse-proxy path prefixes like http://black/relay).
           case 'home': {
-            let home = pkg.url
-            try { home = new URL('/', appContents.getURL()).toString() } catch {}
+            const home = onlyOfficePluginModule(pkg)?.homeUrl(pkg) ?? pkg.url
             appContents.loadURL(home)
             break
           }
