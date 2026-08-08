@@ -30,7 +30,9 @@ cross-origin iframes some apps render their toolbars in (e.g. Office documents).
 (1 px) until the cursor reaches the top-centre edge, then fades in as a translucent bar:
 
 - **left:** a gear button that opens this app's settings in the Manager
-  (`--voltage-edit-config=<profile>` deep link).
+  (`--voltage-edit-config=<profile>` deep link). Shown only when the Voltage repo the app was built
+  from is actually reachable on this machine (the baked `appRoot` resolves to a checkout) — on a
+  handed-over AppImage the click could only fail silently, so the button is hidden entirely.
 - **right:** window controls — DevTools (hidden when the app sets `"devTools": false`),
   About, minimize, maximize, close. For apps that also load the **zoom** plugin: − / live % / +.
   For apps that also load the **only-office** plugin: a home button (the only-office glyph) that

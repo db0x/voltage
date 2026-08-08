@@ -331,6 +331,19 @@ function routeExternalUrl(url, currentProfile) {
 // it is single-instance. The bash shell sources nvm so the managed node is found (the AppImage's own
 // launch env has a minimal PATH); root + profile are passed as positional args ($1/$2) so no value is
 // interpolated into the script. No-op when appRoot wasn't baked in (a dev run, which has no drag zone).
+// Whether the Voltage repo this AppImage was built from is present on THIS machine. pkg.appRoot is
+// an absolute path baked at build time, so on a foreign machine (a handed-over AppImage) or after
+// the repo moved it points nowhere — the drag-zone then hides its configure button, whose only
+// action (openConfigInManager below) could only run into that same void. `!profile` tells a real
+// repo package.json from a baked app config — the same discriminator scripts/build.js heals
+// interrupted-build corruption by.
+function voltageInstalled(pkg) {
+  try {
+    const repoPkg = JSON.parse(fs.readFileSync(path.join(pkg.appRoot, 'package.json'), 'utf8'))
+    return repoPkg.name === 'voltage' && !repoPkg.profile
+  } catch { return false }
+}
+
 function openConfigInManager(pkg) {
   const root = pkg.appRoot
   if (!root) return
@@ -809,6 +822,9 @@ function createWindow(pkg, opts = {}) {
       const dragBodyClass = [
         usesZoomPlugin(pkg) ? 'zoom-enabled' : '',
         devToolsEnabled(pkg) ? 'devtools-enabled' : '',
+        // Hide the configure gear when the baked Voltage repo isn't reachable on this machine —
+        // its click could only fail silently there (see voltageInstalled).
+        voltageInstalled(pkg) ? '' : 'no-manager',
         viewMode.dragZone.light ? 'light' : '',
         // macOS-style button order (close/min/max on the left) — widget config, default classic.
         viewMode.dragZone.macOrder ? 'mac-order' : '',

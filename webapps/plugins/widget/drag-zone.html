@@ -130,6 +130,14 @@
   .ctl.home { display: none; }
   body.home-enabled .ctl.home { display: flex; }
   .btn-home svg { width: 15px; height: 15px; fill: none; stroke: none; }
+
+  /* Configure (gear) — hidden when the Voltage repo the app was built from is NOT reachable on this
+     machine (body.no-manager, set by window.js from the baked appRoot — a handed-over AppImage or a
+     moved repo): its only action opens the app's config in the Voltage Manager, which would silently
+     fail there. The classic layout re-centres the label zone (the gear was its left bound); in
+     mac-order the right-side width stays conservative — the hover label just caps a touch narrower. */
+  body.no-manager .config { display: none; }
+  body.no-manager:not(.mac-order) .handle { --dz-left: 12px; }
   .zoom-pct { min-width: 40px; text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.9);
     -webkit-app-region: no-drag; pointer-events: none; font-variant-numeric: tabular-nums; }
 

@@ -125,6 +125,17 @@ test('dragZone html includes the (navigation-gated) only-office home button', ()
 })
 
 // Setup:    The default (enabled) descriptor.
+// Action:   Inspect the overlay stylesheet for the configure gear's availability gate.
+// Expected: body.no-manager (set by window.js when the baked appRoot does NOT point at a Voltage
+//           checkout on this machine — a handed-over AppImage or a moved repo) hides the gear
+//           entirely: its only action opens the app's config in the Voltage Manager, which would
+//           silently fail there.
+test('dragZone html hides the configure gear without a reachable Voltage (body.no-manager)', () => {
+  const html = dragZone({}).html
+  expect(html).toMatch(/body\.no-manager \.config\s*\{\s*display:\s*none/)
+})
+
+// Setup:    The default (enabled) descriptor.
 // Action:   Inspect the preload path it hands window.js for the overlay WebContentsView.
 // Expected: An absolute path to an existing drag-zone-preload.js — window.js sets it as the view's
 //           preload, so a missing/relative path would make the overlay load with no hover wiring.
