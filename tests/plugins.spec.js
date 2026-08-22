@@ -142,6 +142,100 @@ test('edit dialog: the widget resizable toggle defaults on and persists when tur
 })
 
 // Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The aspect-ratio-lock toggle defaults off (its free-text ratio field gated by it);
+//           turn it on, type a ratio, Apply, and save.
+// Expected: The field starts disabled (lock is off), becomes enabled once the lock is turned on,
+//           and both keys persist together — proving the toggle + free-text pair round-trips.
+test('edit dialog: the widget aspect-ratio lock + ratio persist per app under pluginConfig', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const lockToggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="aspectRatioLock"]')
+  // .dialog-field (not .dialog-field-toggle) — the preciseAspectRatio toggle shares the same
+  // data-config-enabled-by gate, so an unqualified selector would match both.
+  const ratioField  = managerPage.locator('.plugin-config-overlay .dialog-field[data-config-enabled-by="aspectRatioLock"]')
+  await expect(lockToggle).not.toHaveClass(/active/)      // default off
+  await expect(ratioField).toHaveClass(/config-disabled/) // field disabled while lock is off
+
+  await lockToggle.click()
+  await expect(lockToggle).toHaveClass(/active/)
+  await expect(ratioField).not.toHaveClass(/config-disabled/)
+
+  await managerPage.fill('#widget-config-aspect-ratio', '12:5')
+
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await expect(managerPage.locator('#edit-save')).toBeEnabled()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { aspectRatioLock: true, aspectRatio: '12:5' } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The preciseAspectRatio toggle defaults off (gated by aspectRatioLock, itself off by
+//           default); turn the lock on, then the precise toggle, Apply, and save.
+// Expected: The precise toggle starts disabled (lock is off) same as the ratio field, becomes
+//           enabled once the lock is turned on, and persists alongside it.
+test('edit dialog: the widget precise-aspect-ratio toggle defaults off, gated by the lock, and persists', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const lockToggle    = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="aspectRatioLock"]')
+  const preciseToggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="preciseAspectRatio"]')
+  await expect(preciseToggle).not.toHaveClass(/active/)      // default off
+  await expect(preciseToggle).toHaveClass(/config-disabled/) // disabled while the lock is off
+
+  await lockToggle.click()
+  await expect(preciseToggle).not.toHaveClass(/config-disabled/)
+
+  await preciseToggle.click()
+  await expect(preciseToggle).toHaveClass(/active/)
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { aspectRatioLock: true, preciseAspectRatio: true } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The resizable toggle defaults on (the aspect-ratio group is gated by it); turn it off.
+// Expected: The whole aspect-ratio group (lock toggle + free-text field) dims — proving a fixed
+//           ratio can't be set on a window whose size is locked outright.
+test('edit dialog: the widget aspect-ratio group is gated by the resizable toggle', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const resizableToggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="resizable"]')
+  const group = managerPage.locator('.plugin-config-overlay [data-config-enabled-by="resizable"]')
+  await expect(group).not.toHaveClass(/config-disabled/) // enabled while resizable is on (default)
+
+  await resizableToggle.click()
+  await expect(group).toHaveClass(/config-disabled/)
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
 // Action:   The top-drag-strip toggle defaults on; turn it off, Apply, and save.
 // Expected: The toggle starts active (default on — the strip is the only reliable way to move the
 //           frameless window for apps whose toolbar lives in a cross-origin OOPIF) and persists
@@ -168,6 +262,36 @@ test('edit dialog: the widget drag-zone toggle defaults on and persists when tur
   await expect.poll(() => {
     try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
   }).toEqual({ 'plugins/widget/widget.js': { dragZone: false } })
+})
+
+// Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.
+// Action:   The drag-zone-icon toggle defaults off (gated by the dragZone toggle, which defaults on);
+//           turn it on, Apply, and save.
+// Expected: The toggle starts enabled (dragZone is on by default) and inactive (icon itself defaults
+//           off), and persists dragZoneIcon:true when turned on.
+test('edit dialog: the widget drag-zone icon toggle defaults off and persists when turned on', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'widget' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'widget' })
+    .locator('.domain-configure-btn').click()
+
+  const toggle = managerPage.locator('.plugin-config-overlay .dialog-field-toggle[data-config-key="dragZoneIcon"]')
+  await expect(toggle).not.toHaveClass(/active/)   // default off
+  await expect(toggle).not.toHaveClass(/config-disabled/) // enabled: dragZone is on by default
+
+  await toggle.click()
+  await expect(toggle).toHaveClass(/active/)
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({ 'plugins/widget/widget.js': { dragZoneIcon: true } })
 })
 
 // Setup:    Edit dialog for test-user-app with the widget plugin added; its config dialog opened.

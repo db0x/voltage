@@ -38,7 +38,14 @@ function stacks() {
       // content = the raw compose file, shown read-only in the config dialog's preview.
       const composeName = composeNameIn(stackDir)
       if (composeName) { try { content = fs.readFileSync(path.join(stackDir, composeName), 'utf8') } catch {} }
-      out.push({ id: e.name, label: meta.label || e.name, icon: stackIconDataUrl(meta.icon), content })
+      // pathConfigurable: forwarded so the config dialog can show/hide the Path field per stack (see
+      // plugin-config.js's data-config-visible-if-stack) — meaningless for a single-purpose stack
+      // like draw.io, only useful when several apps launch their own container from the same stack
+      // template (e.g. one game per app, all built from the same ScummVM stack).
+      out.push({
+        id: e.name, label: meta.label || e.name, icon: stackIconDataUrl(meta.icon), content,
+        pathConfigurable: !!meta.pathConfigurable,
+      })
     }
   } catch {}
   return out
@@ -246,6 +253,25 @@ function urlSuffixFrom(pkgUrl) {
   } catch { return '' }
 }
 
+// A per-app fixed route into the container (config.path, e.g. "/play/tentacle"), for a stack template
+// several distinct apps each launch their OWN container from (e.g. one game-specific app per title,
+// all built from the same ScummVM image/stack but each routed to a different game) — which game is
+// per-app, not per-stack, so this can't live in stack.json. Normalised to a leading slash; empty/
+// missing → no override (null, so the caller falls back to urlSuffixFrom, the mechanism apps WITH a
+// meaningful online url/file path already rely on).
+function resolvePathOverride(config) {
+  const raw = String(config?.path || '').trim()
+  if (!raw) return null
+  return raw.startsWith('/') ? raw : `/${raw}`
+}
+
+// The suffix appended to http://localhost:<port> for the final routed URL: a configured path
+// override wins outright, else the baked pkg.url's own path+query survives (see the two helpers
+// above for why each exists — they serve different apps' needs, not layers of the same one).
+function routeSuffixFor(pkg, config) {
+  return resolvePathOverride(config) ?? urlSuffixFrom(pkg.url)
+}
+
 // Set when THIS process started the container (drives teardown); the reuse path leaves it null so a
 // container that was already running is never torn down under another window/process.
 let session = null
@@ -279,7 +305,7 @@ async function resolveLaunch(pkg, api = {}) {
     const existing = await container.composeHostPort(spec, project, service, containerPort, env)
     if (existing) {
       log('reusing already-running container on port', existing)
-      return { url: `http://localhost:${existing}${urlSuffixFrom(pkg.url)}` }
+      return { url: `http://localhost:${existing}${routeSuffixFor(pkg, config)}` }
     }
   }
 
@@ -314,7 +340,18 @@ async function resolveLaunch(pkg, api = {}) {
     const ok = await container.waitHealthy(w.port, w.path, w.timeoutMs)
     log(`waitFor :${w.port}${w.path} ready=${ok}`)
   }
-  const url = `http://localhost:${port}${urlSuffixFrom(pkg.url)}`
+  // Some services answer the health probe (an HTTP server listening) well before they're actually
+  // USABLE — a VNC-in-browser session (e.g. ScummVM's KasmVNC UI) serves its shell page instantly
+  // while the desktop/session behind it is still booting, so "HTTP < 400" alone is a false positive.
+  // readyDelayMs (stack.json) is a blunt but effective fixed settle time added on top for exactly
+  // that case — only on a fresh start, never on reuse (an already-running container is already
+  // settled, so delaying every subsequent window open on it would be pure waste).
+  const settleMs = Number(stack.meta.readyDelayMs) || 0
+  if (settleMs > 0) {
+    log(`waiting an extra ${settleMs}ms for the session to settle`)
+    await new Promise(r => setTimeout(r, settleMs))
+  }
+  const url = `http://localhost:${port}${routeSuffixFor(pkg, config)}`
   log(`container ready=${healthy} → ${url}`)
   return { url }
 }
@@ -335,11 +372,12 @@ function attachPlugin(win, api) {
 }
 
 // configurable: surfaces the gear button on the plugin chip and loads config.html (stack chooser +
-// compose preview). managesUrl: this plugin owns the app's URL (it routes to a container), so the
-// Manager locks the URL field while it's selected. composeEnvFor/urlSuffixFrom/materializeStack are
-// exported for the unit tests.
+// path override + compose preview). managesUrl: this plugin owns the app's URL (it routes to a
+// container), so the Manager locks the URL field while it's selected. composeEnvFor/urlSuffixFrom/
+// resolvePathOverride/routeSuffixFor/materializeStack are exported for the unit tests.
 module.exports = {
   attachPlugin, resolveLaunch, launchInfo, available, stacks,
-  materializeStack, composeEnvFor, urlSuffixFrom, completeConfig, waitForTargets,
+  materializeStack, composeEnvFor, urlSuffixFrom, resolvePathOverride, routeSuffixFor,
+  completeConfig, waitForTargets,
   managesUrl: true, configurable: true,
 }

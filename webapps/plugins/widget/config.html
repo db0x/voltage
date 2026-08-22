@@ -28,6 +28,29 @@
         <span class="toggle-switch"></span>
         <span>{{widgetConfigResizable}}</span>
       </button>
+      <!-- Only meaningful while the window is resizable, so the whole group (toggle + dropdown)
+           shares one gate on "resizable"; the dropdown itself is additionally gated on the lock
+           toggle, same nesting as the shadow/shadowWidth pair below. -->
+      <div class="dialog-field-group" data-config-enabled-by="resizable">
+        <button type="button" class="dialog-field-toggle" data-config-key="aspectRatioLock" data-config-default="false">
+          <span class="toggle-switch"></span>
+          <span>{{widgetConfigAspectRatioLock}}<span class="field-help" data-tooltip="{{widgetConfigAspectRatioLockHint}}">?</span></span>
+        </button>
+        <div class="dialog-field" data-config-enabled-by="aspectRatioLock">
+          <label for="widget-config-aspect-ratio">{{widgetConfigAspectRatio}}</label>
+          <input type="text" id="widget-config-aspect-ratio" autocomplete="off" spellcheck="false"
+                 data-config-key="aspectRatio" data-config-default="16:9" placeholder="16:9">
+        </div>
+        <!-- OFF by default; currently only has an effect at 4:3 (see widget.js preciseAspectRatioEnabled).
+             With a shadow on, the app's actual content area is inset from the window by the shadow gutter,
+             so an exact-ratio WINDOW still leaves a very slightly off-ratio content area; this targets the
+             content area instead. -->
+        <button type="button" class="dialog-field-toggle" data-config-key="preciseAspectRatio" data-config-default="false"
+                data-config-enabled-by="aspectRatioLock">
+          <span class="toggle-switch"></span>
+          <span>{{widgetConfigPreciseAspectRatio}}<span class="field-help" data-tooltip="{{widgetConfigPreciseAspectRatioHint}}">?</span></span>
+        </button>
+      </div>
       <!-- OFF by default: a widget normally belongs out of the taskbar/dock. This toggle drives the
            X-Voltage-Widget marker in the app's .desktop launcher (see scripts/lib.js) and only takes
            effect with the Voltage GNOME Shell extension installed — under Wayland the app cannot
@@ -68,6 +91,13 @@
         <button type="button" class="dialog-field-toggle" data-config-key="dragZone" data-config-default="true">
           <span class="toggle-switch"></span>
           <span>{{widgetConfigDragZone}}<span class="field-help" data-tooltip="{{widgetConfigDragZoneHint}}">?</span></span>
+        </button>
+        <!-- OFF by default: only meaningful while the drag strip itself is on, so gated by it like the
+             shadow-width slider gates on shadow. -->
+        <button type="button" class="dialog-field-toggle" data-config-key="dragZoneIcon" data-config-default="false"
+                data-config-enabled-by="dragZone">
+          <span class="toggle-switch"></span>
+          <span>{{widgetConfigDragZoneIcon}}<span class="field-help" data-tooltip="{{widgetConfigDragZoneIconHint}}">?</span></span>
         </button>
         <!-- OFF by default (dark): switches the drag bar to its light theme. -->
         <button type="button" class="dialog-field-toggle" data-config-key="dragZoneLight" data-config-default="false">

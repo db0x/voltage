@@ -14,8 +14,9 @@
      drag/hit area. It fades in/out via the `shown` class (toggled from main over IPC by
      drag-zone-preload.js). Styling mirrors Voltage's link tooltip (src/tooltip.css): a dark,
      translucent, blurred bar with rounded bottom corners, a GNOME-style hairline border and a
-     downward drop shadow. On the right are window-control buttons (no-drag so they stay clickable);
-     each forwards its data-action to main via the preload.
+     downward drop shadow. The app's own icon can sit at the far left (opt-in per app, widget config
+     default off — window.js resolves it, same as the About panel); on the right are window-control
+     buttons (no-drag so they stay clickable); each forwards its data-action to main via the preload.
      The 16px inset MUST match DRAG_ZONE_PAD, and .handle height (42px) DRAG_ZONE_HEIGHT, in
      src/window.js. -->
 <html>
@@ -96,6 +97,14 @@
   body.mac-order.devtools-enabled .handle { --dz-right: 110px; }
   body.mac-order.zoom-enabled .handle { --dz-right: 196px; }
   body.mac-order.zoom-enabled.devtools-enabled .handle { --dz-right: 226px; }
+  /* The app icon (4px + 18px + 8px margins + the row's 2px gap = 32px) always sits ahead of the left
+     group — classic gear or mac-order's traffic lights — so --dz-left grows by 32px on top of
+     whichever base value already applies. Written as full compound selectors (not a
+     `calc(var(--dz-left) + 32px)` add-on) so there's no specificity tie with the mac-order rule above
+     to fight over which one wins. */
+  body.has-icon:not(.mac-order):not(.no-manager) .handle { --dz-left: 74px; }
+  body.has-icon.no-manager:not(.mac-order) .handle { --dz-left: 44px; }
+  body.has-icon.mac-order .handle { --dz-left: 136px; }
   /* The home button sits in the right group in BOTH layouts, so its width always adds to the right. */
   body.home-enabled .handle { --dz-extra: 30px; }
   .label {
@@ -138,6 +147,16 @@
      mac-order the right-side width stays conservative — the hover label just caps a touch narrower. */
   body.no-manager .config { display: none; }
   body.no-manager:not(.mac-order) .handle { --dz-left: 12px; }
+
+  /* The app's own icon at the far left of the bar (window.js resolves it — same icon the About panel
+     shows). Opt-in per app (widget config dragZoneIcon, default off) — window.js only sets iconSrc/
+     body.has-icon when the toggle is on, so this stays hidden unless both that AND an icon apply.
+     No `order` override in the mac-order rules below, so it keeps the default order:0 and stays first
+     in BOTH layouts — ahead of the gear in the classic layout, ahead of the traffic-light controls in
+     mac-order. Margins give it its own breathing room beyond .handle's 6px padding and the row's 2px
+     gap, so it reads as a distinct "identity" slot rather than crowding the first control. */
+  .app-icon { display: none; width: 18px; height: 18px; margin: 0 8px 0 4px; flex: none; }
+  body.has-icon .app-icon { display: block; }
   .zoom-pct { min-width: 40px; text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.9);
     -webkit-app-region: no-drag; pointer-events: none; font-variant-numeric: tabular-nums; }
 
@@ -175,6 +194,7 @@
 </head>
 <body class="{{bodyClass}}">
   <div class="handle">
+    <img class="app-icon" src="{{iconSrc}}" alt="">
     <div class="config">
       <button class="btn btn-config" data-action="configure">
         <svg viewBox="0 0 16 16"><path fill="currentColor" d="M 6.25 1 L 6.0957031 2.84375 A 5.5 5.5 0 0 0 4.4882812 3.7734375 L 2.8125 2.984375 L 1.0625 6.015625 L 2.5839844 7.0722656 A 5.5 5.5 0 0 0 2.5 8 A 5.5 5.5 0 0 0 2.5800781 8.9316406 L 1.0625 9.984375 L 2.8125 13.015625 L 4.484375 12.228516 A 5.5 5.5 0 0 0 6.0957031 13.152344 L 6.2460938 15.001953 L 9.7460938 15.001953 L 9.9003906 13.158203 A 5.5 5.5 0 0 0 11.507812 12.228516 L 13.183594 13.017578 L 14.933594 9.9863281 L 13.412109 8.9296875 A 5.5 5.5 0 0 0 13.496094 8.0019531 A 5.5 5.5 0 0 0 13.416016 7.0703125 L 14.933594 6.0175781 L 13.183594 2.9863281 L 11.511719 3.7734375 A 5.5 5.5 0 0 0 9.9003906 2.8496094 L 9.75 1 L 6.25 1 z M 8 6 A 2 2 0 0 1 10 8 A 2 2 0 0 1 8 10 A 2 2 0 0 1 6 8 A 2 2 0 0 1 8 6 z"/></svg>

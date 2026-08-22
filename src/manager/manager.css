@@ -1181,6 +1181,13 @@ body.dark .domain-configure-btn img {
   pointer-events: none;
 }
 
+/* A plugin config field that only some stacks need (data-config-visible-if-stack): removed from
+   layout entirely, not just dimmed — unlike .config-disabled, this isn't "temporarily off", it's
+   "not applicable to the current selection". */
+.config-hidden {
+  display: none;
+}
+
 .plugin-config-range {
   display: flex;
   align-items: center;
@@ -1510,16 +1517,20 @@ body.dark .btn-reveal img {
   background: transparent;
 }
 
-/* docker-integration config: the stack chooser (icon + label rows) and the read-only compose preview. */
-.docker-stacks { display: flex; flex-direction: column; gap: 4px; }
-.docker-stack-row {
-  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+/* docker-integration config: the stack chooser is a combobox — a bordered trigger (current icon +
+   label) that opens the shared .app-select-list/.app-select-item portal dropdown (see plugin-list.js) —
+   plus the read-only compose preview below it. */
+.docker-stack-trigger {
+  width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 10px;
   border: 1px solid var(--card-shadow); border-radius: 8px; cursor: pointer;
-  font-size: 13px; color: var(--card-fg);
+  font-size: 13px; color: var(--card-fg); background: var(--card-bg);
 }
-.docker-stack-row img { flex-shrink: 0; object-fit: contain; }
-.docker-stack-row:hover { background: var(--card-hover); }
-.docker-stack-row.active { border-color: var(--accent); }
+.docker-stack-trigger img { flex-shrink: 0; object-fit: contain; }
+.docker-stack-trigger:hover { background: var(--card-hover); }
+/* Chevron via ::after (not baked into the JS-built label) so it stays put regardless of content. */
+.docker-stack-trigger::after { content: '▾'; margin-left: auto; opacity: 0.6; font-size: 11px; }
+/* Highlights the currently selected row when the dropdown is reopened. */
+.app-select-item.active { background: var(--card-hover); }
 /* Read-only compose preview: a code panel whose palette follows the manager's light/dark theme
    (overridden under body.dark below); OverlayScrollbars handles the overflow. */
 .docker-compose-preview {
@@ -1565,6 +1576,14 @@ body.dark .docker-compose-preview {
 
 .dialog-field-row .dialog-field {
   margin: 0;
+}
+
+/* Groups a toggle with the field(s) it gates (e.g. the widget's aspect-ratio lock + its ratio
+   dropdown) without the bordered/legend chrome of .plugin-config-fieldset. */
+.dialog-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .dialog-field-toggle {

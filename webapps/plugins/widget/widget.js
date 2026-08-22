@@ -33,8 +33,12 @@ const MAX_TINT_ALPHA = 0.99
 // Drop shadow (default on). Width (the blur) is configurable; offset + colour are fixed. The host
 // insets the app view by a gutter so the shadow has room; the gutter is derived from the width.
 // Width range matches the slider in config.html.
+// 0.35 alpha, not the near-opaque 0.85 this used to be: at CSS pixel scale the old value already
+// read as a hard, near-black band, and on a HiDPI display (gutter + blur scaled up along with
+// everything else) it turned into a thick, harsh frame around the app instead of a soft shadow
+// (reported against Diablo's 4:3-locked widget window).
 const SHADOW_OFFSET = 3
-const SHADOW_COLOR  = 'rgba(0, 0, 0, 0.85)'
+const SHADOW_COLOR  = 'rgba(0, 0, 0, 0.35)'
 const MIN_SHADOW_WIDTH = 2
 const MAX_SHADOW_WIDTH = 8
 const DEFAULT_SHADOW_WIDTH = 8
@@ -111,6 +115,35 @@ function resolveResizable(config) {
   return config?.resizable !== false
 }
 
+// Fixed aspect ratio: a free-text "width:height" string from config.html (e.g. "16:9", "12:5").
+// Off by default — only an explicit aspectRatioLock + a resizable window actually constrain the
+// window; setAspectRatio(0) (Electron's "no ratio" value) is what clears it. Locking a
+// non-resizable window is meaningless (there's nothing left to constrain), so resizable=false
+// always wins over the lock. Malformed/missing input falls back to 16:9.
+const DEFAULT_ASPECT_RATIO = 16 / 9
+function parseAspectRatio(raw) {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(String(raw ?? ''))
+  if (!m) return null
+  const w = parseFloat(m[1]), h = parseFloat(m[2])
+  return w > 0 && h > 0 ? w / h : null
+}
+function resolveAspectRatio(config) {
+  if (!resolveResizable(config) || config?.aspectRatioLock !== true) return 0
+  return parseAspectRatio(config?.aspectRatio) ?? DEFAULT_ASPECT_RATIO
+}
+
+// Opt-in (config.preciseAspectRatio, default off) and, for now, restricted to exactly 4:3 — the one
+// ratio this has actually been exercised against (a ScummVM/Selkies container view whose content
+// only renders correctly when its own pixel area, not just the outer window, stays exact 4:3). The
+// plain aspectRatioLock enforcement below keeps the WINDOW at the target ratio, but the app's actual
+// content area is smaller than that by the shadow gutter (margin, both sides) — so with a shadow on,
+// the content itself drifts slightly off-ratio even while the window is exact. This flag makes
+// enforceRatio target the content area instead: harmless with shadow off (margin 0 → identical to the
+// plain path) but the fix only actually matters with it on.
+function preciseAspectRatioEnabled(config) {
+  return config?.preciseAspectRatio === true
+}
+
 // Whether to paint our tint over the page (and clear the app's root backgrounds so the desktop
 // shows through). Default OFF — it only takes effect on pages whose own background is transparent
 // (e.g. Home Assistant), and the broad root-clearing selector can strip backgrounds the app needs
@@ -145,6 +178,10 @@ function dragZoneEnabled(config) { return config?.dragZone !== false }
 // Whether the drag strip uses the light theme. Default OFF (dark) — the dark, translucent panel reads
 // well over any page; an explicit true switches it to a light variant (chosen per app in config.html).
 function dragZoneLight(config) { return config?.dragZoneLight === true }
+
+// Whether to show the app's own icon at the far left of the drag strip. Default OFF — window.js only
+// resolves + reads the icon file when this is on, so an app without one configured pays no cost.
+function dragZoneIcon(config) { return config?.dragZoneIcon === true }
 
 // Whether the drag strip arranges its buttons macOS-style: the window controls move to the LEFT with
 // close outermost (traffic-light order close/min/max), gear/About/DevTools/zoom to the right. Default
@@ -196,7 +233,7 @@ function hostHtml(config) {
 // mode (a frameless host window), which is why it travels with the other view-mode hooks.
 function dragZone(config) {
   return dragZoneEnabled(config)
-    ? { html: DRAG_ZONE_HTML, preload: DRAG_ZONE_PRELOAD, light: dragZoneLight(config), macOrder: macButtonOrder(config) }
+    ? { html: DRAG_ZONE_HTML, preload: DRAG_ZONE_PRELOAD, light: dragZoneLight(config), macOrder: macButtonOrder(config), icon: dragZoneIcon(config) }
     : null
 }
 
@@ -242,6 +279,41 @@ function attachPlugin(win, api) {
   })
 
   win.setResizable(resolveResizable(api.config))
+
+  // setAspectRatio() alone is unreliable here: it relies on the window manager honouring WM
+  // aspect-ratio hints, which frameless (frame:false) windows often don't get — and Wayland
+  // compositors ignore them outright. So on top of the native call (still worth setting, e.g. for
+  // macOS) the ratio is enforced by hand on every resize. Height is the reference: the user drags
+  // height freely and width is recomputed from it, and the same recompute runs once immediately so
+  // a locked window opens at the right ratio even if its saved/default size doesn't match.
+  //
+  // This enforcement does NOT reliably hold during a native, OS-driven interactive resize (confirmed
+  // on Wayland/Mutter: the compositor owns that gesture and can silently decline to apply our
+  // setContentBounds() calls to the actual screen, even though Electron's own bounds bookkeeping
+  // reports them as applied). A custom resize-grip overlay (bypassing the OS's interactive-resize
+  // protocol entirely) was tried as a fix and reverted — Mutter's own resize hot-zone appears to
+  // occupy the same screen region regardless, and win.setResizable(false) didn't reliably stop native
+  // edge-dragging either. For a locked ratio that has to hold, use resizable:false with a fixed size
+  // instead (see the widget README) — this enforcement stays as a best-effort correction for whatever
+  // resize does reach us, and it's what applies the ratio once at launch.
+  const ratio = resolveAspectRatio(api.config)
+  win.setAspectRatio(ratio)
+  if (ratio) {
+    // With preciseAspectRatioEnabled (4:3 only, see its own comment), target the CONTENT area
+    // instead of the window: subtract the shadow gutter from height before applying the ratio, then
+    // add it back to get the window width. margin is 0 whenever the flag doesn't apply (off, wrong
+    // ratio, or shadow off) — same result as the plain formula, so this never regresses that path.
+    const margin = preciseAspectRatioEnabled(api.config) && ratio === 4 / 3
+      ? (shadowEnabled(api.config) ? SHADOW_OFFSET + resolveShadowWidth(api.config) + 1 : 0)
+      : 0
+    const enforceRatio = () => {
+      const { x, y, width, height } = win.getContentBounds()
+      const targetWidth = Math.round((height - 2 * margin) * ratio) + 2 * margin
+      if (targetWidth !== width) win.setContentBounds({ x, y, width: targetWidth, height })
+    }
+    enforceRatio()
+    win.on('resize', enforceRatio)
+  }
 
   return {
     contextMenuItems: () => {

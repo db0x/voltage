@@ -48,11 +48,16 @@ const highlightYaml = src => String(src).split('\n').map(highlightYamlLine).join
 //   [data-config-swatch]                   — a colour-preview element; gets the value as the CSS
 //                                            var --swatch-color (style the element to use it)
 //   [data-config-enabled-by="<toggleKey>"] — dimmed + disabled while that toggle is off
-//   [data-config-stacks="<key>"]           — a clickable icon+label chooser whose selection is
-//                                            config[key], filled from the plugin's discovered stacks
+//   [data-config-stacks="<key>"]           — a dropdown combobox (trigger button + portal list, like
+//                                            the app pickers elsewhere) whose selection is config[key],
+//                                            filled from the plugin's discovered stacks
 //                                            ({ id, label, icon, content }); native <select> can't
 //                                            show icons. Pair with:
 //   [data-config-stack-preview]            —   a read-only field showing the chosen stack's content
+//   [data-config-visible-if-stack="<flag>"]— hidden (and its own [data-config-key] fields cleared)
+//                                            unless the SELECTED stack's own metadata sets <flag>
+//                                            truthy (e.g. stack.json's pathConfigurable) — for a
+//                                            field only some stacks need
 //
 // Repeatable rows — for a config value that is an array of small objects (e.g. css-inject's list
 // of variable→colour overrides):
@@ -181,13 +186,17 @@ export function initPluginConfig({ i18n, icons, plugins }) {
     }
   }
 
-  // Custom stack chooser: clickable icon+label rows bound to config[key], plus a read-only preview of
-  // the chosen stack's compose content. Native <select> can't show per-entry icons, so the docker
-  // plugin uses this instead. Reads the stacks (with icon + content) the discovery put on _stacks.
+  // Custom stack combobox: a trigger button (closed state: current icon+label) that opens a portal
+  // dropdown of icon+label rows, bound to config[key] — plus a read-only preview of the chosen
+  // stack's compose content. Native <select> can't show per-entry icons, so the docker plugin uses
+  // this instead. Reads the stacks (with icon + content) the discovery put on _stacks. The portal is
+  // built once per trigger and stashed on it (trigger._dropdown) so repeat opens of the same overlay
+  // reuse it instead of piling up detached listeners on document.
   function bindStackLists(overlay, cfg) {
     const stacks = overlay._stacks || []
-    for (const listEl of overlay.querySelectorAll('[data-config-stacks]')) {
-      const key     = listEl.dataset.configStacks
+    const IMG = (src) => `<img src="${src || ''}" width="20" height="20" alt="" style="flex-shrink:0;object-fit:contain">`
+    for (const trigger of overlay.querySelectorAll('[data-config-stacks]')) {
+      const key     = trigger.dataset.configStacks
       const preview = overlay.querySelector('[data-config-stack-preview]')
       const codeEl  = preview?.querySelector('code')
       // Attach OverlayScrollbars once (matches the rest of the UI); the highlighted <code> scrolls inside.
@@ -195,23 +204,71 @@ export function initPluginConfig({ i18n, icons, plugins }) {
         OverlayScrollbars(preview, { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
         preview._osInited = true
       }
-      listEl.replaceChildren()  // drop rows from a previous open before reseeding
+
+      let dropdown = trigger._dropdown
+      if (!dropdown) {
+        dropdown = document.createElement('div')
+        dropdown.className = 'app-select-list'
+        dropdown.style.display = 'none'
+        dropdown.innerHTML = '<ul></ul>'
+        document.body.appendChild(dropdown)
+        trigger._dropdown = dropdown
+        const openDropdown = () => {
+          const rect = trigger.getBoundingClientRect()
+          dropdown.style.left  = rect.left + 'px'
+          dropdown.style.width = rect.width + 'px'
+          dropdown.style.top   = (rect.bottom + 2) + 'px'
+          dropdown.style.display = ''
+          trigger._open = true
+          if (!dropdown._osInited) {
+            OverlayScrollbars(dropdown, { scrollbars: { autoHide: 'leave', autoHideDelay: 200 } })
+            dropdown._osInited = true
+          }
+        }
+        trigger._close = () => { dropdown.style.display = 'none'; trigger._open = false }
+        trigger.addEventListener('click', () => { trigger._open ? trigger._close() : openDropdown() })
+        // contains()-based close (not stopPropagation): OverlayScrollbars rewrites the inner DOM, so
+        // clicks on its scrollbar elements would otherwise bubble up and close unexpectedly.
+        document.addEventListener('click', e => {
+          if (trigger._open && !dropdown.contains(e.target) && !trigger.contains(e.target)) trigger._close()
+        })
+      }
+      const ul = dropdown.querySelector('ul')
+
       const apply = (id) => {
         cfg[key] = id || ''
-        for (const row of listEl.children) row.classList.toggle('active', row.dataset.id === id)
-        if (codeEl) codeEl.innerHTML = highlightYaml((stacks.find(s => s.id === id) || {}).content || '')
+        const meta = stacks.find(s => s.id === id)
+        trigger.innerHTML = meta ? `${IMG(meta.icon)}<span>${meta.label}</span>`
+                                  : `<span class="app-select-hint">${i18n.dockerConfigStackChoose || ''}</span>`
+        trigger._close?.()
+        for (const li of ul.children) li.classList.toggle('active', li.dataset.id === id)
+        if (codeEl) codeEl.innerHTML = highlightYaml((meta || {}).content || '')
+        // Fields only some stacks need (e.g. docker-integration's Path override — meaningless for a
+        // single-purpose stack like draw.io, only useful when several apps share one stack template)
+        // declare [data-config-visible-if-stack="<flag>"]; shown only when the selected stack's own
+        // metadata (from stacks(), e.g. stack.json's pathConfigurable) sets that flag. Hidden fields
+        // are also cleared — otherwise a value typed before switching stacks would silently survive
+        // invisibly and still get saved.
+        for (const field of overlay.querySelectorAll('[data-config-visible-if-stack]')) {
+          const show = !!(meta || {})[field.dataset.configVisibleIfStack]
+          field.classList.toggle('config-hidden', !show)
+          if (show) continue
+          for (const input of field.querySelectorAll('[data-config-key]')) {
+            cfg[input.dataset.configKey] = ''
+            input.value = ''
+            reflectValue(overlay, input.dataset.configKey, '')
+          }
+        }
       }
+
+      ul.replaceChildren()  // drop rows from a previous open before reseeding
       for (const s of stacks) {
-        const row = document.createElement('div')
-        row.className = 'docker-stack-row'
-        row.dataset.id = s.id
-        const img = document.createElement('img')
-        img.src = s.icon || ''; img.width = 20; img.height = 20; img.alt = ''
-        const span = document.createElement('span')
-        span.textContent = s.label
-        row.append(img, span)
-        row.addEventListener('click', () => apply(s.id))
-        listEl.appendChild(row)
+        const li = document.createElement('li')
+        li.className = 'app-select-item'
+        li.dataset.id = s.id
+        li.innerHTML = `${IMG(s.icon)}<span>${s.label}</span>`
+        li.addEventListener('click', () => apply(s.id))
+        ul.appendChild(li)
       }
       apply(cfg[key] || '')  // reflect the stored selection + its preview on open
     }

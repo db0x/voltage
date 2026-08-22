@@ -17,12 +17,15 @@ window closes.
 1. In the Manager's create/edit dialog, add **docker-integration** to the app's plugins.
    The plugin is **greyed out (unselectable)** when neither Docker + Compose v2 (`docker compose`)
    nor legacy v1 (`docker-compose`) is usable on the system.
-2. Open the plugin's gear dialog and pick a **stack** (icon + label rows; a read-only, syntax-
-   highlighted preview shows the stack's compose file).
+2. Open the plugin's gear dialog and pick a **stack** from the dropdown (icon + label per entry; a
+   read-only, syntax-highlighted preview shows the chosen stack's compose file). A stack declaring `pathConfigurable` (e.g.
+   ScummVM) additionally shows a **Path** field — a fixed route appended after `localhost:<port>`
+   (e.g. `/play/tentacle`), for a stack template several apps each launch their own container from.
+   Single-purpose stacks (e.g. draw.io) don't show it — there is nothing to route between.
 3. Save. The app's **URL field is locked** and shows `-docker-` while this plugin is selected — the
    plugin derives the real URL at launch; the baked `url` is kept untouched as the online fallback
    (and its **path + query survive** onto the container URL, so `…/edit/foo.docx` still lands on
-   `http://localhost:<port>/edit/foo.docx`).
+   `http://localhost:<port>/edit/foo.docx` — unless a Path override is set, which takes priority).
 4. Rebuild the AppImage (plugin selection and `pluginConfig` are baked at build time).
 
 On every launch the window first shows an in-window "starting…" page (docker glyph + container hint,
@@ -45,7 +48,9 @@ A stack is a directory shipping `compose.yaml` **or** `compose.yml` plus a `stac
     "createDirs": ["documents"],               // bind-mount sources to pre-create (else docker makes them root-owned)
     "waitFor": [                               // extra readiness gates beyond the routed service
         { "portEnv": "DS_PORT", "path": "/healthcheck", "timeoutMs": 90000 }
-    ]
+    ],
+    "readyDelayMs": 4000,                      // extra fixed settle time after healthPath + waitFor pass (see below)
+    "pathConfigurable": true                   // shows the config dialog's Path field for this stack (see below)
 }
 ```
 
@@ -65,7 +70,8 @@ file also works standalone). A stack is **"rich"** when it ships more than compo
     },
     "port": 18080,                  // OPTIONAL fixed host port (default: auto — next free in range)
     "composeFile": "/path/x.yml",   // OPTIONAL power-user compose file; overrides the stack
-    "dataDir": "/path/data"         // OPTIONAL, passed as VOLTAGE_DATA_DIR
+    "dataDir": "/path/data",        // OPTIONAL, passed as VOLTAGE_DATA_DIR
+    "path": "/play/tentacle"        // OPTIONAL fixed route (config dialog field); see below
 }
 ```
 
@@ -93,10 +99,40 @@ A declared secret still missing at launch (config never saved through the Manage
 4. **Readiness:** the routed service's `healthPath` is polled, then every `waitFor` gate.
    **Ready means an HTTP status < 400** — a 502 must *not* count: OnlyOffice's DocumentServer fronts
    itself with nginx that answers 502 within seconds while the actual service boots for another
-   30–60 s, which used to produce a "ready" blank page.
-5. The window loads `http://localhost:<port><path+query of pkg.url>`.
+   30–60 s, which used to produce a "ready" blank page. Some services fail the OPPOSITE way — the
+   HTTP status is fine long before the service is actually usable, e.g. a video-streamed desktop
+   session (ScummVM's Selkies UI) serves its shell page instantly while the desktop behind it is still
+   booting. `readyDelayMs` is a blunt fixed extra wait for exactly that case (only on a fresh start,
+   never when reusing an already-running, already-settled container). Only ever a heuristic — tune it
+   per stack by how long the service actually takes to become genuinely interactive.
+5. The window loads `http://localhost:<port><suffix>`, where `<suffix>` is the config's `path`
+   (normalised to a leading `/`) if set, else the baked `pkg.url`'s own path+query. `path` is for a
+   fixed, per-app route (e.g. several game apps sharing one ScummVM stack, each routed to its own
+   `/play/<game>`); the `pkg.url` fallback is for apps whose entry page is inherently per-launch
+   (e.g. a file association opening a specific document) — the two never apply together.
 6. **Teardown:** window refcount; when the last window closes *and* this process started the stack,
    `compose down` runs synchronously (async would be killed by process exit). Errors never block quit.
+
+### ScummVM stack notes
+
+Selkies (the stack's video-streamed desktop) renegotiates its own internal resolution to match the
+window on every resize, taking roughly half a second to a second to catch up each time — until it
+does, its `#videoCanvas` element stays pinned at the previous size, which reads as a black gap around
+the content rather than a smooth resize. Mitigation (app-level, not stack-level, since it's about how
+*this* app's window behaves, not the container): the **`css-inject`** plugin forcing
+`#videoCanvas { width: 100% !important; height: 100% !important; object-fit: fill !important; }` — the
+content stretches to fill instead of leaving a gap while Selkies catches up (briefly upscaled/
+soft-looking rather than gapped). Simplest fix of all for an app that doesn't need live resizing:
+`resizable: false` (widget config) at a size that already matches the game's aspect ratio — no resize
+ever happens, so there's nothing for Selkies to catch up to.
+
+**Running several apps built from this stack at once** (one per game, e.g. `dot` + `comi-de`) needs
+each to actually get its own container — the compose file must NOT set a fixed `container_name`. A
+fixed name is unique host-wide, across every compose *project*, so the second app's `up` would collide
+with the first's already-running container regardless of the two apps' own distinct
+`voltage-<profile>` projects. Left unset, compose derives the name from the project instead, which is
+automatically unique per app — this is what actually makes concurrent instances possible, not just the
+per-app port (`VOLTAGE_PORT`, already automatic — see *Auto-port* above) or project name alone.
 
 Every step logs under the `[docker-integration]` prefix — launch the AppImage from a terminal to see
 exactly where a failing start gives up. Any failure returns `null` → the app falls back to its baked
@@ -133,7 +169,7 @@ Generic seams (usable by any plugin) that were introduced with this integration:
 |---|---|---|
 | `available()` → `{ available, reason }` | Manager plugin discovery | greyed-out, unselectable list entry with a localized tooltip when prerequisites are missing |
 | `managesUrl: true` | create/edit dialogs | URL field locked (`-docker-` marker in edit; real URL preserved on save) |
-| `stacks()` | discovery → config dialog | fills the `data-config-stacks` icon chooser + `data-config-stack-preview` highlighted preview |
+| `stacks()` | discovery → config dialog | fills the `data-config-stacks` icon+label combobox + `data-config-stack-preview` highlighted preview; also carries `pathConfigurable` per stack for `data-config-visible-if-stack` |
 | `launchInfo(pkg, {config, i18n})` | app-window.js | icon/title/hint for the in-window "starting…" page |
 | `resolveLaunch(pkg, {config})` | app-window.js (async pre-launch seam) | resolves the real URL before the window loads; `null` = fallback to `pkg.url` |
 | `completeConfig(config)` | `buildAppCfg` on Manager save | normalise/complete per-app plugin config (env defaults, generated secrets) |

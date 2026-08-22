@@ -817,6 +817,9 @@ function createWindow(pkg, opts = {}) {
       // app-level, so window.js injects them here). {name} → this app's display name.
       const i18n = t()
       const dragLabel = (s, fallback) => escapeHtml((i18n[s] || fallback).replace(/\{name\}/g, displayName))
+      // The app's own icon (same resolver the About panel uses) — shown at the far left of the bar,
+      // opt-in per app (widget config, default off) via viewMode.dragZone.icon.
+      const dragIconSrc = viewMode.dragZone.icon ? appIconDataUrl(pkg) : null
       // body classes: 'zoom-enabled' shows the zoom controls (only when the app loads the zoom
       // plugin); 'light' switches the bar to its light theme (widget config, default dark).
       const dragBodyClass = [
@@ -828,6 +831,7 @@ function createWindow(pkg, opts = {}) {
         viewMode.dragZone.light ? 'light' : '',
         // macOS-style button order (close/min/max on the left) — widget config, default classic.
         viewMode.dragZone.macOrder ? 'mac-order' : '',
+        dragIconSrc ? 'has-icon' : '',
       ].filter(Boolean).join(' ')
       const dragHtml = viewMode.dragZone.html
         .replace('{{configLabel}}', dragLabel('widgetDragConfigLabel', 'Open Voltage configuration for {name}'))
@@ -838,6 +842,7 @@ function createWindow(pkg, opts = {}) {
         .replace('{{maxLabel}}',    dragLabel('maximizeWindow',  'Maximize'))
         .replace('{{closeLabel}}',  dragLabel('widgetQuit',      'Quit {name}'))
         .replace('{{bodyClass}}',   dragBodyClass)
+        .replace('{{iconSrc}}',     dragIconSrc || '')
       dragOverlay.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(dragHtml))
 
       // only-office apps: the home button shows only while an editor page (/edit/…) is open. On the

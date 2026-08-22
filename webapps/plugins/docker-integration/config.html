@@ -3,10 +3,14 @@
      open/close + Apply/Cancel wiring; the markup reuses the manager's .dialog-* classes so it
      matches every other dialog. {{pluginIcon}} is the plugin's icon; {{docker*}} are i18n keys.
 
-     The only setting is the curated Stack. It's a custom icon+label chooser (data-config-stacks) —
-     not a native <select>, which can't show per-entry icons — filled by the host from the plugin's
-     discovered stacks. Below it, a read-only preview shows the chosen stack's compose file. Port is
-     auto-assigned at launch, so there are no further knobs. -->
+     The curated Stack is a custom icon+label combobox (data-config-stacks) — not a native <select>,
+     which can't show per-entry icons — filled by the host from the plugin's discovered stacks. Below
+     it, a read-only preview shows the chosen stack's compose file. Port is auto-assigned at launch,
+     so there's no knob for it. Path is a per-app override for the routed URL's path (e.g. "/play/
+     tentacle" on a stack template several apps each launch their own container from, e.g. one game
+     per app on a shared ScummVM stack) — see docker-integration.js resolvePathOverride. Shown only
+     for a stack that declares stack.json's pathConfigurable (data-config-visible-if-stack) — a
+     single-purpose stack like draw.io has no use for it. -->
 <div class="dialog-overlay plugin-config-overlay hidden">
   <div class="dialog">
     <div class="dialog-header">
@@ -19,7 +23,14 @@
         <label>{{dockerConfigStack}}
           <span class="field-help" data-tooltip="{{dockerConfigStackHint}}">?</span>
         </label>
-        <div class="docker-stacks" data-config-stacks="stack"></div>
+        <button type="button" class="docker-stack-trigger" data-config-stacks="stack"></button>
+      </div>
+      <div class="dialog-field" data-config-visible-if-stack="pathConfigurable">
+        <label for="docker-config-path">{{dockerConfigPath}}
+          <span class="field-help" data-tooltip="{{dockerConfigPathHint}}">?</span>
+        </label>
+        <input type="text" id="docker-config-path" autocomplete="off" spellcheck="false"
+               placeholder="/play/tentacle" data-config-key="path" data-config-default="">
       </div>
       <div class="dialog-field">
         <label>{{dockerConfigComposePreview}}</label>

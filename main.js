@@ -18,6 +18,18 @@ if (!process.env.VOLTAGE_TEST) {
   app.commandLine.appendSwitch('enable-webrtc-pipewire-capturer')
 }
 
+// The widget plugin's rounded app-view corners (view.setBorderRadius, see webapps/plugins/widget/
+// widget.js) use a GPU-composited clip that can conflict with a page's own hardware-accelerated video
+// decode — observed with a KasmVNC-based container app (ScummVM): the video came out visibly
+// corrupted/garbled with rounded corners on, clean with radius:0. Forcing SOFTWARE video decode
+// sidesteps the conflict (heavier on CPU, unnoticeable for one modest stream). Opt-in per app via the
+// widget config's softwareVideoDecode — it's a real regression for apps that legitimately benefit from
+// hardware decode (e.g. video calls), and since each Voltage app is its own process/AppImage, scoping
+// it here (before any window exists) only ever affects the one app whose OWN config asks for it.
+if (pkg.pluginConfig?.['plugins/widget/widget.js']?.softwareVideoDecode === true) {
+  app.commandLine.appendSwitch('disable-accelerated-video-decode')
+}
+
 // Notice mode: the generic launcher (src/launcher.js) starts the app this way when a target
 // AppImage is unreachable (e.g. its project directory is still encrypted), to show a Voltage-styled
 // "app unavailable" dialog instead of failing silently. Checked first because it overrides whichever

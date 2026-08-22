@@ -76,11 +76,12 @@ test('create dialog: docker-integration config dialog opens and closes', async (
 })
 
 // Setup:    Create dialog open (Docker available), docker-integration added, its config opened.
-// Action:   Inspect the stack chooser, the (removed) advanced/port/data fields, and click the stack.
-// Expected: A clickable "draw.io" row with an icon (the host filled it from the plugin's discovered
-//           stacks — the renderer has no file access of its own); the data-folder and Advanced fields
-//           are gone (auto port, no extra knobs); selecting the stack fills the read-only compose
-//           preview with the bundled compose.yaml.
+// Action:   Open the stack combobox, inspect its dropdown + the (removed) advanced/port/data fields,
+//           then pick a stack.
+// Expected: A "draw.io" entry with an icon (the host filled it from the plugin's discovered stacks —
+//           the renderer has no file access of its own); the data-folder and Advanced fields are gone
+//           (auto port, no extra knobs); selecting the stack fills the read-only compose preview with
+//           the bundled compose.yaml.
 test('create dialog: docker config dialog shows the stack chooser + compose preview', async ({ managerPageDockerOn: page }) => {
   await page.click('.card-add')
   await page.click('#create-plugin-trigger')
@@ -90,7 +91,8 @@ test('create dialog: docker config dialog shows the stack chooser + compose prev
 
   const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
   await expect(overlay).toHaveCount(1)
-  const row = overlay.locator('.docker-stack-row[data-id="drawio"]')
+  await overlay.locator('.docker-stack-trigger').click()
+  const row = page.locator('.app-select-item:visible[data-id="drawio"]')
   await expect(row).toHaveText('draw.io')
   await expect(row.locator('img')).toHaveCount(1)
   // The data-folder field and the whole Advanced section (incl. fixed port) are gone.
@@ -114,7 +116,8 @@ test('edit dialog: a chosen docker stack persists to the private config', async 
   await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
   await page.locator('#edit-plugin-list .domain-item', { hasText: 'docker-integration' })
     .locator('.domain-configure-btn').click()
-  await page.locator('.docker-stack-row[data-id="drawio"]').click()
+  await page.locator('.docker-stack-trigger').click()
+  await page.locator('.app-select-item:visible[data-id="drawio"]').click()
   await page.locator('.plugin-config-overlay .plugin-config-apply').click()
   await page.click('#edit-save')
 
@@ -122,6 +125,95 @@ test('edit dialog: a chosen docker stack persists to the private config', async 
   await expect.poll(() => {
     try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig?.[DOCKER_PLUGIN]?.stack } catch { return undefined }
   }).toBe('drawio')
+})
+
+// Setup:    Create dialog open (Docker available), docker-integration added, its config opened.
+// Action:   Select draw.io (single-purpose, no pathConfigurable), then switch to scummvm (declares
+//           stack.json's pathConfigurable).
+// Expected: The Path field is hidden for draw.io and shown for scummvm — proving the field is gated
+//           per stack (data-config-visible-if-stack) rather than always present.
+test('create dialog: the docker Path field only shows for a stack that declares pathConfigurable', async ({ managerPageDockerOn: page }) => {
+  await page.click('.card-add')
+  await page.click('#create-plugin-trigger')
+  await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
+  await page.locator('#create-plugin-list .domain-item', { hasText: 'docker-integration' })
+    .locator('.domain-configure-btn').click()
+
+  const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
+  const pathField = overlay.locator('#docker-config-path')
+
+  await overlay.locator('.docker-stack-trigger').click()
+  await page.locator('.app-select-item:visible[data-id="drawio"]').click()
+  await expect(pathField).not.toBeVisible()
+
+  await overlay.locator('.docker-stack-trigger').click()
+  await page.locator('.app-select-item:visible[data-id="scummvm"]').click()
+  await expect(pathField).toBeVisible()
+})
+
+// Setup:    Edit dialog for the private test-user-app (Docker available), docker-integration added.
+// Action:   Open its config, choose the scummvm stack (declares pathConfigurable), type a Path
+//           override, Apply, then Save.
+// Expected: Both the stack choice and the path persist under pluginConfig[<docker plugin>] — proving
+//           the new per-app route field (for a stack template several apps each launch their own
+//           container from, e.g. one game per app on a shared ScummVM stack) round-trips like the
+//           stack chooser does.
+test('edit dialog: a docker config Path override persists to the private config', async ({ managerPageDockerOn: page }) => {
+  const card = page.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await page.click('#edit-plugin-trigger')
+  await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
+  await page.locator('#edit-plugin-list .domain-item', { hasText: 'docker-integration' })
+    .locator('.domain-configure-btn').click()
+
+  const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
+  await overlay.locator('.docker-stack-trigger').click()
+  await page.locator('.app-select-item:visible[data-id="scummvm"]').click()
+  await expect(overlay.locator('#docker-config-path')).toHaveValue('')  // default empty
+  await page.fill('#docker-config-path', '/play/tentacle')
+  await overlay.locator('.plugin-config-apply').click()
+  await page.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig?.[DOCKER_PLUGIN] } catch { return undefined }
+  }).toEqual({ stack: 'scummvm', path: '/play/tentacle' })
+})
+
+// Setup:    Edit dialog for the private test-user-app, docker-integration added and configured with
+//           a Path override on the scummvm stack (as the previous test leaves it, via a fresh setup
+//           here to stay independent).
+// Action:   Switch the stack to draw.io (no pathConfigurable) and save.
+// Expected: The now-hidden, no-longer-applicable path is cleared rather than silently persisted —
+//           switching away from a path-capable stack must not leave stale routing config behind.
+test('edit dialog: switching to a stack without pathConfigurable clears a previously set Path', async ({ managerPageDockerOn: page }) => {
+  const card = page.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await page.click('#edit-plugin-trigger')
+  await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
+  await page.locator('#edit-plugin-list .domain-item', { hasText: 'docker-integration' })
+    .locator('.domain-configure-btn').click()
+
+  const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
+  await overlay.locator('.docker-stack-trigger').click()
+  await page.locator('.app-select-item:visible[data-id="scummvm"]').click()
+  await page.fill('#docker-config-path', '/play/tentacle')
+
+  await overlay.locator('.docker-stack-trigger').click()
+  await page.locator('.app-select-item:visible[data-id="drawio"]').click()
+  await expect(overlay.locator('#docker-config-path')).not.toBeVisible()
+
+  await overlay.locator('.plugin-config-apply').click()
+  await page.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig?.[DOCKER_PLUGIN] } catch { return undefined }
+  }).toEqual({ stack: 'drawio', path: '' })
 })
 
 // NB: the e2e "saving generates env defaults + secrets" test left with the onlyoffice stack (the only
