@@ -28,6 +28,8 @@
   "errorClose": "App schließen",
   "errorTimedOut": "Zeitüberschreitung der Verbindung",
   "fullscreen": "Vollbild",
+  "pointerLockToastLocked": "🔒 Maus gefangen — Esc zum Verlassen",
+  "pointerLockToastUnlocked": "🔓 Maus frei",
   "maximizeWindow": "Maximieren",
   "minimizeWindow": "Minimieren",
   "openDevTools": "Entwicklertools öffnen",

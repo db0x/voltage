@@ -28,6 +28,8 @@
   "errorClose": "Close app",
   "errorTimedOut": "Connection timed out",
   "fullscreen": "Fullscreen",
+  "pointerLockToastLocked": "🔒 Mouse captured — Esc to release",
+  "pointerLockToastUnlocked": "🔓 Mouse free",
   "maximizeWindow": "Maximize",
   "minimizeWindow": "Minimize",
   "openDevTools": "Open developer tools",

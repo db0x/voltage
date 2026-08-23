@@ -1,9 +1,21 @@
 const { session, desktopCapturer, app } = require('electron')
 
-const MEDIA_PERMISSIONS = [
+// Deny-by-default allowlist: anything not listed here is rejected for every app session (see the
+// handlers below). pointerLock + fullscreen + keyboardLock are here for containerized game/desktop
+// streams (e.g. the docker-integration ScummVM stack's Selkies UI) — without them, Selkies' own
+// pointer-lock request is silently denied and it falls back into a broken half-captured input state
+// (cursor never truly OS-locked, so a game's mouse-driven scenes lose tracking once the pointer
+// crosses the window edge). keyboardLock lets a page in fullscreen additionally reserve Escape for
+// itself (Chromium then requires a ~2s hold to actually leave fullscreen instead of an instant single
+// press) — useful when Escape doubles as an in-game key (skip/menu), but NOTE this only softens
+// Escape's exit-fullscreen behaviour: the Pointer Lock spec makes Escape's exit-pointer-lock action
+// unconditional and un-overridable by any page or embedder API, precisely to guarantee the user can
+// always break out of a captured mouse — no permission or flag changes that.
+const ALLOWED_PERMISSIONS = [
   'media', 'display-capture', 'mediaKeySystem',
   'notifications', 'camera', 'microphone',
   'clipboard-read', 'clipboard-sanitized-write',
+  'pointerLock', 'fullscreen', 'keyboardLock',
 ]
 
 // Creates an isolated, persistent session for the given profile.
@@ -24,8 +36,8 @@ function createSession(profile, opts = {}) {
   } catch { /* spell-check is non-essential — never let it block startup */ }
 
   const allowed = opts.fileSystem
-    ? [...MEDIA_PERMISSIONS, 'fileSystem']
-    : MEDIA_PERMISSIONS
+    ? [...ALLOWED_PERMISSIONS, 'fileSystem']
+    : ALLOWED_PERMISSIONS
 
   customSession.setPermissionCheckHandler((_wc, permission) =>
     allowed.includes(permission)

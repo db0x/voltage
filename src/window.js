@@ -454,6 +454,16 @@ ipcMain.on('voltage:css-inject', (event) => {
   event.returnValue = cssInjectByContents.get(event.sender.id) || ''
 })
 
+// Localized strings for the pointer-lock toast (preload.js) — a brief on-screen hint whenever a page's
+// own requestPointerLock()/document.exitPointerLock() actually engages or releases. Needed because
+// pointerLock is now a granted permission for every app (see src/session.js), so a web app can capture
+// the mouse without any Voltage-owned UI otherwise showing that it happened. Static per language, so a
+// single synchronous query (no per-app id) is enough — every frame calls this once at document-start.
+ipcMain.on('voltage:pointerlock-labels', (event) => {
+  const i18n = t()
+  event.returnValue = { locked: i18n.pointerLockToastLocked, unlocked: i18n.pointerLockToastUnlocked }
+})
+
 
 // Flattens a plugin's contextMenuItems() (click fns + nativeImage icons + optional submenu) into a
 // render-safe tree, recording each leaf's click under a fresh id in `actions` (the renderer only

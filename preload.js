@@ -298,6 +298,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ipcRenderer.on('voltage:menu-show', (_e, d) => { if (d && d.items && d.items.length) showMenu(d.items, d.x, d.y) })
 })();
 
+// ── Pointer-lock toast ──────────────────────────────────────────────────────────────────────────
+// pointerLock is now a granted permission for every app (see src/session.js) — before that, a page's
+// requestPointerLock() was silently denied, so there was nothing to surface. Now that any app's own
+// content can actually capture the mouse, this makes that otherwise invisible state change visible: a
+// brief, non-interactive toast on every pointerlockchange. Runs in every frame (the element requesting
+// lock may live in an OOPIF); reuses the context menu's in-page overlay technique (element.style, no
+// <style> tag, so it can't be dropped by the app's own CSP) and the same max z-index.
+(() => {
+  let labels = null
+  try { labels = ipcRenderer.sendSync('voltage:pointerlock-labels') } catch {}
+  if (!labels) return
+
+  const Z = 2147483647
+  let toastEl = null, hideTimer = null
+
+  function showToast(text) {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
+    if (!toastEl) {
+      toastEl = document.createElement('div')
+      toastEl.style.cssText = 'position:fixed;left:50%;bottom:28px;z-index:' + Z + ';' +
+        'transform:translateX(-50%);padding:8px 16px;border-radius:20px;pointer-events:none;' +
+        "font:13px/1.4 'Ubuntu',system-ui,sans-serif;color:#fff;background:rgba(20,20,20,0.85);" +
+        'box-shadow:0 4px 16px rgba(0,0,0,0.35);user-select:none;-webkit-user-select:none;' +
+        'opacity:0;transition:opacity 0.15s ease'
+      document.body.appendChild(toastEl)
+    }
+    toastEl.textContent = text
+    // Two rAFs: the element must paint at opacity:0 first, otherwise the browser coalesces the
+    // opacity:0→1 change into the same frame as its creation and the transition never plays.
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (toastEl) toastEl.style.opacity = '1' }))
+    hideTimer = setTimeout(() => { if (toastEl) toastEl.style.opacity = '0' }, 1600)
+  }
+
+  document.addEventListener('pointerlockchange', () => {
+    showToast(document.pointerLockElement ? labels.locked : labels.unlocked)
+  })
+})();
+
 window.addEventListener('DOMContentLoaded', () => {
   const replaceText = (selector, text) => {
     const element = document.getElementById(selector)
