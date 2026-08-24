@@ -127,93 +127,112 @@ test('edit dialog: a chosen docker stack persists to the private config', async 
   }).toBe('drawio')
 })
 
-// Setup:    Create dialog open (Docker available), docker-integration added, its config opened.
-// Action:   Select draw.io (single-purpose, no pathConfigurable), then switch to scummvm (declares
-//           stack.json's pathConfigurable).
-// Expected: The Path field is hidden for draw.io and shown for scummvm — proving the field is gated
-//           per stack (data-config-visible-if-stack) rather than always present.
-test('create dialog: the docker Path field only shows for a stack that declares pathConfigurable', async ({ managerPageDockerOn: page }) => {
-  await page.click('.card-add')
-  await page.click('#create-plugin-trigger')
-  await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
-  await page.locator('#create-plugin-list .domain-item', { hasText: 'docker-integration' })
-    .locator('.domain-configure-btn').click()
+// pathConfigurable is generic framework behavior (any stack template several apps could share a
+// container from), not tied to a specific shipped stack — exercised here via a throwaway stack
+// created on disk for this block only, so the tests don't depend on a real stack declaring the flag.
+test.describe('docker Path field (pathConfigurable)', () => {
+  const TEST_STACK_ID  = 'test-pathconfig-stack'
+  const TEST_STACK_DIR = path.join(WEBAPPS_DIR, 'plugins', 'docker-integration', 'stacks', TEST_STACK_ID)
 
-  const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
-  const pathField = overlay.locator('#docker-config-path')
+  // beforeAll/afterAll (not per-test setup) because managerPageDockerOn launches a fresh Electron app
+  // per test whose plugin/stack discovery runs at startup — the directory must exist before that
+  // fixture resolves, which per-test setup inside the test body would already be too late for.
+  test.beforeAll(() => {
+    fs.mkdirSync(TEST_STACK_DIR, { recursive: true })
+    fs.writeFileSync(path.join(TEST_STACK_DIR, 'compose.yaml'), 'services:\n  web:\n    image: test/pathconfig\n')
+    fs.writeFileSync(path.join(TEST_STACK_DIR, 'stack.json'), JSON.stringify({ label: 'Test Path Stack', pathConfigurable: true }))
+  })
+  test.afterAll(() => {
+    fs.rmSync(TEST_STACK_DIR, { recursive: true, force: true })
+  })
 
-  await overlay.locator('.docker-stack-trigger').click()
-  await page.locator('.app-select-item:visible[data-id="drawio"]').click()
-  await expect(pathField).not.toBeVisible()
+  // Setup:    Create dialog open (Docker available), docker-integration added, its config opened.
+  // Action:   Select draw.io (single-purpose, no pathConfigurable), then switch to the temp stack
+  //           (declares stack.json's pathConfigurable).
+  // Expected: The Path field is hidden for draw.io and shown for the temp stack — proving the field
+  //           is gated per stack (data-config-visible-if-stack) rather than always present.
+  test('create dialog: the docker Path field only shows for a stack that declares pathConfigurable', async ({ managerPageDockerOn: page }) => {
+    await page.click('.card-add')
+    await page.click('#create-plugin-trigger')
+    await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
+    await page.locator('#create-plugin-list .domain-item', { hasText: 'docker-integration' })
+      .locator('.domain-configure-btn').click()
 
-  await overlay.locator('.docker-stack-trigger').click()
-  await page.locator('.app-select-item:visible[data-id="scummvm"]').click()
-  await expect(pathField).toBeVisible()
-})
+    const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
+    const pathField = overlay.locator('#docker-config-path')
 
-// Setup:    Edit dialog for the private test-user-app (Docker available), docker-integration added.
-// Action:   Open its config, choose the scummvm stack (declares pathConfigurable), type a Path
-//           override, Apply, then Save.
-// Expected: Both the stack choice and the path persist under pluginConfig[<docker plugin>] — proving
-//           the new per-app route field (for a stack template several apps each launch their own
-//           container from, e.g. one game per app on a shared ScummVM stack) round-trips like the
-//           stack chooser does.
-test('edit dialog: a docker config Path override persists to the private config', async ({ managerPageDockerOn: page }) => {
-  const card = page.locator('.card[data-private="true"][data-profile="test-user-app"]')
-  await card.hover()
-  await card.locator('[data-action="edit"]').click()
+    await overlay.locator('.docker-stack-trigger').click()
+    await page.locator('.app-select-item:visible[data-id="drawio"]').click()
+    await expect(pathField).not.toBeVisible()
 
-  await page.click('#edit-plugin-trigger')
-  await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
-  await page.locator('#edit-plugin-list .domain-item', { hasText: 'docker-integration' })
-    .locator('.domain-configure-btn').click()
+    await overlay.locator('.docker-stack-trigger').click()
+    await page.locator(`.app-select-item:visible[data-id="${TEST_STACK_ID}"]`).click()
+    await expect(pathField).toBeVisible()
+  })
 
-  const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
-  await overlay.locator('.docker-stack-trigger').click()
-  await page.locator('.app-select-item:visible[data-id="scummvm"]').click()
-  await expect(overlay.locator('#docker-config-path')).toHaveValue('')  // default empty
-  await page.fill('#docker-config-path', '/play/tentacle')
-  await overlay.locator('.plugin-config-apply').click()
-  await page.click('#edit-save')
+  // Setup:    Edit dialog for the private test-user-app (Docker available), docker-integration added.
+  // Action:   Open its config, choose the temp stack (declares pathConfigurable), type a Path
+  //           override, Apply, then Save.
+  // Expected: Both the stack choice and the path persist under pluginConfig[<docker plugin>] — proving
+  //           the per-app route field (for a stack template several apps each launch their own
+  //           container from) round-trips like the stack chooser does.
+  test('edit dialog: a docker config Path override persists to the private config', async ({ managerPageDockerOn: page }) => {
+    const card = page.locator('.card[data-private="true"][data-profile="test-user-app"]')
+    await card.hover()
+    await card.locator('[data-action="edit"]').click()
 
-  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
-  await expect.poll(() => {
-    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig?.[DOCKER_PLUGIN] } catch { return undefined }
-  }).toEqual({ stack: 'scummvm', path: '/play/tentacle' })
-})
+    await page.click('#edit-plugin-trigger')
+    await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
+    await page.locator('#edit-plugin-list .domain-item', { hasText: 'docker-integration' })
+      .locator('.domain-configure-btn').click()
 
-// Setup:    Edit dialog for the private test-user-app, docker-integration added and configured with
-//           a Path override on the scummvm stack (as the previous test leaves it, via a fresh setup
-//           here to stay independent).
-// Action:   Switch the stack to draw.io (no pathConfigurable) and save.
-// Expected: The now-hidden, no-longer-applicable path is cleared rather than silently persisted —
-//           switching away from a path-capable stack must not leave stale routing config behind.
-test('edit dialog: switching to a stack without pathConfigurable clears a previously set Path', async ({ managerPageDockerOn: page }) => {
-  const card = page.locator('.card[data-private="true"][data-profile="test-user-app"]')
-  await card.hover()
-  await card.locator('[data-action="edit"]').click()
+    const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
+    await overlay.locator('.docker-stack-trigger').click()
+    await page.locator(`.app-select-item:visible[data-id="${TEST_STACK_ID}"]`).click()
+    await expect(overlay.locator('#docker-config-path')).toHaveValue('')  // default empty
+    await page.fill('#docker-config-path', '/play/example')
+    await overlay.locator('.plugin-config-apply').click()
+    await page.click('#edit-save')
 
-  await page.click('#edit-plugin-trigger')
-  await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
-  await page.locator('#edit-plugin-list .domain-item', { hasText: 'docker-integration' })
-    .locator('.domain-configure-btn').click()
+    const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+    await expect.poll(() => {
+      try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig?.[DOCKER_PLUGIN] } catch { return undefined }
+    }).toEqual({ stack: TEST_STACK_ID, path: '/play/example' })
+  })
 
-  const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
-  await overlay.locator('.docker-stack-trigger').click()
-  await page.locator('.app-select-item:visible[data-id="scummvm"]').click()
-  await page.fill('#docker-config-path', '/play/tentacle')
+  // Setup:    Edit dialog for the private test-user-app, docker-integration added and configured with
+  //           a Path override on the temp stack (as the previous test leaves it, via a fresh setup
+  //           here to stay independent).
+  // Action:   Switch the stack to draw.io (no pathConfigurable) and save.
+  // Expected: The now-hidden, no-longer-applicable path is cleared rather than silently persisted —
+  //           switching away from a path-capable stack must not leave stale routing config behind.
+  test('edit dialog: switching to a stack without pathConfigurable clears a previously set Path', async ({ managerPageDockerOn: page }) => {
+    const card = page.locator('.card[data-private="true"][data-profile="test-user-app"]')
+    await card.hover()
+    await card.locator('[data-action="edit"]').click()
 
-  await overlay.locator('.docker-stack-trigger').click()
-  await page.locator('.app-select-item:visible[data-id="drawio"]').click()
-  await expect(overlay.locator('#docker-config-path')).not.toBeVisible()
+    await page.click('#edit-plugin-trigger')
+    await page.locator('.app-select-list .app-select-item', { hasText: 'docker-integration' }).click()
+    await page.locator('#edit-plugin-list .domain-item', { hasText: 'docker-integration' })
+      .locator('.domain-configure-btn').click()
 
-  await overlay.locator('.plugin-config-apply').click()
-  await page.click('#edit-save')
+    const overlay = page.locator('.plugin-config-overlay:not(.hidden)')
+    await overlay.locator('.docker-stack-trigger').click()
+    await page.locator(`.app-select-item:visible[data-id="${TEST_STACK_ID}"]`).click()
+    await page.fill('#docker-config-path', '/play/example')
 
-  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
-  await expect.poll(() => {
-    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig?.[DOCKER_PLUGIN] } catch { return undefined }
-  }).toEqual({ stack: 'drawio', path: '' })
+    await overlay.locator('.docker-stack-trigger').click()
+    await page.locator('.app-select-item:visible[data-id="drawio"]').click()
+    await expect(overlay.locator('#docker-config-path')).not.toBeVisible()
+
+    await overlay.locator('.plugin-config-apply').click()
+    await page.click('#edit-save')
+
+    const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+    await expect.poll(() => {
+      try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig?.[DOCKER_PLUGIN] } catch { return undefined }
+    }).toEqual({ stack: 'drawio', path: '' })
+  })
 })
 
 // NB: the e2e "saving generates env defaults + secrets" test left with the onlyoffice stack (the only

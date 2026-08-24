@@ -41,7 +41,7 @@ function stacks() {
       // pathConfigurable: forwarded so the config dialog can show/hide the Path field per stack (see
       // plugin-config.js's data-config-visible-if-stack) — meaningless for a single-purpose stack
       // like draw.io, only useful when several apps launch their own container from the same stack
-      // template (e.g. one game per app, all built from the same ScummVM stack).
+      // template, each routed to its own sub-path.
       out.push({
         id: e.name, label: meta.label || e.name, icon: stackIconDataUrl(meta.icon), content,
         pathConfigurable: !!meta.pathConfigurable,
@@ -253,10 +253,10 @@ function urlSuffixFrom(pkgUrl) {
   } catch { return '' }
 }
 
-// A per-app fixed route into the container (config.path, e.g. "/play/tentacle"), for a stack template
-// several distinct apps each launch their OWN container from (e.g. one game-specific app per title,
-// all built from the same ScummVM image/stack but each routed to a different game) — which game is
-// per-app, not per-stack, so this can't live in stack.json. Normalised to a leading slash; empty/
+// A per-app fixed route into the container (config.path, e.g. "/play/foo"), for a stack template
+// several distinct apps each launch their OWN container from (e.g. one app per title, all built from
+// the same image/stack but each routed to something different) — which route is per-app, not
+// per-stack, so this can't live in stack.json. Normalised to a leading slash; empty/
 // missing → no override (null, so the caller falls back to urlSuffixFrom, the mechanism apps WITH a
 // meaningful online url/file path already rely on).
 function resolvePathOverride(config) {
@@ -341,8 +341,8 @@ async function resolveLaunch(pkg, api = {}) {
     log(`waitFor :${w.port}${w.path} ready=${ok}`)
   }
   // Some services answer the health probe (an HTTP server listening) well before they're actually
-  // USABLE — a VNC-in-browser session (e.g. ScummVM's KasmVNC UI) serves its shell page instantly
-  // while the desktop/session behind it is still booting, so "HTTP < 400" alone is a false positive.
+  // USABLE — a VNC-in-browser session serves its shell page instantly while the desktop/session
+  // behind it is still booting, so "HTTP < 400" alone is a false positive.
   // readyDelayMs (stack.json) is a blunt but effective fixed settle time added on top for exactly
   // that case — only on a fresh start, never on reuse (an already-running container is already
   // settled, so delaying every subsequent window open on it would be pure waste).

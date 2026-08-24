@@ -1,16 +1,16 @@
 const { session, desktopCapturer, app } = require('electron')
 
 // Deny-by-default allowlist: anything not listed here is rejected for every app session (see the
-// handlers below). pointerLock + fullscreen + keyboardLock are here for containerized game/desktop
-// streams (e.g. the docker-integration ScummVM stack's Selkies UI) — without them, Selkies' own
-// pointer-lock request is silently denied and it falls back into a broken half-captured input state
-// (cursor never truly OS-locked, so a game's mouse-driven scenes lose tracking once the pointer
-// crosses the window edge). keyboardLock lets a page in fullscreen additionally reserve Escape for
-// itself (Chromium then requires a ~2s hold to actually leave fullscreen instead of an instant single
-// press) — useful when Escape doubles as an in-game key (skip/menu), but NOTE this only softens
-// Escape's exit-fullscreen behaviour: the Pointer Lock spec makes Escape's exit-pointer-lock action
-// unconditional and un-overridable by any page or embedder API, precisely to guarantee the user can
-// always break out of a captured mouse — no permission or flag changes that.
+// handlers below). pointerLock + fullscreen + keyboardLock are here for interactive/game-style app
+// content — without them, a page's own pointer-lock request is silently denied and it falls back
+// into a broken half-captured input state (cursor never truly OS-locked, so a mouse-driven scene
+// loses tracking once the pointer crosses the window edge). keyboardLock lets a page in fullscreen
+// additionally reserve Escape for itself (Chromium then requires a ~2s hold to actually leave
+// fullscreen instead of an instant single press) — useful when Escape doubles as an in-game key
+// (skip/menu), but NOTE this only softens Escape's exit-fullscreen behaviour: the Pointer Lock spec
+// makes Escape's exit-pointer-lock action unconditional and un-overridable by any page or embedder
+// API, precisely to guarantee the user can always break out of a captured mouse — no permission or
+// flag changes that.
 const ALLOWED_PERMISSIONS = [
   'media', 'display-capture', 'mediaKeySystem',
   'notifications', 'camera', 'microphone',

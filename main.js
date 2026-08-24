@@ -26,6 +26,19 @@ if (!process.env.VOLTAGE_TEST) {
 // widget config's softwareVideoDecode — it's a real regression for apps that legitimately benefit from
 // hardware decode (e.g. video calls), and since each Voltage app is its own process/AppImage, scoping
 // it here (before any window exists) only ever affects the one app whose OWN config asks for it.
+// Chromium's HTTP disk cache appears to silently refuse very large individual entries regardless of
+// the response's Cache-Control header — observed with a WASM app (ScummVM) whose ~70-80MB game data
+// files cached fine but ~180-270MB audio/video assets re-downloaded over the network on every single
+// launch. Raising the overall disk-cache-size budget raises that per-entry ceiling too (no flag
+// targets it directly) — but Chromium clamps the requested size to ~2GB regardless of what's asked
+// for (confirmed: asking for 8GB behaved identically to 2GB), so there's a hard wall here somewhere
+// around 200-250MB that this flag cannot push past. Below that wall this still genuinely helps.
+// Opt-in per app (pkg.largeAssetCache) — every Voltage app is its own process/AppImage, so this only
+// ever affects the one app whose own config asks for it.
+if (pkg.largeAssetCache === true) {
+  app.commandLine.appendSwitch('disk-cache-size', String(2 * 1024 * 1024 * 1024))
+}
+
 if (pkg.pluginConfig?.['plugins/widget/widget.js']?.softwareVideoDecode === true) {
   app.commandLine.appendSwitch('disable-accelerated-video-decode')
 }

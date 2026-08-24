@@ -18,9 +18,9 @@ window closes.
    The plugin is **greyed out (unselectable)** when neither Docker + Compose v2 (`docker compose`)
    nor legacy v1 (`docker-compose`) is usable on the system.
 2. Open the plugin's gear dialog and pick a **stack** from the dropdown (icon + label per entry; a
-   read-only, syntax-highlighted preview shows the chosen stack's compose file). A stack declaring `pathConfigurable` (e.g.
-   ScummVM) additionally shows a **Path** field — a fixed route appended after `localhost:<port>`
-   (e.g. `/play/tentacle`), for a stack template several apps each launch their own container from.
+   read-only, syntax-highlighted preview shows the chosen stack's compose file). A stack declaring
+   `pathConfigurable` additionally shows a **Path** field — a fixed route appended after
+   `localhost:<port>`, for a stack template several apps each launch their own container from.
    Single-purpose stacks (e.g. draw.io) don't show it — there is nothing to route between.
 3. Save. The app's **URL field is locked** and shows `-docker-` while this plugin is selected — the
    plugin derives the real URL at launch; the baked `url` is kept untouched as the online fallback
@@ -101,38 +101,26 @@ A declared secret still missing at launch (config never saved through the Manage
    itself with nginx that answers 502 within seconds while the actual service boots for another
    30–60 s, which used to produce a "ready" blank page. Some services fail the OPPOSITE way — the
    HTTP status is fine long before the service is actually usable, e.g. a video-streamed desktop
-   session (ScummVM's Selkies UI) serves its shell page instantly while the desktop behind it is still
-   booting. `readyDelayMs` is a blunt fixed extra wait for exactly that case (only on a fresh start,
+   session serves its shell page instantly while the desktop behind it is still booting.
+   `readyDelayMs` is a blunt fixed extra wait for exactly that case (only on a fresh start,
    never when reusing an already-running, already-settled container). Only ever a heuristic — tune it
    per stack by how long the service actually takes to become genuinely interactive.
 5. The window loads `http://localhost:<port><suffix>`, where `<suffix>` is the config's `path`
    (normalised to a leading `/`) if set, else the baked `pkg.url`'s own path+query. `path` is for a
-   fixed, per-app route (e.g. several game apps sharing one ScummVM stack, each routed to its own
-   `/play/<game>`); the `pkg.url` fallback is for apps whose entry page is inherently per-launch
+   fixed, per-app route (e.g. several apps sharing one stack template, each routed to its own
+   sub-path); the `pkg.url` fallback is for apps whose entry page is inherently per-launch
    (e.g. a file association opening a specific document) — the two never apply together.
 6. **Teardown:** window refcount; when the last window closes *and* this process started the stack,
    `compose down` runs synchronously (async would be killed by process exit). Errors never block quit.
 
-### ScummVM stack notes
-
-Selkies (the stack's video-streamed desktop) renegotiates its own internal resolution to match the
-window on every resize, taking roughly half a second to a second to catch up each time — until it
-does, its `#videoCanvas` element stays pinned at the previous size, which reads as a black gap around
-the content rather than a smooth resize. Mitigation (app-level, not stack-level, since it's about how
-*this* app's window behaves, not the container): the **`css-inject`** plugin forcing
-`#videoCanvas { width: 100% !important; height: 100% !important; object-fit: fill !important; }` — the
-content stretches to fill instead of leaving a gap while Selkies catches up (briefly upscaled/
-soft-looking rather than gapped). Simplest fix of all for an app that doesn't need live resizing:
-`resizable: false` (widget config) at a size that already matches the game's aspect ratio — no resize
-ever happens, so there's nothing for Selkies to catch up to.
-
-**Running several apps built from this stack at once** (one per game, e.g. `dot` + `comi-de`) needs
-each to actually get its own container — the compose file must NOT set a fixed `container_name`. A
-fixed name is unique host-wide, across every compose *project*, so the second app's `up` would collide
-with the first's already-running container regardless of the two apps' own distinct
-`voltage-<profile>` projects. Left unset, compose derives the name from the project instead, which is
-automatically unique per app — this is what actually makes concurrent instances possible, not just the
-per-app port (`VOLTAGE_PORT`, already automatic — see *Auto-port* above) or project name alone.
+**Running several apps built from the same stack template at once** (e.g. one app per game, sharing
+one container image) needs each to actually get its own container — the compose file must NOT set a
+fixed `container_name`. A fixed name is unique host-wide, across every compose *project*, so the
+second app's `up` would collide with the first's already-running container regardless of the two
+apps' own distinct `voltage-<profile>` projects. Left unset, compose derives the name from the project
+instead, which is automatically unique per app — this is what actually makes concurrent instances
+possible, not just the per-app port (`VOLTAGE_PORT`, already automatic — see *Auto-port* above) or
+project name alone.
 
 Every step logs under the `[docker-integration]` prefix — launch the AppImage from a terminal to see
 exactly where a failing start gives up. Any failure returns `null` → the app falls back to its baked

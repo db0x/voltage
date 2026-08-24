@@ -78,7 +78,7 @@
   "dockerConfigStackHint": "Eine fertige Container-Vorlage, die Voltage mitliefert. Einfach auswählen – läuft ohne eigene compose-Datei sofort.",
   "dockerConfigStackChoose": "— Stack wählen —",
   "dockerConfigPath": "Pfad",
-  "dockerConfigPathHint": "Optionaler fester Pfad hinter localhost:<Port>, z. B. /play/tentacle. Nützlich wenn mehrere Apps denselben Stack als Vorlage nutzen (z. B. je eine App pro Spiel, alle auf Basis desselben ScummVM-Stacks) und jede App auf eine andere Route soll. Leer = Standardverhalten (Pfad + Query der App-URL werden übernommen).",
+  "dockerConfigPathHint": "Optionaler fester Pfad hinter localhost:<Port>, z. B. /play/foo. Nützlich wenn mehrere Apps denselben Stack als Vorlage nutzen (z. B. je eine App pro Spiel, alle auf demselben Container-Image) und jede App auf eine andere Route soll. Leer = Standardverhalten (Pfad + Query der App-URL werden übernommen).",
   "dockerConfigComposePreview": "Compose-Datei (Vorschau)",
   "dockerUnavailable": "Docker oder Docker Compose ist auf diesem System nicht verfügbar.",
   "dockerStartingHint": "Der benötigte Docker-Container wird gestartet…",

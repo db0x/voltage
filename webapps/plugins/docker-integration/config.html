@@ -7,8 +7,8 @@
      which can't show per-entry icons — filled by the host from the plugin's discovered stacks. Below
      it, a read-only preview shows the chosen stack's compose file. Port is auto-assigned at launch,
      so there's no knob for it. Path is a per-app override for the routed URL's path (e.g. "/play/
-     tentacle" on a stack template several apps each launch their own container from, e.g. one game
-     per app on a shared ScummVM stack) — see docker-integration.js resolvePathOverride. Shown only
+     foo" on a stack template several apps each launch their own container from, one app per route)
+     — see docker-integration.js resolvePathOverride. Shown only
      for a stack that declares stack.json's pathConfigurable (data-config-visible-if-stack) — a
      single-purpose stack like draw.io has no use for it. -->
 <div class="dialog-overlay plugin-config-overlay hidden">

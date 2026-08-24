@@ -104,6 +104,7 @@ function expandConfig(app) {
       ...(app.geometry            && { geometry:  app.geometry  }),
       ...(app.internalDomains     && { internalDomains: app.internalDomains }),
       ...(app.crossOriginIsolation && { crossOriginIsolation: true }),
+      ...(app.largeAssetCache     && { largeAssetCache:      true }),
       ...(app.singleInstance      && { singleInstance:       true }),
       // DevTools default ON, so only an explicit off must travel into the AppImage — otherwise the
       // runtime's pkg.devTools is undefined and devToolsEnabled() falls back to enabled.

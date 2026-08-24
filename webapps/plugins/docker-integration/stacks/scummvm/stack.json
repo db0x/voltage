@@ -1,9 +1,0 @@
-{
-    "label": "ScummVM",
-    "icon": "assets/webapps/scummvm.svg",
-    "service": "scummvm",
-    "containerPort": 3000,
-    "healthPath": "/",
-    "readyDelayMs": 4000,
-    "pathConfigurable": true
-}

@@ -78,7 +78,7 @@
   "dockerConfigStackHint": "A ready-made container setup shipped with Voltage. Pick one and it runs out of the box — no compose file to write.",
   "dockerConfigStackChoose": "— Choose stack —",
   "dockerConfigPath": "Path",
-  "dockerConfigPathHint": "Optional fixed path after localhost:<port>, e.g. /play/tentacle. Useful when several apps use the same stack as a template (e.g. one app per game, all built from the same ScummVM stack) and each app should route to a different one. Empty = default behaviour (the app URL's path + query are carried over).",
+  "dockerConfigPathHint": "Optional fixed path after localhost:<port>, e.g. /play/foo. Useful when several apps use the same stack as a template (e.g. one app per game, all built from the same container image) and each app should route to a different one. Empty = default behaviour (the app URL's path + query are carried over).",
   "dockerConfigComposePreview": "Compose file (preview)",
   "dockerUnavailable": "Docker or Docker Compose is not available on this system.",
   "dockerStartingHint": "The required Docker container is being started…",

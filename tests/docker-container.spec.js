@@ -99,9 +99,9 @@ test('stacks() accepts compose.yml alongside compose.yaml', () => {
   })
 })
 
-// Setup:    The shipped stacks — draw.io (single-purpose) and scummvm (a template several
-//           game-specific apps each launch their own container from), plus a temp stack whose
-//           stack.json omits the field entirely.
+// Setup:    The shipped draw.io stack (single-purpose, no flag), plus two temp stacks — one
+//           declaring pathConfigurable (standing in for a template several apps could share a
+//           container from), one whose stack.json omits the field entirely.
 // Action:   List the stacks for the config dialog.
 // Expected: pathConfigurable is forwarded truthfully per stack (true only where stack.json declares
 //           it), defaulting to false when absent — the flag the config dialog's Path field
@@ -111,10 +111,15 @@ test('stacks() forwards pathConfigurable per stack, defaulting to false', () => 
     'compose.yaml': 'services:\n  web:\n    image: test/no-flag\n',
     'stack.json':   '{ "label": "No Flag" }',
   }, () => {
-    const byId = Object.fromEntries(stacks().map(s => [s.id, s]))
-    expect(byId.drawio.pathConfigurable).toBe(false)
-    expect(byId.scummvm.pathConfigurable).toBe(true)
-    expect(byId['test-no-flag-stack'].pathConfigurable).toBe(false)
+    withTempStack('test-pathconfig-stack', {
+      'compose.yaml': 'services:\n  web:\n    image: test/pathconfig\n',
+      'stack.json':   '{ "label": "Path Config", "pathConfigurable": true }',
+    }, () => {
+      const byId = Object.fromEntries(stacks().map(s => [s.id, s]))
+      expect(byId.drawio.pathConfigurable).toBe(false)
+      expect(byId['test-pathconfig-stack'].pathConfigurable).toBe(true)
+      expect(byId['test-no-flag-stack'].pathConfigurable).toBe(false)
+    })
   })
 })
 
@@ -227,13 +232,13 @@ test('resolvePathOverride normalises a configured path, or reports none set', ()
   expect(resolvePathOverride({})).toBeNull()
 })
 
-// Setup:    A stack shared as a template by several game-specific apps (e.g. ScummVM) — one app sets
-//           a fixed "path", another leaves it unset and relies on its baked URL's own path instead.
+// Setup:    A stack shared as a template by several apps — one app sets a fixed "path", another
+//           leaves it unset and relies on its baked URL's own path instead.
 // Action:   Resolve the routed URL's suffix for both.
 // Expected: The configured path wins outright when set; otherwise the baked pkg.url's path+query
 //           survives (urlSuffixFrom) exactly as for apps with no path override at all.
 test('routeSuffixFor prefers a configured path override, else falls back to the baked URL', () => {
-  expect(routeSuffixFor({ url: 'http://localhost:8080/' }, { path: '/play/tentacle' })).toBe('/play/tentacle')
+  expect(routeSuffixFor({ url: 'http://localhost:8080/' }, { path: '/play/foo' })).toBe('/play/foo')
   expect(routeSuffixFor({ url: 'http://localhost:5001/edit/beispiel.docx' }, {})).toBe('/edit/beispiel.docx')
   expect(routeSuffixFor({ url: 'http://localhost:8888/' }, { path: '' })).toBe('')
 })
