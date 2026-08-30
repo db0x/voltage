@@ -4,9 +4,15 @@
      matches every other dialog. {{pluginIcon}} is the plugin's icon (a var); {{robot*}} are i18n
      keys.
 
-     Both controls bind generically: the host reads/writes config[data-config-key] and seeds each
-     field from data-config-default when the app has no stored value. The two fields share one
-     .dialog-field-row so they sit side by side, each with its label above it. -->
+     The actions are a repeatable list (data-config-list="actions"): the host clones <template
+     data-config-row> per stored entry (plus a trailing blank row, dropped again if left untouched),
+     binds each row's data-config-field controls into one array entry, and the + button appends a
+     row. robot.js receives config.actions = [{ target, identifier, value }, …] and runs them in the
+     order they appear here — so row order is the execution order.
+
+     The value column only applies to the "fill in text" action, so rows using another one hide it
+     via data-config-field-visible-if — hidden by visibility, not display, so the cell keeps its
+     width and the columns stay lined up across rows. -->
 <div class="dialog-overlay plugin-config-overlay hidden">
   <div class="dialog">
     <div class="dialog-header">
@@ -15,22 +21,38 @@
       <button class="dialog-close" type="button">✕</button>
     </div>
     <div class="dialog-fields">
-      <!-- 1:3 split — the target dropdown is short (button/link), the identifier needs the room. -->
-      <div class="dialog-field-row" style="grid-template-columns: 1fr 3fr;">
-        <div class="dialog-field">
-          <label for="robot-config-target">{{robotConfigTarget}}</label>
-          <select id="robot-config-target" data-config-key="target" data-config-default="button">
-            <option value="button">{{robotConfigTargetButton}}</option>
-            <option value="link">{{robotConfigTargetLink}}</option>
-          </select>
+      <div class="plugin-config-list robot-config-list" data-config-list="actions">
+        <!-- Column headers, shown once above the rows. -->
+        <div class="plugin-config-list-head">
+          <span>{{robotConfigTarget}}</span>
+          <span>{{robotConfigIdentifier}}<span class="field-help" data-tooltip="{{robotConfigIdentifierHint}}">?</span></span>
+          <span>{{robotConfigValue}}<span class="field-help" data-tooltip="{{robotConfigValueHint}}">?</span></span>
         </div>
-        <div class="dialog-field">
-          <label for="robot-config-aria-label">{{robotConfigAriaLabel}}</label>
-          <input type="text" id="robot-config-aria-label" autocomplete="off"
-                 data-config-key="ariaLabel" data-config-default="" placeholder="">
-        </div>
+        <div class="plugin-config-list-rows" data-config-rows></div>
+        <!-- One action row. Cloned by the host; the select binds like the text inputs (the host's
+             row binding reads .value off any [data-config-field], so a <select> works as-is). -->
+        <template data-config-row>
+          <div class="plugin-config-list-row">
+            <select data-config-field="target" data-config-field-default="button">
+              <option value="button">{{robotConfigTargetButton}}</option>
+              <option value="link">{{robotConfigTargetLink}}</option>
+              <option value="input">{{robotConfigTargetInput}}</option>
+              <option value="focus">{{robotConfigTargetFocus}}</option>
+            </select>
+            <input type="text" autocomplete="off" spellcheck="false"
+                   data-config-field="identifier" data-config-field-default="">
+            <!-- Only the "fill in text" action carries a value; for the others the field is hidden
+                 (but keeps its grid cell, so the columns stay lined up across rows). -->
+            <input type="text" autocomplete="off" spellcheck="false"
+                   data-config-field="value" data-config-field-default=""
+                   data-config-field-visible-if="target=input">
+            <button type="button" class="plugin-config-row-remove" data-config-remove
+                    aria-label="{{robotConfigRemoveRow}}" title="{{robotConfigRemoveRow}}">✕</button>
+          </div>
+        </template>
+        <button type="button" class="plugin-config-add-row" data-config-add>+ {{robotConfigAddRow}}</button>
       </div>
-      <span class="field-hint">{{robotConfigAriaLabelHint}}</span>
+      <span class="field-hint">{{robotConfigOrderHint}}</span>
     </div>
     <!-- Apply commits the edit to the app's config; Cancel/✕/backdrop/Esc discard. The host wires
          these by class (.plugin-config-apply / .plugin-config-cancel). -->

@@ -1188,6 +1188,13 @@ body.dark .domain-configure-btn img {
   display: none;
 }
 
+/* A repeatable-row field that doesn't apply to what its row currently holds. Unlike .config-hidden
+   this keeps the element's box: the rows share one grid, so collapsing a cell in a single row would
+   knock its columns out of line with all the others. */
+.config-field-hidden {
+  visibility: hidden;
+}
+
 .plugin-config-range {
   display: flex;
   align-items: center;
@@ -1283,6 +1290,33 @@ body.dark .domain-configure-btn img {
 
 .plugin-config-list-row input:focus {
   border-color: #3584e4;
+}
+
+/* robot's action rows have four columns (target, identifier, value, remove) rather than css-inject's
+   three; the header's three captions line up with the first three, leaving the remove column blank. */
+.robot-config-list .plugin-config-list-head,
+.robot-config-list .plugin-config-list-row {
+  grid-template-columns: 130px 1fr 1fr 24px;
+}
+
+/* The row's target dropdown — the generic row rules above only reach <input>, so match the look here.
+   color-scheme in dark mode fixes the native popup, which otherwise stays light and unreadable. */
+.robot-config-list .plugin-config-list-row select {
+  width: 100%;
+  box-sizing: border-box;
+  height: 32px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--badge-unbuilt-bg);
+  color: var(--card-fg);
+  border: 1.5px solid transparent;
+  padding: 6px 10px;
+  border-radius: 6px;
+  outline: none;
+}
+
+body.dark .robot-config-list .plugin-config-list-row select {
+  color-scheme: dark;
 }
 
 /* Remove button for a row — quiet by default, destructive red on hover (mirrors .domain-remove-btn). */

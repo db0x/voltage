@@ -600,14 +600,16 @@ test('edit dialog: adding a plugin marks the form dirty', async ({ managerPage }
   await expect(managerPage.locator('#edit-save')).toBeEnabled()
 })
 
-// Setup:    Edit dialog for test-user-app with the robot plugin (a <select> target + a text input)
-//           added and its config dialog opened. The robot plugin is the only shipped plugin whose
-//           config uses a dropdown, so this is what guards the host's select binding.
-// Action:   Change the target dropdown (button → link) and type an aria-label, then Apply + Save.
-// Expected: The dropdown seeds from its default ("button"), and both the select value and the text
-//           input round-trip into pluginConfig — proving select[data-config-key] binds (value +
-//           onchange) exactly like the text input next to it.
-test('edit dialog: the robot target dropdown + identifier persist per app under pluginConfig', async ({ managerPage }) => {
+// Setup:    Edit dialog for test-user-app with the robot plugin added and its config dialog opened.
+//           The robot plugin is the only shipped one whose repeatable rows contain a <select>, so
+//           this is what guards the host's row binding for dropdowns.
+// Action:   Fill the first action row (fill a text input), add a second row (click a button), then
+//           Apply + Save.
+// Expected: Both land in pluginConfig as an `actions` array in the order the rows appear — row order
+//           IS execution order, so this is what keeps "fill the field, then submit it" from running
+//           the other way round. The click row still stores an empty value — the host writes every
+//           row field verbatim; it's resolveActions that drops it at runtime (see robot.spec.js).
+test('edit dialog: the robot action list persists in row order under pluginConfig', async ({ managerPage }) => {
   const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
   await card.hover()
   await card.locator('[data-action="edit"]').click()
@@ -617,14 +619,21 @@ test('edit dialog: the robot target dropdown + identifier persist per app under 
   await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'robot' })
     .locator('.domain-configure-btn').click()
 
-  // The dropdown seeds from data-config-default ("button") when the app has no stored value yet.
-  const target = managerPage.locator('#robot-config-target')
-  await expect(target).toHaveValue('button')
+  const list = managerPage.locator('.robot-config-list')
+  const rows = list.locator('[data-config-row-instance]')
 
-  await target.selectOption('link')
-  await managerPage.fill('#robot-config-aria-label', 'Anmelden')
+  // The dialog opens with a single blank row; its dropdown seeds from data-config-field-default.
+  await expect(rows).toHaveCount(1)
+  await expect(rows.nth(0).locator('select[data-config-field="target"]')).toHaveValue('button')
 
-  // Apply commits the change (and marks the edit form dirty); only then does Save persist it.
+  await rows.nth(0).locator('select[data-config-field="target"]').selectOption('input')
+  await rows.nth(0).locator('input[data-config-field="identifier"]').fill('login-user')
+  await rows.nth(0).locator('input[data-config-field="value"]').fill('thomas')
+
+  await list.locator('[data-config-add]').click()
+  await expect(rows).toHaveCount(2)
+  await rows.nth(1).locator('input[data-config-field="identifier"]').fill('Anmelden')
+
   await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
   await expect(managerPage.locator('#edit-save')).toBeEnabled()
   await managerPage.click('#edit-save')
@@ -632,7 +641,87 @@ test('edit dialog: the robot target dropdown + identifier persist per app under 
   const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
   await expect.poll(() => {
     try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
-  }).toEqual({ 'plugins/robot/robot.js': { target: 'link', ariaLabel: 'Anmelden' } })
+  }).toEqual({
+    'plugins/robot/robot.js': {
+      actions: [
+        { target: 'input',  identifier: 'login-user', value: 'thomas' },
+        { target: 'button', identifier: 'Anmelden',   value: '' },
+      ],
+    },
+  })
+})
+
+// Setup:    Edit dialog for test-user-app with the robot plugin added and its config dialog opened.
+// Action:   Switch a row's action between the click, fill-in and focus kinds.
+// Expected: The value column is only usable for "fill in text" — the other actions have nothing to
+//           write, so offering the field would invite filling in something silently ignored. It is
+//           hidden rather than removed so the shared grid stays aligned across rows, and a second
+//           row stays independent of the first.
+test('edit dialog: the robot value column only shows for the fill-in action', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'robot' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'robot' })
+    .locator('.domain-configure-btn').click()
+
+  const list = managerPage.locator('.robot-config-list')
+  const rows = list.locator('[data-config-row-instance]')
+  const target = rows.nth(0).locator('select[data-config-field="target"]')
+  const value  = rows.nth(0).locator('input[data-config-field="value"]')
+
+  await expect(value).toBeHidden()          // default action is "click button"
+
+  await target.selectOption('input')
+  await expect(value).toBeVisible()
+
+  await target.selectOption('focus')
+  await expect(value).toBeHidden()
+
+  // Hidden by visibility, so the cell still occupies its column and the rows stay lined up.
+  await expect(value).toHaveCSS('visibility', 'hidden')
+  expect(await value.boundingBox()).not.toBeNull()
+
+  // A second row decides on its own.
+  await target.selectOption('input')
+  await list.locator('[data-config-add]').click()
+  await expect(value).toBeVisible()
+  await expect(rows.nth(1).locator('input[data-config-field="value"]')).toBeHidden()
+})
+
+// Setup:    Edit dialog for test-user-app with the robot plugin added and its config dialog opened.
+// Action:   Fill one action row, click + to append another, leave that one untouched, Apply + Save.
+// Expected: Only the filled action persists. The list always offers a spare row to type into, so an
+//           untouched one must never reach the config — it would inject an action with no identifier
+//           that the runtime would then have to discard.
+test('edit dialog: an untouched trailing robot action row is not persisted', async ({ managerPage }) => {
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
+  await card.hover()
+  await card.locator('[data-action="edit"]').click()
+
+  await managerPage.click('#edit-plugin-trigger')
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'robot' }).click()
+  await managerPage.locator('#edit-plugin-list .domain-item', { hasText: 'robot' })
+    .locator('.domain-configure-btn').click()
+
+  const list = managerPage.locator('.robot-config-list')
+  const rows = list.locator('[data-config-row-instance]')
+
+  await rows.nth(0).locator('input[data-config-field="identifier"]').fill('Anmelden')
+  await list.locator('[data-config-add]').click()
+  await expect(rows).toHaveCount(2)
+
+  await managerPage.locator('.plugin-config-overlay .plugin-config-apply').click()
+  await managerPage.click('#edit-save')
+
+  const cfgPath = path.join(WEBAPPS_DIR, 'build.private.test-user-app.json')
+  await expect.poll(() => {
+    try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).pluginConfig ?? null } catch { return null }
+  }).toEqual({
+    'plugins/robot/robot.js': { actions: [{ target: 'button', identifier: 'Anmelden', value: '' }] },
+  })
 })
 
 // Setup:    Edit dialog for test-user-app with the zoom plugin (extracted ctrl+wheel zoom) added;

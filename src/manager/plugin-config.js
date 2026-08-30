@@ -66,6 +66,8 @@ const highlightYaml = src => String(src).split('\n').map(highlightYamlLine).join
 //     <template data-config-row>           —   the markup of one row, cloned per entry
 //       [data-config-field="<name>"]       —     an input inside a row; its value is entry[name]
 //       [data-config-field-default]        —     seeds that field when the entry has no value
+//       [data-config-field-visible-if=     —     hidden (kept in place, so the grid stays aligned)
+//         "<field>=<a>,<b>"]                     unless that row's <field> holds one of the values
 //       [data-config-field-swatch="<name>"]—     per-row colour preview (via --swatch-color)
 //       [data-config-remove]               —     button that drops its row
 //     [data-config-add]                    —   button that appends a fresh blank row
@@ -161,6 +163,22 @@ export function initPluginConfig({ i18n, icons, plugins }) {
       }
       const sync = () => { cfg[key] = readRows() }
 
+      // Hides row fields that don't apply to what this row currently holds:
+      // [data-config-field-visible-if="<field>=<a>,<b>"] is shown only while that row's own <field>
+      // has one of the listed values (e.g. robot's value column, which only the input action uses).
+      // Scoped to the row, so each row decides independently.
+      //
+      // visibility (not display) so the cell keeps its width: rows sit in a shared grid, and
+      // collapsing a cell in one row would shift its columns out of line with every other row.
+      const applyFieldVisibility = (row) => {
+        for (const el of row.querySelectorAll('[data-config-field-visible-if]')) {
+          const [name, list] = String(el.dataset.configFieldVisibleIf).split('=')
+          const source = row.querySelector(`[data-config-field="${name}"]`)
+          const wanted = String(list ?? '').split(',').map(v => v.trim())
+          el.classList.toggle('config-field-hidden', !wanted.includes(source ? source.value : ''))
+        }
+      }
+
       // Clone one row from the template, seed its fields from `entry`, and wire its live updates.
       const addRow = (entry = {}) => {
         const row = template.content.firstElementChild.cloneNode(true)
@@ -169,9 +187,14 @@ export function initPluginConfig({ i18n, icons, plugins }) {
           const name = field.dataset.configField
           field.value = entry[name] ?? (field.dataset.configFieldDefault ?? '')
           reflectFieldSwatch(row, name, field.value)
-          field.oninput = field.onchange = () => { reflectFieldSwatch(row, name, field.value); sync() }
+          field.oninput = field.onchange = () => {
+            reflectFieldSwatch(row, name, field.value)
+            applyFieldVisibility(row)
+            sync()
+          }
         }
         row.querySelector('[data-config-remove]')?.addEventListener('click', () => { row.remove(); sync() })
+        applyFieldVisibility(row)
         rowsBox.appendChild(row)
       }
 
