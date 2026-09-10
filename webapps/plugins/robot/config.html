@@ -12,7 +12,10 @@
 
      The value column only applies to the "fill in text" action, so rows using another one hide it
      via data-config-field-visible-if — hidden by visibility, not display, so the cell keeps its
-     width and the columns stay lined up across rows. -->
+     width and the columns stay lined up across rows.
+
+     Below the list sit the keep-alive controls, which bind the plain way (config[data-config-key]):
+     a toggle plus an interval slider gated on it via data-config-enabled-by. -->
 <div class="dialog-overlay plugin-config-overlay hidden">
   <div class="dialog">
     <div class="dialog-header">
@@ -53,6 +56,22 @@
         <button type="button" class="plugin-config-add-row" data-config-add>+ {{robotConfigAddRow}}</button>
       </div>
       <span class="field-hint">{{robotConfigOrderHint}}</span>
+      <!-- Keep-alive: independent of the action list above (an app may want only this), OFF by
+           default — synthetic input is not something every app using the load actions should get.
+           The interval range must stay in sync with keepalive.js (MIN/MAX/DEFAULT_MINUTES), or a
+           stored value could sit outside the slider's reachable steps. -->
+      <button type="button" class="dialog-field-toggle" data-config-key="keepAlive" data-config-default="false">
+        <span class="toggle-switch"></span>
+        <span>{{robotConfigKeepAlive}}<span class="field-help" data-tooltip="{{robotConfigKeepAliveHint}}">?</span></span>
+      </button>
+      <div class="dialog-field" data-config-enabled-by="keepAlive">
+        <label for="robot-config-keepalive-minutes">{{robotConfigKeepAliveInterval}}</label>
+        <div class="plugin-config-range">
+          <input type="range" id="robot-config-keepalive-minutes" min="1" max="30" step="1"
+                 data-config-key="keepAliveMinutes" data-config-default="5">
+          <output data-config-value="keepAliveMinutes" data-unit=" min"></output>
+        </div>
+      </div>
     </div>
     <!-- Apply commits the edit to the app's config; Cancel/✕/backdrop/Esc discard. The host wires
          these by class (.plugin-config-apply / .plugin-config-cancel). -->

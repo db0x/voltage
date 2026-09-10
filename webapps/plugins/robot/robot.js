@@ -6,9 +6,15 @@
 // The actions are configured per app (see config.html) as a list; each entry names a `target` (what
 // to do), an `identifier` (how to find the element) and, for the input target, the `value` to write.
 // The plugin injects inject/actions.js into the page after every load.
+//
+// Beyond the on-load sequence it offers an opt-in keep-alive (keepalive.js): synthetic user activity
+// on a timer, so an app that would flip its presence to "Away" while the user works in another
+// window stays active. Separate module — a repeating timer has nothing to do with the load sequence.
 
 const path = require('path');
 const fs = require('fs');
+
+const { startKeepAlive } = require('./keepalive');
 
 const TAG = '[robot-plugin]';
 
@@ -80,6 +86,10 @@ function attachPlugin(win, api) {
     };
 
     wc.on('did-finish-load', apply);
+
+    // Independent of the action list: an app may enable the keep-alive and configure no action at
+    // all (staying logged in is the point, not automating the login).
+    startKeepAlive(win, api);
 
     console.log(TAG, 'attached');
 }

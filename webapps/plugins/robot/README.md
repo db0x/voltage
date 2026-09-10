@@ -8,6 +8,9 @@ The actions run strictly **in the configured order**: each one waits for its own
 before the next begins. A guard flag on `window` makes the whole sequence run once per page instance,
 so an in-page navigation can't replay it.
 
+It also offers an opt-in **keep-alive** (see below) that keeps the session it just logged into from
+going idle.
+
 ## Using it
 
 1. Add **robot** to the app's plugins in the Manager's create/edit dialog.
@@ -36,6 +39,41 @@ If an element never turns up, the **whole chain stops** rather than skipping ahe
 ordered because they build on each other, so continuing past a missing one would act on a
 half-prepared page. The reason is logged to the page console under `[robot-plugin]`.
 
+## Keep-alive
+
+Teams (and anything else that derives presence from activity) only counts what happens **inside its
+own window**: sitting at the machine and working in another window looks exactly like having left,
+and the status flips to "Abwesend"/"Away". With the keep-alive enabled, the plugin feeds a small
+burst of user activity into the app's page every *n* minutes (default 5, range 1–30).
+
+It is **off by default** and independent of the action list — an app may enable only the keep-alive
+and configure no action at all.
+
+Every tick sends the burst through **two channels**, because each one fails where the other holds:
+
+| Channel | What it is | Fails when |
+|---|---|---|
+| `webContents.sendInputEvent` | a real Chromium mouse move — `isTrusted`, indistinguishable from the actual mouse | keyboard input needs window focus, so only the mouse move goes this way |
+| `inject/keepalive.js` | `pointermove` + `mousemove` + a Shift press the page dispatches on itself | `isTrusted` is false, so a tracker that checks it ignores them |
+
+Whichever signal the app's activity tracker listens to, one of the two reaches it.
+
+**It stays out of the way.** The trusted mouse move really does move the page's pointer, so it is
+aimed at wherever the real cursor already is whenever the cursor sits inside this window — hover
+state and open tooltips survive the nudge. Only when the cursor is elsewhere does the pointer get
+parked a few pixels into the content. The position shifts by a pixel on alternating ticks: a tracker
+that compares coordinates reads two identical moves as no movement at all. The only key pressed is
+**Shift** — it never inserts text and is not a shortcut on its own, so a burst landing in a focused
+field changes nothing.
+
+The timer runs in the **main process**, so it survives page loads and keeps firing while the window
+is unfocused or minimised, where a renderer timer would be throttled to a crawl. It is cleared when
+the window closes.
+
+> This changes what an app reports about you: your status stays "available" while the app is running,
+> whether or not you are actually at the machine. That is the point of the feature — just know that
+> it is the app's presence you are steering, and switch it off per app rather than everywhere.
+
 ## Config (`pluginConfig`)
 
 ```jsonc
@@ -44,13 +82,17 @@ half-prepared page. The reason is logged to the page console under `[robot-plugi
         { "target": "input",  "identifier": "login-user", "value": "thomas" },
         { "target": "focus",  "identifier": "login-pass" },
         { "target": "button", "identifier": "Anmelden" }
-    ]
+    ],
+    "keepAlive": true,
+    "keepAliveMinutes": 5
 }
 ```
 
 - `target` — `"button"` (default) | `"link"` | `"input"` | `"focus"`
 - `identifier` — aria-label substring for the click targets, exact id for `input` and `focus`.
   Trimmed.
+- `keepAlive` — `true` turns the keep-alive on; absent or `false` means it never runs.
+- `keepAliveMinutes` — interval in minutes, clamped to 1–30; anything unreadable falls back to 5.
 - `value` — only used by `input`; written **verbatim**, not trimmed, since surrounding spaces may be
   intentional. An empty value is allowed on purpose: clearing a field the page pre-filled is a
   legitimate goal. For every other action the value is dropped during normalisation, so a leftover
@@ -86,6 +128,8 @@ dispatches `input` and `change` (both bubbling) — the same signals a real keys
 |---|---|
 | `robot.js` | main-process module: normalises the config into an action list, fills the template, injects on load |
 | `inject/actions.js` | the injected page script — a **template**, not standalone JS (see below) |
+| `keepalive.js` | the keep-alive: settings, the timer, and the trusted mouse move |
+| `inject/keepalive.js` | the page-side activity burst — plain JS, no placeholders, run once per tick |
 | `config.html` | the per-app config dialog |
 
 `inject/actions.js` carries an `{{actions}}` placeholder that `buildScript()` replaces with the
@@ -105,8 +149,11 @@ the row template in `config.html`. A field that only some actions use gets a
 - `tests/robot.spec.js` — node-level: ordering, the legacy config shapes, dropping unperformable
   entries, keeping a value only where it's used, trimming rules, and the data-not-code embedding
   guard.
+- `tests/robot-keepalive.spec.js` — the keep-alive: staying off unless enabled, the interval default
+  and clamping, the burst's harmlessness, plus the dialog's gating and config round-trip.
 - `tests/plugins.spec.js` — Manager e2e: the action rows round-trip into `pluginConfig` in row order,
   the value column shows only for the fill-in action, and an untouched trailing row is not
   persisted.
 
-The injected script itself runs in a live page and is not exercised by the tests.
+The injected scripts themselves run in a live page and are not exercised by the tests, and neither
+is the keep-alive's actual event delivery (`sendInputEvent` on a live window).
