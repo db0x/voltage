@@ -66,7 +66,7 @@ function resolveMax(config)  { return clampNum(config?.max,  FLOOR_MAX, CAP_MAX,
 // level for the whole app). When enabled, the zoom the user sets is REMEMBERED per page area and
 // restored on every navigation into that area; nothing needs configuring beyond the toggle. The
 // re-apply is the point: Chromium persists zoom per ORIGIN, so when one origin serves differently
-// dense areas (e.g. only-office's document list at "/" vs. its editor at "/edit/…"), a zoom set in
+// dense areas (e.g. relay's document list at "/" vs. its editor at "/edit/…"), a zoom set in
 // one area would otherwise bleed into the other. An area without a remembered zoom starts at 100%.
 function pathZoomEnabled(config) { return config?.pathZoom === true }
 

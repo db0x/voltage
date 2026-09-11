@@ -3,11 +3,11 @@ const fs   = require('node:fs')
 const os   = require('node:os')
 const path = require('node:path')
 
-// The only-office plugin: node-level tests for its pure helpers (URL building, config validation,
+// The relay plugin: node-level tests for its pure helpers (URL building, config validation,
 // launch-arg parsing — the REST flow itself needs the live backend and is not exercised in CI) plus
 // Manager e2e for its config dialog.
 
-const PLUGIN = path.join(__dirname, '..', 'webapps', 'plugins', 'only-office', 'only-office.js')
+const PLUGIN = path.join(__dirname, '..', 'webapps', 'plugins', 'relay', 'relay.js')
 
 // The plugin is a main-process module and requires electron's `app` at load time; in Playwright's
 // plain-node runner require('electron') resolves to the npm stub (a binary path string), not the
@@ -191,7 +191,7 @@ test('forceSave returns null when the endpoint is missing (older backend)', asyn
 //           homeUrl targets the list under the prefix — not "/" of the origin — and falls back to
 //           pkg.url without a configured base.
 test('configuredBaseUrl/isEditorUrl/homeUrl honour a reverse-proxy path prefix', () => {
-  const rel = 'plugins/only-office/only-office.js'
+  const rel = 'plugins/relay/relay.js'
   const pkg = {
     url: 'http://black/relay',
     plugins: [rel, 'plugins/widget/widget.js'],
@@ -234,7 +234,7 @@ test('buildConfirmPage embeds the local-vs-server comparison', () => {
   expect(withMod).toContain('brief.docx')
   expect(withMod).toContain('12 KB')   // local size
   expect(withMod).toContain('20 KB')   // server size
-  expect(withMod).toContain('OnlyOffice')
+  expect(withMod).toContain('relay')   // server column label
 
   // A server without a Last-Modified header must not produce "Invalid Date".
   const noMod = decodeURIComponent(plugin.buildConfirmPage('x.docx', localStat, { mtime: null, size: null }, false))
@@ -243,24 +243,24 @@ test('buildConfirmPage embeds the local-vs-server comparison', () => {
 })
 
 // Setup:    Create dialog open; plugins discovered from the real webapps/plugins tree.
-// Action:   Add only-office, open its gear dialog, fill both fields, Apply — then reopen.
+// Action:   Add relay, open its gear dialog, fill both fields, Apply — then reopen.
 // Expected: The dialog opens with the two text fields (baseUrl/apiToken), and applied values load
 //           back on reopen — proving the generic host binding round-trips the plugin's config.
-test('create dialog: only-office config dialog binds baseUrl and apiToken', async ({ managerPage }) => {
+test('create dialog: relay config dialog binds baseUrl and apiToken', async ({ managerPage }) => {
   await managerPage.click('.card-add')
   await managerPage.click('#create-plugin-trigger')
-  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'only-office' }).click()
-  await managerPage.locator('#create-plugin-list .domain-item', { hasText: 'only-office' })
+  await managerPage.locator('.app-select-list .app-select-item', { hasText: 'relay' }).click()
+  await managerPage.locator('#create-plugin-list .domain-item', { hasText: 'relay' })
     .locator('.domain-configure-btn').click()
 
   const overlay = managerPage.locator('.plugin-config-overlay:not(.hidden)')
   await expect(overlay).toHaveCount(1)
-  await overlay.locator('#oo-config-baseurl').fill('http://192.168.0.33:5001')
-  await overlay.locator('#oo-config-apitoken').fill('test-token-123')
+  await overlay.locator('#relay-config-baseurl').fill('http://192.168.0.33:5001')
+  await overlay.locator('#relay-config-apitoken').fill('test-token-123')
   await overlay.locator('.plugin-config-apply').click()
 
-  await managerPage.locator('#create-plugin-list .domain-item', { hasText: 'only-office' })
+  await managerPage.locator('#create-plugin-list .domain-item', { hasText: 'relay' })
     .locator('.domain-configure-btn').click()
-  await expect(managerPage.locator('#oo-config-baseurl')).toHaveValue('http://192.168.0.33:5001')
-  await expect(managerPage.locator('#oo-config-apitoken')).toHaveValue('test-token-123')
+  await expect(managerPage.locator('#relay-config-baseurl')).toHaveValue('http://192.168.0.33:5001')
+  await expect(managerPage.locator('#relay-config-apitoken')).toHaveValue('test-token-123')
 })

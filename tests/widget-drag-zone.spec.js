@@ -152,12 +152,12 @@ test('dragZone html includes the (devTools-gated) DevTools button', () => {
 // Setup:    The default (enabled) descriptor.
 // Action:   Inspect the overlay markup for the home button and its visibility gate.
 // Expected: The button (data-action="home") ships wrapped in .ctl.home, hidden by default and only
-//           revealed under body.home-enabled — toggled LIVE by main (only-office apps, on every
+//           revealed under body.home-enabled — toggled LIVE by main (relay apps, on every
 //           navigation): shown while an editor page (/edit/…) is open, hidden on the document list
 //           "/" itself, where the button would be a no-op. The preload must therefore wire the
 //           voltage:dragzone-home channel to that class. In mac-order the button must carry an
 //           explicit order (unlisted flex children would jump to the front).
-test('dragZone html includes the (navigation-gated) only-office home button', () => {
+test('dragZone html includes the (navigation-gated) relay home button', () => {
   const { html, preload } = dragZone({})
   expect(html).toContain('data-action="home"')
   expect(html).toContain('class="ctl home"')

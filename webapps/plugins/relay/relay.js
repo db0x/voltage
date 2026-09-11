@@ -1,11 +1,13 @@
-// only-office plugin (main-process module). Syncs a local Office file to a self-hosted OnlyOffice
-// backend (the oold family setup: Express + DocumentServer) and opens it there for editing: double-
-// click a .docx → the AppImage uploads it via the backend's token-authenticated file API, navigates
-// to the backend's editor page, and pulls the edited file back over the local one when the window
-// closes. Mirrors the rclone-sync plugin's architecture (launch-arg takeover, loading page, conflict
-// dialog, sync-back on close) with plain REST instead of the rclone binary.
+// relay plugin (main-process module). The voltage-side client for a self-hosted **relay** server
+// (Express backend + OnlyOffice DocumentServer; relay keeps its own desktop as the backend). Today
+// it covers relay's document editing: double-click a .docx → the AppImage uploads it via relay's
+// token-authenticated file API, navigates to relay's editor page, and pulls the edited file back
+// over the local one when the window closes. Named after the service, not that one feature — further
+// relay capabilities land here rather than in a second plugin. Mirrors the rclone-sync plugin's
+// architecture (launch-arg takeover, loading page, conflict dialog, sync-back on close) with plain
+// REST instead of the rclone binary.
 //
-// Backend contract (see the oold README, "Datei-API"):
+// Backend contract (see the relay README, "Datei-API"):
 //   GET    <base>/api/files          — list  → { files: [names] }        (Bearer token)
 //   PUT    <base>/api/files/<name>   — upload/overwrite, RAW body        (Bearer token)
 //   GET    <base>/api/files/<name>   — download                          (Bearer token)
@@ -15,7 +17,7 @@
 //                                      survives that first login.
 //
 // Config (pluginConfig, gear dialog): baseUrl (e.g. "http://192.168.0.33:5001") and apiToken (the
-// user's API token from the backend's start page). Both baked at build time; missing config leaves
+// user's API token from relay's start page). Both baked at build time; missing config leaves
 // the plugin inert so the app just loads pkg.url (the file list) normally.
 
 const { app, ipcMain } = require('electron')
@@ -26,7 +28,7 @@ const crypto = require('node:crypto')
 
 const pkg      = require(app.getAppPath() + '/package.json')
 const APP_ROOT = app.getAppPath()
-const TAG      = '[only-office-plugin]'
+const TAG      = '[relay-plugin]'
 
 // Mustache-style {{key}} substitution for the data: URL HTML pages (no DOM in Node).
 function fillHtml(html, vars) {
@@ -138,7 +140,7 @@ function buildConfirmPage(filename, localStat, remote, de) {
     btnOpen:     de ? 'Bestehende öffnen'    : 'Open existing',
     btnOver:     de ? 'Überschreiben'        : 'Overwrite',
     labelLocal:  de ? 'Lokal'                : 'Local',
-    labelServer: 'OnlyOffice',
+    labelServer: 'relay',
     labelMod:    de ? 'Geändert'             : 'Modified',
     labelSize:   de ? 'Größe'                : 'Size',
     localMod:    localStat.mtime.toLocaleString(),
@@ -311,7 +313,7 @@ async function resolveLaunchUrl(win, base, token, localPath) {
 }
 
 // ---- Host-side helpers (called by window.js, not by attachPlugin) -----------------------------
-// The widget drag-zone's home button is an only-office feature rendered by the host: window.js asks
+// The widget drag-zone's home button is a relay feature rendered by the host: window.js asks
 // THIS module about the backend's URL space instead of hardcoding it, so the layout knowledge
 // (<baseUrl>/edit/… vs. the document list at <baseUrl>/) stays in the plugin — including the
 // reverse-proxy path-prefix case (http://black/relay), where origin-root heuristics fail.
@@ -319,7 +321,7 @@ async function resolveLaunchUrl(win, base, token, localPath) {
 // The backend root configured for a BUILT app, resolved from its baked pluginConfig; null when the
 // app doesn't load this plugin or the baseUrl is missing/garbage (the plugin is inert then).
 function configuredBaseUrl(pkg) {
-  const rel = (pkg.plugins ?? []).find(p => /(^|\/)only-office\//.test(p))
+  const rel = (pkg.plugins ?? []).find(p => /(^|\/)relay\//.test(p))
   return rel ? resolveBaseUrl(pkg.pluginConfig?.[rel]) : null
 }
 

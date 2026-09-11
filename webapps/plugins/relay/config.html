@@ -1,4 +1,4 @@
-<!-- Config dialog shipped by the only-office plugin. The manager's plugin-config host
+<!-- Config dialog shipped by the relay plugin. The manager's plugin-config host
      (src/manager/plugin-config.js) renders this into the manager DOM and owns the generic
      open/close + Apply/Cancel wiring; the markup reuses the manager's .dialog-* classes so it
      matches every other dialog. {{pluginIcon}} is the plugin's icon (a var); {{oo*}} are i18n keys.
@@ -11,22 +11,22 @@
   <div class="dialog">
     <div class="dialog-header">
       <img src="{{pluginIcon}}" alt="">
-      <span class="dialog-title">{{ooConfigTitle}}</span>
+      <span class="dialog-title">{{relayConfigTitle}}</span>
       <button class="dialog-close" type="button">✕</button>
     </div>
     <div class="dialog-fields">
       <div class="dialog-field">
-        <label for="oo-config-baseurl">{{ooConfigBaseUrl}}
-          <span class="field-help" data-tooltip="{{ooConfigBaseUrlHint}}">?</span>
+        <label for="relay-config-baseurl">{{relayConfigBaseUrl}}
+          <span class="field-help" data-tooltip="{{relayConfigBaseUrlHint}}">?</span>
         </label>
-        <input type="text" id="oo-config-baseurl" autocomplete="off" spellcheck="false"
+        <input type="text" id="relay-config-baseurl" autocomplete="off" spellcheck="false"
                placeholder="http://192.168.0.33:5001" data-config-key="baseUrl">
       </div>
       <div class="dialog-field">
-        <label for="oo-config-apitoken">{{ooConfigApiToken}}
-          <span class="field-help" data-tooltip="{{ooConfigApiTokenHint}}">?</span>
+        <label for="relay-config-apitoken">{{relayConfigApiToken}}
+          <span class="field-help" data-tooltip="{{relayConfigApiTokenHint}}">?</span>
         </label>
-        <input type="text" id="oo-config-apitoken" autocomplete="off" spellcheck="false"
+        <input type="text" id="relay-config-apitoken" autocomplete="off" spellcheck="false"
                data-config-key="apiToken">
       </div>
     </div>

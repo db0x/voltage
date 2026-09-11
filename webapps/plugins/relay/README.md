@@ -1,10 +1,14 @@
-# only-office plugin
+# relay plugin
 
-Syncs a local Office file to a **self-hosted OnlyOffice backend** (the *oold* family setup:
-Express file server + OnlyOffice DocumentServer) and opens it there for editing. Double-click a
-`.docx`/`.xlsx`/`.pptx` in the file browser → the AppImage uploads it to your personal server
-folder via the backend's file API, navigates to the backend's editor page, and **pulls the edited
-file back over the local one when the window closes** — the local file stays the source of truth.
+The voltage-side client for a **self-hosted relay server** (Express file server + OnlyOffice
+DocumentServer; relay keeps its own desktop as the backend). Named after the service rather than
+after one feature — further relay capabilities belong here, not in a second plugin.
+
+What it does today is relay's document editing: it syncs a local Office file to the relay server and
+opens it there. Double-click a `.docx`/`.xlsx`/`.pptx` in the file browser → the AppImage uploads it
+to your personal folder on relay via its file API, navigates to relay's editor page, and **pulls the
+edited file back over the local one when the window closes** — the local file stays the source of
+truth.
 
 Architecturally this is the [rclone-sync](../rclone-sync/rclone-sync.js) pattern (launch-arg
 takeover → loading page → upload → editor → sync-back on close, with a conflict dialog) speaking
@@ -12,7 +16,7 @@ plain REST instead of driving the rclone binary.
 
 ## Backend contract
 
-The backend's token-authenticated file API (see the oold README, *Datei-API*):
+relay's token-authenticated file API (see the relay README, *Datei-API*):
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -22,7 +26,7 @@ The backend's token-authenticated file API (see the oold README, *Datei-API*):
 
 Auth: `Authorization: Bearer <apiToken>`; every token only sees its own user folder.
 
-The **editor page** (`/edit/<name>`) is *not* token-authenticated — it uses the backend's login
+The **editor page** (`/edit/<name>`) is *not* token-authenticated — it uses relay's login
 session cookie. That fits voltage naturally: the app's isolated profile keeps the 90-day session,
 so you log in **once** in the app window; `/login?next=` carries the editor target through that
 first login.
@@ -30,8 +34,8 @@ first login.
 ## Setup
 
 1. Configure the plugin (gear dialog): **Server URL** (e.g. `http://192.168.0.33:5001`) and your
-   **API token** (backend start page → "API-Token", after logging in).
-2. Build & install the app (`build.private.onlyoffice.json` ships `acceptsFileArg` + the
+   **API token** (relay start page → "API-Token", after logging in).
+2. Build & install the app (`build.private.relay.json` ships `acceptsFileArg` + the
    docx/xlsx/pptx MIME registrations, so the system offers the app for those files).
 3. Launch once without a file and log in — that seeds the session cookie for the editor.
 
@@ -41,7 +45,7 @@ first login.
 ## Runtime flow
 
 1. Launched **without** a file → normal window on `pkg.url` (the backend's file list); plugin inert.
-   Missing `baseUrl`/`apiToken` → also inert, with a `[only-office-plugin]` log line.
+   Missing `baseUrl`/`apiToken` → also inert, with a `[relay-plugin]` log line.
 2. Launched **with** a file: loading page, then
    - not on the server yet → upload → editor.
    - on the server with **identical content** (md5) → skip the upload, open the editor directly.
