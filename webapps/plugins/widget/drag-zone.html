@@ -12,9 +12,10 @@
      the sides and bottom (top flush with the window edge) so its border + drop shadow render INSIDE
      the view rather than being clipped — the surrounding pad is transparent but still part of the
      drag/hit area. It fades in/out via the `shown` class (toggled from main over IPC by
-     drag-zone-preload.js). Styling mirrors Voltage's link tooltip (src/tooltip.css): a dark,
-     translucent, blurred bar with rounded bottom corners, a GNOME-style hairline border and a
-     downward drop shadow. The app's own icon can sit at the far left (opt-in per app, widget config
+     drag-zone-preload.js), and .exit-sensor at the very top reports the pointer leaving upward so the
+     bar dismisses itself when the cursor exits the window (see its CSS comment).
+     Styling mirrors Voltage's link tooltip (src/tooltip.css): a dark, translucent, blurred bar with
+     rounded bottom corners, a GNOME-style hairline border and a downward drop shadow. The app's own icon can sit at the far left (opt-in per app, widget config
      default off — window.js resolves it, same as the About panel); on the right are window-control
      buttons (no-drag so they stay clickable); each forwards its data-action to main via the preload.
      The 16px inset MUST match DRAG_ZONE_PAD, and .handle height (42px) DRAG_ZONE_HEIGHT, in
@@ -49,6 +50,27 @@
     opacity: 0; transition: opacity 160ms ease;
   }
   body.shown .handle { opacity: 1; }
+
+  /* Upward-exit sensor — a no-drag hairline band across the very top of the VIEW (not just the
+     control: it spans the transparent pad too, so leaving sideways past the control also registers).
+     It exists because main cannot see the pointer leave the window: the app view stops reporting the
+     moment the strip covers it, and on Wayland there is no global cursor position to query. Only a
+     no-drag element receives real pointer events here — the surrounding drag surface is excluded from
+     the hit region — so this band is the one place in the overlay that can witness the exit. Its cost
+     is the topmost 6px of the bar no longer dragging the window; the remaining 36px still do.
+     Height matches DRAG_ZONE_SHOW_AT in src/window.js, so the band that reveals the strip is exactly
+     the band that dismisses it.
+     z-index is LOAD-BEARING: .handle is also absolutely positioned and comes later in the DOM, so
+     without it .handle paints over this band across the bar's whole width and the sensor only ever
+     sees the 16px pads at the far left and right — i.e. it silently never fires. It must sit ON TOP
+     of .handle, which is safe because the buttons start 8px down (42px bar, 26px buttons) and so
+     never overlap these 6px; the band is transparent, so covering the bar's top edge changes nothing
+     visually. */
+  .exit-sensor {
+    position: absolute; top: 0; left: 0; right: 0; height: 6px;
+    z-index: 1;
+    -webkit-app-region: no-drag;
+  }
 
   /* Flexible spacer between the left and right control groups; stays part of the drag surface
      (no no-drag on it), so the bar's middle keeps moving the window. */
@@ -193,6 +215,7 @@
 </style>
 </head>
 <body class="{{bodyClass}}">
+  <div class="exit-sensor"></div>
   <div class="handle">
     <img class="app-icon" src="{{iconSrc}}" alt="">
     <div class="config">

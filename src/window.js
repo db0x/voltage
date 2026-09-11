@@ -407,6 +407,29 @@ const DRAG_ZONE_PAD            = 16
 const DRAG_ZONE_SHOW_AT        = 6      // reveal when the cursor is within this many px of the top
 const DRAG_ZONE_EDGE_GRACE     = 8      // grace past the view edges before hiding, so edges don't flicker
 const DRAG_ZONE_FADE_MS        = 160
+// Dwell time the cursor has to stay in the reveal zone before the strip appears. Without it the bar
+// pops up on every pointer sweep that merely PASSES the top edge (e.g. reaching for the app's own
+// top-row UI), which reads as the bar "jumping at" the user. Cancelled by the first cursor report
+// that leaves the zone; a cursor parked in the zone sends no further reports, so the timer firing on
+// its own is exactly the "still there" case we want.
+const DRAG_ZONE_REVEAL_DELAY_MS = 150
+// Watchdog interval for the "has the pointer left the window?" check while the strip is shown. It is
+// a SAFETY NET for the exits no event reaches us for — chiefly a fast flick straight out of the
+// window that skips the overlay's 6px sensor band between two pointer samples, stranding the strip.
+// There is no way to ASK where the cursor is (Wayland exposes no global cursor position), so presence
+// comes from two sources: app-view cursor reports, and the overlay polling its own :hover state (see
+// drag-zone-preload.js) — polled, not event-driven, so a cursor RESTING on a button or the sensor
+// band still counts as present.
+//
+// ACCEPTED TRADE: -webkit-app-region:drag areas are excluded from the renderer's hit region (verified
+// on this project's Wayland/Chromium), so a cursor resting motionless on the bar's DRAGGABLE middle
+// is observable by nothing — it is indistinguishable from a cursor that left the window, because both
+// are pure silence. A timeout therefore cannot serve both cases: it either closes under a resting
+// cursor or never cleans up at all. This closes. Rationale: every ordinary way out of the window is
+// already caught immediately (the exit sensor upward, the cursor hysteresis in every other
+// direction), so this only ever fires after a fast flick that skipped the 6px band — and the cost of
+// being wrong is a bar that reappears on the next approach from the top.
+const DRAG_ZONE_PRESENCE_MS    = 10_000
 
 // Responsive control width. It aims for a comfortable absolute width, clamped between half and 90% of
 // the window — so it takes a LARGER fraction as the window narrows (down to a minimum it never goes
@@ -437,9 +460,11 @@ ipcMain.on('voltage:dragzone-cursor', (event, clientX, clientY) => {
   dragZoneControllers.get(event.sender.id)?.onCursor(Number(clientX), Number(clientY))
 })
 
-// Window-control buttons on the drag-zone overlay, keyed by the OVERLAY view's webContents id (the
-// buttons live in that view, so its preload is the sender). Separate from the cursor controller,
-// which is keyed by the app webContents.
+// Messages from the drag-zone overlay itself, keyed by the OVERLAY view's webContents id (they
+// originate in that view, so its preload is the sender). Separate from the cursor controller, which
+// is keyed by the app webContents. Carries the window-control button actions plus the synthetic
+// reports only the overlay can make: 'exit' (the pointer left the strip upward) and 'present' (the
+// hover poll feeding the presence watchdog).
 const dragZoneActions = new Map()  // overlay webContents.id → (action: string) => void
 ipcMain.on('voltage:dragzone-action', (event, action) => {
   dragZoneActions.get(event.sender.id)?.(String(action))
@@ -812,8 +837,9 @@ function createWindow(pkg, opts = {}) {
     // render their toolbars in (e.g. the Office/WOPI editor frame). This overlay IS our own top
     // frame, so its drag region always works, for every widget app. It is a 1px hairline when idle
     // (steals nothing usable) and grows to DRAG_ZONE_HEIGHT, fading a faint bar in, once the cursor
-    // reaches the top edge — reveal is driven by the app preload reporting the cursor Y (the overlay
-    // can't sense its own hover; its drag surface swallows pointer events).
+    // reaches the top edge — reveal is driven by the app preload reporting the cursor Y, because the
+    // overlay's drag surface is excluded from its own hit region and so senses no hover. Its one
+    // no-drag sensor band at the very top is the exception, and reports the cursor leaving upward.
     let dragOverlay = null
     let dragShown = false
     if (viewMode.dragZone) {
@@ -892,15 +918,45 @@ function createWindow(pkg, opts = {}) {
       }
 
       let collapseTimer = null
+      let revealTimer = null
+      // Drops a pending reveal — the cursor left the zone (or the strip is being hidden) before the
+      // dwell time elapsed.
+      const cancelReveal = () => { if (revealTimer) { clearTimeout(revealTimer); revealTimer = null } }
+
+      // Last moment the pointer was evidenced anywhere we can observe it: an app-view cursor report,
+      // or the overlay's :hover poll (see DRAG_ZONE_PRESENCE_MS).
+      let lastPointerAt = 0
+      let presenceTimer = null
+      const cancelPresence = () => { if (presenceTimer) { clearTimeout(presenceTimer); presenceTimer = null } }
+      // Re-arms for the time still left on the current evidence, so this is a sliding "no pointer for
+      // DRAG_ZONE_PRESENCE_MS" check rather than a fixed deadline from the reveal.
+      const armPresence = () => {
+        cancelPresence()
+        const idle = Date.now() - lastPointerAt
+        presenceTimer = setTimeout(() => {
+          presenceTimer = null
+          if (!dragShown) return
+          if (Date.now() - lastPointerAt >= DRAG_ZONE_PRESENCE_MS) setShown(false)
+          else armPresence()
+        }, Math.max(0, DRAG_ZONE_PRESENCE_MS - idle))
+      }
+      // Every observation of the pointer refreshes the evidence. Only meaningful while the strip is
+      // shown — that's the only state the watchdog runs in.
+      const notePointer = () => { lastPointerAt = Date.now() }
+
       const setShown = (shown) => {
         if (shown === dragShown) return
         dragShown = shown
+        cancelReveal()
         if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null }
         if (shown) {
           layoutView()
           try { dragOverlay.webContents.send('voltage:dragzone-show', true) } catch {}
           sendZoomLevel()  // refresh the display each time the bar appears
+          notePointer()    // revealing IS an observation — start the watchdog from a clean slate
+          armPresence()
         } else {
+          cancelPresence()
           try { dragOverlay.webContents.send('voltage:dragzone-show', false) } catch {}
           collapseTimer = setTimeout(() => { collapseTimer = null; if (!dragShown) layoutView() }, DRAG_ZONE_FADE_MS)
         }
@@ -911,12 +967,13 @@ function createWindow(pkg, opts = {}) {
         // (each with a small grace so the edges don't flicker). While the pointer sits on the strip the
         // app sends no reports (the strip covers it), so it simply stays shown — and it does NOT hide
         // on window blur, so a Wayland window-drag (which can blur the window) keeps the control
-        // visible. The only gap is the pointer leaving the window straight off the TOP across the
-        // strip: Wayland gives a client no pointer position once it leaves the window, so we can't
-        // detect that — the strip stays until the pointer returns, then hides on the next report.
+        // visible. The pointer leaving the window straight off the TOP across the strip is invisible
+        // here for the same reason — Wayland gives a client no pointer position once it leaves — so
+        // that exit is reported by the overlay's own sensor band instead (the 'exit' action above).
         // clientX/Y are window-relative for a top-aligned frame.
         onCursor: (x, y) => {
           if (!Number.isFinite(x) || !Number.isFinite(y)) return
+          notePointer()  // the app view can see the cursor, so it is in the window
           const { width } = mainWindow.getContentBounds()
           const innerW  = Math.max(0, width - 2 * viewMode.margin)
           const handleW = dragZoneHandleWidth(innerW)
@@ -924,8 +981,12 @@ function createWindow(pkg, opts = {}) {
           const viewH   = DRAG_ZONE_HEIGHT + DRAG_ZONE_PAD
           const dx      = Math.abs(x - innerW / 2)
           if (!dragShown) {
-            // Reveal only near the very top AND over the visible control (not the transparent pad).
-            if (y < DRAG_ZONE_SHOW_AT && dx <= handleW / 2) setShown(true)
+            // Reveal only near the very top AND over the visible control (not the transparent pad),
+            // and only after the cursor has DWELLED there for DRAG_ZONE_REVEAL_DELAY_MS — a sweep
+            // through the zone cancels itself on the next report.
+            if (y < DRAG_ZONE_SHOW_AT && dx <= handleW / 2) {
+              if (!revealTimer) revealTimer = setTimeout(() => { revealTimer = null; setShown(true) }, DRAG_ZONE_REVEAL_DELAY_MS)
+            } else cancelReveal()
           } else if (y > viewH + DRAG_ZONE_EDGE_GRACE || dx > viewW / 2 + DRAG_ZONE_EDGE_GRACE) {
             // Hide once the cursor has left the whole overlay view (control + shadow pad).
             setShown(false)
@@ -938,6 +999,14 @@ function createWindow(pkg, opts = {}) {
       // behaviour stays identical. Hide the strip afterwards — its job is done for that interaction.
       const overlayId = dragOverlay.webContents.id
       dragZoneActions.set(overlayId, (action) => {
+        // Not a button: the overlay's top sensor band reporting that the cursor left it upward, i.e.
+        // off the top of the window. The app view can't report that — the strip covers it — and on
+        // Wayland main can't query the cursor either, so this is the only signal for that exit.
+        if (action === 'exit') { setShown(false); return }
+        // Also not a button: the overlay's :hover poll reporting the cursor still on the strip, which
+        // keeps the presence watchdog from closing a bar the cursor is resting on (as far as it can
+        // see it — see DRAG_ZONE_PRESENCE_MS).
+        if (action === 'present') { notePointer(); return }
         // Zoom buttons keep the strip open (you usually step a few times) and only update the display.
         if (action === 'zoom-in')  { applyDragZoom(1);  return }
         if (action === 'zoom-out') { applyDragZoom(-1); return }
@@ -965,6 +1034,8 @@ function createWindow(pkg, opts = {}) {
         dragZoneControllers.delete(appContents.id)
         dragZoneActions.delete(overlayId)
         if (collapseTimer) clearTimeout(collapseTimer)
+        cancelReveal()
+        cancelPresence()
       })
     }
 

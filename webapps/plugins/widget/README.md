@@ -27,7 +27,9 @@ Moving a frameless window needs a drag surface. The widget renders its own **ove
 separate `WebContentsView` on top of the app view) rather than marking a region in the page, because
 Chromium only honours `-webkit-app-region: drag` from a frame voltage owns — not from the
 cross-origin iframes some apps render their toolbars in (e.g. Office documents). It is invisible
-(1 px) until the cursor reaches the top-centre edge, then fades in as a translucent bar:
+(1 px) until the cursor reaches the top-centre edge, then fades in as a translucent bar. The reveal
+waits for a short dwell (150 ms) so that merely sweeping the pointer past the top edge doesn't pop the
+bar up; leaving the zone before that cancels it:
 
 - **far left:** the app's own icon (same resolver the About panel uses) — opt-in via the `dragZoneIcon`
   config toggle (default off). Purely identifying — not a button.
@@ -43,6 +45,25 @@ cross-origin iframes some apps render their toolbars in (e.g. Office documents).
   back to. It appears only while an editor page (`<baseUrl>/edit/…`) is open; on the list itself it
   would be a no-op, so it is hidden there (toggled live on every navigation).
 - Hovering any button shows its label centred on the bar.
+
+The bar hides again once the cursor leaves it — downwards or sideways via the app's own cursor
+reports, upwards (off the top of the window) via a no-drag sensor band across its top 6 px. That band
+is needed because neither signal main normally uses is available for an upward exit: the app view
+stops reporting the moment the strip covers it, and Wayland exposes no global cursor position. The
+band costs the topmost 6 px of the bar as drag surface; the remaining 36 px still move the window.
+
+As a safety net a watchdog closes the bar after 10 s of silence — for the exits no event reaches,
+chiefly a fast flick out of the window that skips the 6 px band between two pointer samples. There is
+no global cursor position to query on Wayland, so presence comes from app cursor reports plus the
+overlay polling its own `:hover` state once a second (polled rather than event-driven, because a
+cursor *resting* on the bar emits nothing).
+
+Chromium excludes `-webkit-app-region: drag` areas from the renderer's hit region, so a cursor resting
+motionless on the bar's draggable middle is observable by nothing — it looks exactly like a cursor
+that left the window, since both are pure silence. The watchdog therefore cannot serve both cases and
+closes: resting motionless on the bar's middle for 10 s dismisses it. Every ordinary exit is caught
+long before that (sensor band upward, hysteresis in every other direction), so this only really fires
+after a flick, and the cost of being wrong is one re-approach from the top.
 
 As an alternative, **Move mode** (context menu → *Move*, or `F10`) overlays the page with a
 drag-to-move panel.

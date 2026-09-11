@@ -76,6 +76,51 @@ test('dragZone html marks the surface as a window-drag region', () => {
   expect(dragZone({}).html).toMatch(/-webkit-app-region:\s*drag/)
 })
 
+// Setup:    The default (enabled) descriptor, plus the overlay's preload source.
+// Action:   Inspect the markup for the upward-exit sensor and the preload for what it does with it.
+// Expected: A .exit-sensor element marked -webkit-app-region:no-drag — the surrounding drag surface
+//           is excluded from the hit region, so only a no-drag element can witness the cursor leaving
+//           the strip over the top edge. main has no other way to learn about that exit (the app view
+//           stops reporting once the strip covers it, and Wayland exposes no global cursor position),
+//           so without this band the bar would stay open after the pointer left the window. The
+//           preload must turn that leave into the 'exit' action and must NOT fire it for a downward
+//           leave, which is the normal path from the band to the bar's buttons.
+test('dragZone html ships the no-drag sensor that dismisses the bar on an upward exit', () => {
+  const html = dragZone({}).html
+  expect(html).toContain('class="exit-sensor"')
+  // The sensor rule must carry no-drag; the bar around it stays draggable.
+  const rule = /\.exit-sensor\s*\{[^}]*\}/.exec(html)
+  expect(rule).not.toBeNull()
+  expect(rule[0]).toMatch(/-webkit-app-region:\s*no-drag/)
+  // REGRESSION: .handle is absolutely positioned too and comes later in the DOM, so without an
+  // explicit z-index it paints over the sensor across the bar's whole width and the band only sees
+  // the 16px pads — it then never fires, silently, which is exactly how it shipped broken once.
+  expect(rule[0]).toMatch(/z-index:\s*[1-9]/)
+  expect(html.indexOf('class="exit-sensor"')).toBeLessThan(html.indexOf('class="handle"'))
+
+  const preload = fs.readFileSync(dragZone({}).preload, 'utf8')
+  expect(preload).toContain(".querySelector('.exit-sensor')")
+  expect(preload).toContain("'exit'")
+  expect(preload).toContain('mouseleave')
+  // A downward leave (into the bar) must be excluded, or reaching for a button would dismiss the bar.
+  expect(preload).toMatch(/movedDown/)
+})
+
+// Setup:    The overlay's preload source.
+// Action:   Inspect how it answers the main-process presence watchdog.
+// Expected: Presence is POLLED via :hover, not derived from mousemove. That distinction is the whole
+//           point: a cursor resting on the bar emits no events, so an event-driven check would read
+//           it as gone and close the bar under the user. :hover is the renderer's own hit test and
+//           answers for a motionless cursor. Polling only while the bar is up keeps it from being
+//           constant IPC noise.
+test('dragZone preload polls hover for presence', () => {
+  const preload = fs.readFileSync(dragZone({}).preload, 'utf8')
+  expect(preload).toContain("'present'")
+  expect(preload).toMatch(/body:hover/)
+  expect(preload).toMatch(/setInterval/)
+  expect(preload).toContain("classList.contains('shown')")
+})
+
 // Setup:    The default (enabled) descriptor.
 // Action:   Inspect the overlay markup for the zoom controls.
 // Expected: It ships the −/+ zoom buttons and the level readout, gated behind a {{bodyClass}} token
