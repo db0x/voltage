@@ -8,7 +8,8 @@ What it does today is relay's document editing: it syncs a local Office file to 
 opens it there. Double-click a `.docx`/`.xlsx`/`.pptx` in the file browser → the AppImage uploads it
 to your personal folder on relay via its file API, navigates to relay's editor page, and **pulls the
 edited file back over the local one when the window closes** — the local file stays the source of
-truth.
+truth. It carries no credential of its own: everything rides on the relay login session the app
+profile already holds.
 
 Architecturally this is the [rclone-sync](../rclone-sync/rclone-sync.js) pattern (launch-arg
 takeover → loading page → upload → editor → sync-back on close, with a conflict dialog) speaking
@@ -16,37 +17,71 @@ plain REST instead of driving the rclone binary.
 
 ## Backend contract
 
-relay's token-authenticated file API (see the relay README, *Datei-API*):
+relay's file API (see the relay README, *File API*). Everything — API **and** editor page —
+authenticates with the same thing: the **relay login session** of the app's own profile.
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/api/session` | `{ user, csrf }` — signed in? plus the CSRF proof |
 | `GET` | `/api/files` | list → `{ files: [names] }` |
-| `PUT` | `/api/files/<name>` | upload/overwrite (raw body) |
+| `PUT` | `/api/files/<name>` | upload/overwrite (raw body, `X-CSRF-Token`) |
 | `GET` | `/api/files/<name>` | download |
+| `POST` | `/api/files/<name>/forcesave` | save the open editor session now (`X-CSRF-Token`) |
 
-Auth: `Authorization: Bearer <apiToken>`; every token only sees its own user folder.
+A session only ever sees its own user folder. Because the API hangs on a cookie, relay checks it
+for CSRF like any form — hence the header on the writing calls, and hence `/api/session`, which
+exists so the plugin can fetch that proof without scraping a rendered page (at launch the window
+is on this plugin's own `data:` loading page).
 
-The **editor page** (`/edit/<name>`) is *not* token-authenticated — it uses relay's login
-session cookie. That fits voltage naturally: the app's isolated profile keeps the 90-day session,
-so you log in **once** in the app window; `/login?next=` carries the editor target through that
-first login.
+Two consequences worth knowing:
+
+- Every request goes through **`ses.fetch`** — the Electron `Session` of the app's WebContents,
+  i.e. Chromium's network stack. Node's global `fetch` has its own stack and would send no cookie
+  at all. That one detail is what makes token-free operation possible.
+- A **401 means "not signed in"**, not "misconfigured". The plugin then loads relay's login page,
+  waits for the sign-in to go through, and continues the upload — the password is typed into
+  relay's own form, voltage only ends up holding the cookie.
+
+> **There is no API token any more.** There used to be one, baked into the AppImage's
+> `pluginConfig` at build time. It was an unlimited full-account credential (relay would even turn
+> it into a session), it sat in plaintext in the build, and revoking it meant re-issuing one for
+> every client at once. The session expires, is stored per device and can be ended individually.
+> A built AppImage is therefore no longer personal.
 
 ## Setup
 
-1. Configure the plugin (gear dialog): **Server URL** (e.g. `http://192.168.0.33:5001`) and your
-   **API token** (relay start page → "API-Token", after logging in).
-2. Build & install the app (`build.private.relay.json` ships `acceptsFileArg` + the
-   docx/xlsx/pptx MIME registrations, so the system offers the app for those files).
-3. Launch once without a file and log in — that seeds the session cookie for the editor.
+1. Add the plugin. **There is nothing to configure** — the build config needs no `pluginConfig`
+   entry for it.
+2. Build & install the app (the build config ships `acceptsFileArg` + the docx/xlsx/pptx MIME
+   registrations, so the system offers the app for those files).
+3. Launch it once and log in. The session lives in the app's own profile and — since relay uses
+   rolling 90-day sessions — holds until the profile is discarded. If it ever lapses, the next
+   document opening just shows the login page first.
 
-> The API token is baked into the AppImage's `pluginConfig` at build time (the config file is
-> gitignored) — treat built AppImages as personal, like the docker plugin's secrets.
+The plugin still ships a gear dialog, deliberately empty: further relay capabilities belong in this
+plugin rather than in a second one, and they will want settings. A field added to `config.html`
+binds itself through `data-config-key` with no host change.
+
+### Where the server address comes from
+
+The app's own **`url`** — there is no separate setting. A relay app opens the document list, and
+that list *is* the instance root, the same root `/api/` and `/edit/` hang off. A second field would
+only be another place for the two to drift apart, and they did exactly that once: an app pointing
+at `localhost` while its home button went to a public host.
+
+The reverse-proxy case survives because nothing reduces the URL to its origin: `http://black/relay`
+stays `http://black/relay`, prefix included. The one shape this cannot express is an app that
+deliberately starts *deeper* than the instance root (say `…/chat`) while still syncing files — if
+that ever comes up, an optional override belongs in the dialog above, as an exception rather than a
+required field.
 
 ## Runtime flow
 
 1. Launched **without** a file → normal window on `pkg.url` (the backend's file list); plugin inert.
-   Missing `baseUrl`/`apiToken` → also inert, with a `[relay-plugin]` log line.
-2. Launched **with** a file: loading page, then
+   A `pkg.url` that isn't usable as a backend root → also inert, with a `[relay-plugin]` log line.
+2. Launched **with** a file: loading page, then `GET /api/session`. Not signed in → relay's login
+   page, and the flow resumes once it is through; backend unreachable → straight to `pkg.url`.
+   Then
    - not on the server yet → upload → editor.
    - on the server with **identical content** (md5) → skip the upload, open the editor directly.
    - on the server with **different content** → a **comparison dialog** (like the rclone/Google flow):
@@ -75,11 +110,11 @@ first login.
    The forcesave path needs the backend to know the open session's document key, which it captures when
    `/edit` is served (an in-memory map). After a backend restart the key is gone → forcesave reports
    `no-session`; the plugin then waits the full window (the DS's own grace save may still be coming).
-4. Any API failure (server down, bad token) falls back to loading `pkg.url` normally.
+4. Any API failure (server down) falls back to loading `pkg.url` normally.
 5. Apps that also load the **widget** plugin get a home button (this plugin's glyph) on the drag
-   strip: it routes the app back to the document list (the configured `baseUrl`, so a reverse-proxy
-   path prefix like `http://black/relay` works too), which the editor page has no link back to. It
-   shows only while an editor page (`<baseUrl>/edit/…`) is open and hides on the list itself.
+   strip: it routes the app back to the document list (the app's own `url`, so a reverse-proxy path
+   prefix like `http://black/relay` works too), which the editor page has no link back to. It shows
+   only while an editor page (`<base>/edit/…`) is open and hides on the list itself.
 
 The prompt pages answer through the generic `rclone-confirm` preload bridge
 (`window.electronAPI.rcloneConfirm`) — plugin-agnostic plumbing despite the historical name, so no

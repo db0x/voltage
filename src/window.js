@@ -717,7 +717,7 @@ function usesZoomPlugin(pkg) {
 // The relay plugin module when the app loads it, else null (same path convention as
 // loadPlugins; the require cache makes this free after the first call). The widget drag-zone's
 // home button asks THIS module about the relay server's URL space — isEditorUrl / homeUrl — because
-// that layout (<baseUrl>/edit/… vs. the document list, incl. reverse-proxy path prefixes) is the
+// that layout (<base>/edit/… vs. the document list, incl. reverse-proxy path prefixes) is the
 // plugin's business knowledge, not window.js's.
 function relayPluginModule(pkg) {
   const rel = (pkg.plugins ?? []).find(p => /(^|\/)relay\//.test(p))
@@ -1015,7 +1015,7 @@ function createWindow(pkg, opts = {}) {
           // Detached so the tools don't shrink the frameless widget's own view.
           case 'devtools': appContents.openDevTools({ mode: 'detach' }); break
           // Back to the relay server's document list — the plugin knows where that lives
-          // (its configured baseUrl, incl. reverse-proxy path prefixes like http://black/relay).
+          // (derived from the app's own url, incl. reverse-proxy prefixes like http://black/relay).
           case 'home': {
             const home = relayPluginModule(pkg)?.homeUrl(pkg) ?? pkg.url
             appContents.loadURL(home)

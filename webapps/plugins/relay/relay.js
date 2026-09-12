@@ -1,24 +1,38 @@
 // relay plugin (main-process module). The voltage-side client for a self-hosted **relay** server
 // (Express backend + OnlyOffice DocumentServer; relay keeps its own desktop as the backend). Today
 // it covers relay's document editing: double-click a .docx → the AppImage uploads it via relay's
-// token-authenticated file API, navigates to relay's editor page, and pulls the edited file back
-// over the local one when the window closes. Named after the service, not that one feature — further
+// file API, navigates to relay's editor page, and pulls the edited file back over the local one
+// when the window closes. Named after the service, not that one feature — further
 // relay capabilities land here rather than in a second plugin. Mirrors the rclone-sync plugin's
 // architecture (launch-arg takeover, loading page, conflict dialog, sync-back on close) with plain
 // REST instead of the rclone binary.
 //
-// Backend contract (see the relay README, "Datei-API"):
-//   GET    <base>/api/files          — list  → { files: [names] }        (Bearer token)
-//   PUT    <base>/api/files/<name>   — upload/overwrite, RAW body        (Bearer token)
-//   GET    <base>/api/files/<name>   — download                          (Bearer token)
-//   GET    <base>/edit/<name>        — the editor page — session-COOKIE auth, not token: the user
-//                                      logs in once in the app window (persistent voltage profile,
-//                                      90-day session); /login carries ?next= so the editor target
-//                                      survives that first login.
+// Backend contract (see the relay README, "File API"). EVERYTHING below authenticates with the
+// app profile's relay LOGIN SESSION — the same cookie the editor page needs. There is no second
+// credential any more:
+//   GET    <base>/api/session        — { user, csrf } — who are we, and the proof the writing
+//                                      calls need (the API is cookie-authenticated, so it is
+//                                      covered by relay's CSRF check like every form)
+//   GET    <base>/api/files          — list  → { files: [names] }
+//   PUT    <base>/api/files/<name>   — upload/overwrite, RAW body        (X-CSRF-Token)
+//   GET    <base>/api/files/<name>   — download
+//   POST   <base>/api/files/<name>/forcesave                             (X-CSRF-Token)
+//   GET    <base>/edit/<name>        — the editor page; /login carries ?next= so the editor
+//                                      target survives the first login.
 //
-// Config (pluginConfig, gear dialog): baseUrl (e.g. "http://192.168.0.33:5001") and apiToken (the
-// user's API token from relay's start page). Both baked at build time; missing config leaves
-// the plugin inert so the app just loads pkg.url (the file list) normally.
+// The cookie lives in the app's own persistent partition, so the user logs in ONCE in the app
+// window and stays logged in until the profile is discarded (relay sets rolling 90-day sessions).
+// This replaces the API token that used to be baked into the AppImage: that was an unlimited
+// full-account credential sitting in plaintext in the build, and revoking it meant re-issuing one
+// for every client at once.
+//
+// Reaching the cookie jar is the reason every request goes through `ses.fetch` (Electron's
+// Session#fetch, i.e. Chromium's network stack) instead of Node's global fetch — the latter has
+// its own stack and would send no cookie at all.
+//
+// Config: none. The backend root is the app's own `url` (see configuredBaseUrl), and the
+// credential is the profile's login session — so there is nothing left to set. The gear dialog
+// stays in place for relay capabilities that land here later.
 
 const { app, ipcMain } = require('electron')
 const path   = require('node:path')
@@ -79,10 +93,12 @@ function appIconDataUrl() {
 
 const isDe = () => app.getLocale().split('-')[0].toLowerCase() === 'de'
 
-// Normalises the configured base URL: trims, drops trailing slashes, requires http(s). null = unusable.
-function resolveBaseUrl(config) {
-  const raw = String(config?.baseUrl ?? '').trim().replace(/\/+$/, '')
-  return /^https?:\/\/.+/.test(raw) ? raw : null
+// Normalises a backend root: trims, drops trailing slashes, requires http(s). null = unusable.
+// Deliberately does NOT reduce to the origin — a relay behind a reverse proxy lives under a path
+// prefix (http://black/relay), and that prefix is part of the root.
+function resolveBaseUrl(raw) {
+  const url = String(raw ?? '').trim().replace(/\/+$/, '')
+  return /^https?:\/\/.+/.test(url) ? url : null
 }
 
 // The two REST/editor URLs. The filename is a single path segment on the server (secure_filename
@@ -109,14 +125,72 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 const SAVE_WAIT_MS = 15_000
 const SAVE_POLL_MS = 600
 
-// fetch against the backend's file API with the Bearer token. Returns the Response; throws on
-// network failure/timeout (callers treat any throw as "backend unreachable" → online fallback).
-function apiFetch(url, token, { method = 'GET', body, timeoutMs = 120_000 } = {}) {
-  return fetch(url, {
+// One call against the backend's file API, authenticated by the app profile's relay session.
+//
+// `ctx` is that session in the form the rest of this file passes around:
+//   ses  — the Electron Session of the app's WebContents. Its fetch() goes through CHROMIUM's
+//          network stack, which is the only one that carries the profile's cookie jar; Node's
+//          global fetch has its own stack and would arrive unauthenticated.
+//   base — the normalised backend root.
+//   csrf — the proof from GET /api/session. Needed on everything but GET: the API hangs on a
+//          cookie now, so relay checks it like any form (see its csrf.js). It rides in the header
+//          rather than the body because a PUT body is raw file bytes, read only AFTER the check.
+//
+// Returns the Response; throws on network failure/timeout (callers treat any throw as "backend
+// unreachable" → online fallback).
+function apiFetch(ctx, url, { method = 'GET', body, timeoutMs = 120_000 } = {}) {
+  return ctx.ses.fetch(url, {
     method, body,
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: 'include',
+    headers: method === 'GET' ? {} : { 'X-CSRF-Token': ctx.csrf ?? '' },
     signal: AbortSignal.timeout(timeoutMs),
   })
+}
+
+// Who is this profile logged in to relay as, and what CSRF proof do the writing calls need?
+//   { user, csrf } — logged in
+//   'anonymous'    — reachable, but not logged in (401)
+//   'offline'      — backend unreachable; the caller falls back to loading pkg.url
+// Asking a dedicated endpoint rather than scraping <meta name="csrf-token"> out of a page is
+// deliberate: at launch the window sits on this plugin's own data: loading page, with no relay
+// document to read.
+async function sessionInfo(ctx) {
+  try {
+    const res = await ctx.ses.fetch(`${ctx.base}/api/session`, { credentials: 'include' })
+    return res.ok ? await res.json() : 'anonymous'
+  } catch { return 'offline' }
+}
+
+// Make sure the profile is logged in, sending the user through relay's own login page once if it
+// isn't. This is the one thing the API token used to buy: with a baked secret the app was always
+// "authenticated", at the price of carrying a permanent full-account credential. Now a 401 simply
+// means "log in", which is a page — not a broken configuration — so we show it and carry on.
+//
+// The password is typed into relay's own form; voltage never sees it, it only ends up holding the
+// resulting cookie.
+async function ensureSession(win, ctx) {
+  const first = await sessionInfo(ctx)
+  if (first !== 'anonymous') return first
+
+  const contents = win._voltageAppContents
+  contents.loadURL(`${ctx.base}/login`)
+  // Wait until relay navigates away from /login — that is the successful sign-in. A closed window
+  // resolves too, so this never outlives its window.
+  await new Promise(resolve => {
+    const done = () => {
+      contents.removeListener('did-navigate', onNav)
+      win.removeListener('closed', onClosed)
+      resolve()
+    }
+    const onNav    = (_e, url) => { if (!String(url).startsWith(`${ctx.base}/login`)) done() }
+    const onClosed = () => done()
+    contents.on('did-navigate', onNav)
+    win.once('closed', onClosed)
+  })
+  if (win.isDestroyed()) return 'anonymous'
+  // Still not through (e.g. relay sent them to "set your password first")? Then leave them where
+  // they are — the caller must not yank the window off that page.
+  return await sessionInfo(ctx)
 }
 
 function buildLoadingPage(text) {
@@ -177,11 +251,11 @@ function askPrompt(win, vars) {
 // i.e. until the DocumentServer's post-close save callback has landed — and returns the new bytes.
 // Returns null when nothing changed within the window: a viewed-only session never triggers a save,
 // so there is nothing to pull. The first probe runs immediately, catching mid-session saves at once.
-async function waitForSavedVersion(base, token, name, baselineHash, waitMs = SAVE_WAIT_MS) {
+async function waitForSavedVersion(ctx, name, baselineHash, waitMs = SAVE_WAIT_MS) {
   const deadline = Date.now() + waitMs
   for (;;) {
     try {
-      const res = await apiFetch(apiFileUrl(base, name), token, { timeoutMs: 10_000 })
+      const res = await apiFetch(ctx, apiFileUrl(ctx.base, name), { timeoutMs: 10_000 })
       if (res.ok) {
         const buf = Buffer.from(await res.arrayBuffer())
         if (md5(buf) !== baselineHash) return buf
@@ -196,9 +270,9 @@ async function waitForSavedVersion(base, token, name, baselineHash, waitMs = SAV
 // so the edited file is written within ~1s instead of after the DocumentServer's ~10s post-disconnect
 // grace. Returns { saved, reason } | null. null = endpoint missing/unreachable (older backend) → the
 // caller falls back to plain polling. `saved:false, reason:"no-changes"` means nothing to sync.
-async function forceSave(base, token, name) {
+async function forceSave(ctx, name) {
   try {
-    const res = await apiFetch(`${apiFileUrl(base, name)}/forcesave`, token, { method: 'POST', timeoutMs: 10_000 })
+    const res = await apiFetch(ctx, `${apiFileUrl(ctx.base, name)}/forcesave`, { method: 'POST', timeoutMs: 10_000 })
     if (res.ok) return await res.json()
   } catch { /* unreachable / not implemented → fall back */ }
   return null
@@ -213,7 +287,7 @@ async function forceSave(base, token, name) {
 //   alwaysWrite — write the server version even when no NEW save arrives (the open-existing path:
 //                 the server file already differed from local, so "overwrite" must apply it).
 // Best-effort: failures leave the local file untouched and never block the window from closing.
-function registerSyncBack(win, base, token, name, localPath, baselineHash, { prompt = false, alwaysWrite = false } = {}) {
+function registerSyncBack(win, ctx, name, localPath, baselineHash, { prompt = false, alwaysWrite = false } = {}) {
   if (win.isDestroyed()) return
   const de = isDe()
   win.once('close', async (event) => {
@@ -236,7 +310,7 @@ function registerSyncBack(win, base, token, name, localPath, baselineHash, { pro
     // upload. So the pull decision is always the content comparison below (md5 vs. baseline); the
     // forcesave result only bounds how long we wait for a still-pending write to land. (Trusting
     // "no-changes" to skip the pull silently dropped every autosaved edit — the sync-back regression.)
-    const forced = await forceSave(base, token, name)
+    const forced = await forceSave(ctx, name)
     const noNewSave = forced?.saved === false && forced.reason === 'no-changes'
     if (!win.isDestroyed()) win._voltageAppContents.loadURL(buildLoadingPage(de ? 'Wird synchronisiert …' : 'Syncing …'))
     try {
@@ -246,9 +320,9 @@ function registerSyncBack(win, base, token, name, localPath, baselineHash, { pro
       // wait the full window for the pending save (forcesave lands it in ~1s; the older-backend
       // fallback, forced === null, waits out the DS's ~10s grace).
       const waitMs = noNewSave ? 1500 : SAVE_WAIT_MS
-      let buf = await waitForSavedVersion(base, token, name, baselineHash, waitMs)
+      let buf = await waitForSavedVersion(ctx, name, baselineHash, waitMs)
       if (!buf && alwaysWrite) {
-        const res = await apiFetch(apiFileUrl(base, name), token)
+        const res = await apiFetch(ctx, apiFileUrl(ctx.base, name))
         if (res.ok) buf = Buffer.from(await res.arrayBuffer())
       }
       if (buf) { fs.writeFileSync(localPath, buf); console.log(TAG, `synced back: ${localPath}`) }
@@ -259,33 +333,33 @@ function registerSyncBack(win, base, token, name, localPath, baselineHash, { pro
 }
 
 // Uploads the local file (raw-body PUT, matching `curl -T`) and returns whether the server took it.
-async function upload(base, token, name, localPath) {
-  const res = await apiFetch(apiFileUrl(base, name), token, { method: 'PUT', body: fs.readFileSync(localPath) })
+async function upload(ctx, name, localPath) {
+  const res = await apiFetch(ctx, apiFileUrl(ctx.base, name), { method: 'PUT', body: fs.readFileSync(localPath) })
   if (!res.ok) console.log(TAG, `upload failed: server answered ${res.status}`)
   return res.ok
 }
 
 // The full launch flow: decide upload vs. conflict, register the sync-back, return the editor URL —
 // or null on any failure (the caller then falls back to pkg.url, the backend's file list).
-async function resolveLaunchUrl(win, base, token, localPath) {
+async function resolveLaunchUrl(win, ctx, localPath) {
   const name = path.basename(localPath)
   const de   = isDe()
 
   // Does the file already exist in the user's server folder? (List = names only, so content is
   // compared by downloading + hashing — Office files are small enough for that to be instant.)
-  const listRes = await apiFetch(`${base}/api/files`, token, { timeoutMs: 15_000 })
+  const listRes = await apiFetch(ctx, `${ctx.base}/api/files`, { timeoutMs: 15_000 })
   if (!listRes.ok) { console.log(TAG, `file list failed: server answered ${listRes.status}`); return null }
   const { files = [] } = await listRes.json().catch(() => ({}))
 
   const localHash = md5(fs.readFileSync(localPath))
 
   if (files.includes(name)) {
-    const remoteRes = await apiFetch(apiFileUrl(base, name), token)
+    const remoteRes = await apiFetch(ctx, apiFileUrl(ctx.base, name))
     const remoteBuf = remoteRes.ok ? Buffer.from(await remoteRes.arrayBuffer()) : null
     if (remoteBuf && md5(remoteBuf) === localHash) {
       // Identical → nothing to upload; still sync back silently (the server copy may get edited).
-      registerSyncBack(win, base, token, name, localPath, localHash)
-      return editUrl(base, name)
+      registerSyncBack(win, ctx, name, localPath, localHash)
+      return editUrl(ctx.base, name)
     }
     // Same name, different content → the user decides which version wins, shown a local-vs-server
     // comparison. Server mtime/size come from the download we just did (res.download sets Last-Modified
@@ -299,43 +373,45 @@ async function resolveLaunchUrl(win, base, token, localPath) {
       // Keep the server version: local stays untouched for now, so ask before pulling it back — and
       // if the user then confirms, apply the server version even without a NEW save (it differed
       // from local from the start; baseline = the server state we just downloaded).
-      registerSyncBack(win, base, token, name, localPath, remoteBuf ? md5(remoteBuf) : localHash,
+      registerSyncBack(win, ctx, name, localPath, remoteBuf ? md5(remoteBuf) : localHash,
         { prompt: true, alwaysWrite: true })
-      return editUrl(base, name)
+      return editUrl(ctx.base, name)
     }
     win._voltageAppContents.loadURL(buildLoadingPage(de ? 'Wird hochgeladen …' : 'Uploading …'))
   }
 
-  if (!await upload(base, token, name, localPath)) return null
+  if (!await upload(ctx, name, localPath)) return null
   // Baseline = exactly what was uploaded: only a DS save NEWER than that must be pulled back.
-  registerSyncBack(win, base, token, name, localPath, localHash)
-  return editUrl(base, name)
+  registerSyncBack(win, ctx, name, localPath, localHash)
+  return editUrl(ctx.base, name)
 }
 
 // ---- Host-side helpers (called by window.js, not by attachPlugin) -----------------------------
 // The widget drag-zone's home button is a relay feature rendered by the host: window.js asks
 // THIS module about the backend's URL space instead of hardcoding it, so the layout knowledge
-// (<baseUrl>/edit/… vs. the document list at <baseUrl>/) stays in the plugin — including the
+// (<base>/edit/… vs. the document list at <base>/) stays in the plugin — including the
 // reverse-proxy path-prefix case (http://black/relay), where origin-root heuristics fail.
 
-// The backend root configured for a BUILT app, resolved from its baked pluginConfig; null when the
-// app doesn't load this plugin or the baseUrl is missing/garbage (the plugin is inert then).
+// The backend root of a BUILT app: its own start URL. There is no separate setting for this, and
+// deliberately so — a relay app opens the document list, and that list IS the instance root, the
+// same root /api/ and /edit/ hang off. A second field would only be another place for the two to
+// drift apart (they did: an app once pointed at localhost while its home button went to a public
+// host). null when the app doesn't load this plugin, or its URL isn't usable — inert either way.
 function configuredBaseUrl(pkg) {
   const rel = (pkg.plugins ?? []).find(p => /(^|\/)relay\//.test(p))
-  return rel ? resolveBaseUrl(pkg.pluginConfig?.[rel]) : null
+  return rel ? resolveBaseUrl(pkg.url) : null
 }
 
 // Whether `url` is one of the backend's editor pages — the drag-zone shows the home button only
-// there (on the document list it would be a no-op). Without a configured baseUrl fall back to a
-// bare-path check so manual testing against pkg.url still behaves sensibly.
+// there (on the document list it would be a no-op). With an unusable app URL fall back to a
+// bare-path check so manual testing still behaves sensibly.
 function isEditorUrl(pkg, url) {
   const base = configuredBaseUrl(pkg)
   if (base) return String(url ?? '').startsWith(`${base}/edit/`)
   try { return new URL(url).pathname.startsWith('/edit/') } catch { return false }
 }
 
-// The home button's target: the backend's document list. Falls back to the app's own URL when no
-// baseUrl is configured.
+// The home button's target: the backend's document list — the app's own URL, normalised.
 function homeUrl(pkg) {
   const base = configuredBaseUrl(pkg)
   return base ? `${base}/` : pkg.url
@@ -345,26 +421,43 @@ function attachPlugin(win, api) {
   const filePath = fileFromArg(api.launchArg)
   if (!filePath) return  // launched without a file → normal window (file list; log in there once)
 
-  const base  = resolveBaseUrl(api.config)
-  const token = String(api.config?.apiToken ?? '').trim()
-  if (!base || !token) {
-    console.log(TAG, 'baseUrl/apiToken not configured — plugin inactive')
+  const base = resolveBaseUrl(pkg.url)
+  if (!base) {
+    console.log(TAG, `app URL unusable as a backend root (${pkg.url}) — plugin inactive`)
     return
   }
 
   // Take over the initial load (window.js already kicked off pkg.url): loading page now, editor URL
   // once the upload settles. All page swaps target win._voltageAppContents — with the widget plugin
   // the app lives in an inset view, where win.webContents is only the transparent host page.
-  win._voltageAppContents.stop()
-  win._voltageAppContents.loadURL(buildLoadingPage(isDe() ? 'Wird hochgeladen …' : 'Uploading …'))
+  const contents = win._voltageAppContents
+  contents.stop()
+  contents.loadURL(buildLoadingPage(isDe() ? 'Wird hochgeladen …' : 'Uploading …'))
 
-  resolveLaunchUrl(win, base, token, filePath)
-    .then(url => { if (!win.isDestroyed()) win._voltageAppContents.loadURL(url ?? pkg.url) })
+  // The app's own Session carries the relay login cookie — see apiFetch for why it has to be this
+  // one and not Node's fetch.
+  const ctx = { ses: contents.session, base, csrf: null }
+
+  ensureSession(win, ctx)
+    .then(async info => {
+      if (win.isDestroyed()) return
+      // Backend down → behave exactly as a failed API call always did: load the app's URL.
+      if (info === 'offline') { contents.loadURL(pkg.url); return }
+      // Login didn't complete (cancelled, or relay is insisting on a password change first). The
+      // window is sitting on relay's own page for that — leave it there rather than navigating
+      // away from what the user still has to do.
+      if (info === 'anonymous') { console.log(TAG, 'not signed in — leaving the user on relay'); return }
+
+      ctx.csrf = info.csrf
+      contents.loadURL(buildLoadingPage(isDe() ? 'Wird hochgeladen …' : 'Uploading …'))
+      const url = await resolveLaunchUrl(win, ctx, filePath)
+      if (!win.isDestroyed()) contents.loadURL(url ?? pkg.url)
+    })
     .catch(err => {
       console.log(TAG, 'launch flow failed:', err.message)
-      if (!win.isDestroyed()) win._voltageAppContents.loadURL(pkg.url)
+      if (!win.isDestroyed()) contents.loadURL(pkg.url)
     })
 }
 
 // Helpers exported for the unit tests; configurable → gear dialog (config.html).
-module.exports = { attachPlugin, fileFromArg, resolveBaseUrl, apiFileUrl, editUrl, waitForSavedVersion, forceSave, buildConfirmPage, fmtBytes, configuredBaseUrl, isEditorUrl, homeUrl, configurable: true }
+module.exports = { attachPlugin, fileFromArg, resolveBaseUrl, apiFileUrl, editUrl, sessionInfo, waitForSavedVersion, forceSave, buildConfirmPage, fmtBytes, configuredBaseUrl, isEditorUrl, homeUrl, configurable: true }
