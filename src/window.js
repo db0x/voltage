@@ -886,8 +886,14 @@ function createWindow(pkg, opts = {}) {
       // there (and on the plugin's data: loading/prompt pages). The state is pushed on every
       // navigation, plus once when the overlay finishes loading — the app navigates before the
       // overlay page is ready, so that first push would otherwise be lost.
+      //
+      // And only in the app the list BELONGS to. Loading the plugin is no longer enough: a viewer
+      // app loads it for the local-file handling (a double-clicked .docx arrives as a launch
+      // argument, which only this plugin reads), but its home is the one document it was opened
+      // with — routing it to the list would make a second desktop out of it. ownsDocumentList
+      // answers that from the routing table, not from a setting.
       const relayPlugin = relayPluginModule(pkg)
-      if (relayPlugin) {
+      if (relayPlugin && relayPlugin.ownsDocumentList(pkg, (u) => appClaimsUrl(u, pkg.profile))) {
         const sendHomeState = () => {
           let onEditor = false
           try { onEditor = relayPlugin.isEditorUrl(pkg, appContents.getURL()) } catch {}

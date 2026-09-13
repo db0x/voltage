@@ -103,6 +103,28 @@ if (_blockClose) {
   }, { passive: true, capture: true })
 }
 
+// ── Runtime marker for the hosted web app ───────────────────────────────────────────────────────
+// A web app cannot otherwise tell that it is running inside voltage rather than in a browser tab —
+// and relay wants to know: inside voltage there is a REAL window manager, so a document belongs in
+// its own OS window instead of a dragged pseudo-window inside its page.
+//
+// Opt-in per app: only a plugin that asks for it (relay, via preloadArgs) gets this marker, so an
+// arbitrary app's page is not handed a way to spawn windows. The arg arrives through
+// additionalArguments, i.e. at document-start before any page script — so the app never has to
+// poll for it.
+//
+// openDocumentWindow resolves true only if the main process actually launched something; the page
+// can therefore fall back to its own in-page view instead of silently doing nothing. Main validates
+// the URL (see the relay plugin) — this is not a general-purpose window opener.
+const RUNTIME_ARG = '--voltage-runtime='
+const runtimeArg = process.argv.find(a => a.startsWith(RUNTIME_ARG))
+if (runtimeArg) {
+  contextBridge.exposeInMainWorld('voltage', {
+    runtime: runtimeArg.slice(RUNTIME_ARG.length) || 'voltage',
+    openDocumentWindow: (url) => ipcRenderer.invoke('voltage:open-document-window', String(url)),
+  })
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Renderer→main bridge for the zoom plugin: a page can't reach its own webContents zoom, so the
   // injected ctrl+wheel listener signals the direction here and the plugin steps the zoom factor.

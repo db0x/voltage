@@ -50,17 +50,13 @@ Two consequences worth knowing:
 
 ## Setup
 
-1. Add the plugin. **There is nothing to configure** — the build config needs no `pluginConfig`
-   entry for it.
+1. Add the plugin. The only thing to configure is which app opens which kind of document (see
+   below); without that it behaves exactly like relay in a browser.
 2. Build & install the app (the build config ships `acceptsFileArg` + the docx/xlsx/pptx MIME
    registrations, so the system offers the app for those files).
 3. Launch it once and log in. The session lives in the app's own profile and — since relay uses
    rolling 90-day sessions — holds until the profile is discarded. If it ever lapses, the next
    document opening just shows the login page first.
-
-The plugin still ships a gear dialog, deliberately empty: further relay capabilities belong in this
-plugin rather than in a second one, and they will want settings. A field added to `config.html`
-binds itself through `data-config-key` with no host change.
 
 ### Where the server address comes from
 
@@ -77,8 +73,11 @@ required field.
 
 ## Runtime flow
 
-1. Launched **without** a file → normal window on `pkg.url` (the backend's file list); plugin inert.
-   A `pkg.url` that isn't usable as a backend root → also inert, with a `[relay-plugin]` log line.
+1. Launched **without** a file → depends on what the app is. The desktop app opens its file list
+   (`pkg.url`, already loading — nothing to do). An app that owns exactly one file type was just
+   started from the menu with no document, and the only sensible reading of that is *a new one of
+   these*: it goes straight to relay's create dialog, `<base>/?neu=<ext>`. A `pkg.url` that isn't
+   usable as a backend root leaves the plugin inert, with a `[relay-plugin]` log line.
 2. Launched **with** a file: loading page, then `GET /api/session`. Not signed in → relay's login
    page, and the flow resumes once it is through; backend unreachable → straight to `pkg.url`.
    Then
@@ -111,8 +110,8 @@ required field.
    `/edit` is served (an in-memory map). After a backend restart the key is gone → forcesave reports
    `no-session`; the plugin then waits the full window (the DS's own grace save may still be coming).
 4. Any API failure (server down) falls back to loading `pkg.url` normally.
-5. Apps that also load the **widget** plugin get a home button (this plugin's glyph) on the drag
-   strip: it routes the app back to the document list (the app's own `url`, so a reverse-proxy path
+5. Apps that also load the **widget** plugin AND own the document list (see `ownsDocumentList`) get
+   a home button (this plugin's glyph) on the drag strip: it routes the app back to the document list (the app's own `url`, so a reverse-proxy path
    prefix like `http://black/relay` works too), which the editor page has no link back to. It shows
    only while an editor page (`<base>/edit/…`) is open and hides on the list itself.
 
@@ -120,10 +119,119 @@ The prompt pages answer through the generic `rclone-confirm` preload bridge
 (`window.electronAPI.rcloneConfirm`) — plugin-agnostic plumbing despite the historical name, so no
 core/preload change was needed.
 
+## Documents in a real window
+
+relay draws its own window manager inside the page: documents open as draggable pseudo-windows on
+its desktop. In a browser tab that is the right answer — there is nothing else. Inside voltage it
+simulates something the machine already has, so a document can be handed to a **real application
+window** instead: a separate AppImage with its own icon, its own taskbar entry, its own zoom.
+
+**Which app opens what is configured in the gear dialog**, one choice per document family:
+
+| Setting | Covers |
+|---|---|
+| `appPdf` | `.pdf` |
+| `appWord` | `.docx .doc .odt .rtf .txt` |
+| `appCell` | `.xlsx .xls .ods .csv` |
+| `appSlide` | `.pptx .ppt .odp` |
+
+Four settings, not one per extension: they follow relay's own families (`DOCTYPE` in its
+`backend/config.js`), and the plugin mirrors that table. The default for all four is **leave it in
+relay**, so an unconfigured app behaves exactly as relay does in a browser — handing documents out
+is opt-in.
+
+The choices come from `stacks()`, which runs in the MANAGER's main process and lists the apps that
+are actually **built**. What gets stored is the AppImage's **path**, because that is the only
+identity the runtime can act on: a built AppImage carries neither `webapps/` nor `dist/`, so it
+cannot turn a profile name back into an app. An assigned app that no longer exists resolves to
+null, i.e. the document stays in relay rather than the setting silently doing nothing.
+
+A document window opens already signed in: the second process shares the app profile and therefore
+the relay session cookie. (Verified — a concurrent second instance reads the *persistent* cookie;
+relay's is a 90-day one.)
+
+### How the two sides find each other
+
+1. This plugin exports **`preloadArgs()`** → `--voltage-runtime=relay`. That argument reaches the
+   preload through `additionalArguments`, i.e. at document-start before any page script.
+2. voltage's preload therefore exposes **`window.voltage`** = `{ runtime, openDocumentWindow(url) }`.
+   Opt-in per app: without this plugin no page is handed a way to spawn windows. Detection is
+   deliberately *not* done via the User-Agent — that string travels into logs and third-party
+   analytics, and a marker there would be a statement about the user; a property on `window` is
+   visible only to the page itself.
+3. relay's [`core/voltage.js`](../../../../relay/backend/public/js/core/voltage.js) reads it, and its
+   click handler offers EVERY document address to the runtime. Which of them actually leaves is the
+   runtime's decision — relay does not know the assignment.
+4. Main resolves in three steps: the **assignment** above; then voltage's **routing table**
+   (`claimsUrl` / `routeUrl`), which answers the different question "who owns this URL no matter who
+   links to it"; then **false**. `claimsUrl` comes first because `routeUrl` skips the current app —
+   inside the viewer itself a document would otherwise be handed back to the base owner.
+5. `false` makes relay fall back to its own window, so a click never lands nowhere. That also covers
+   a dev run and an unconfigured app.
+
+`mayOpenDocumentWindow` bounds the whole capability to editor pages of *this* backend — path prefix
+included, so an app at `http://black/relay` cannot be steered to `http://black/other`. A bare origin
+check would allow exactly that.
+
+### Two apps on one relay instance
+
+Both derive the same base key (`localhost:5001`), and only one app can hold it — the base claim
+decides where a link from *elsewhere* goes. The manager therefore **warns instead of refusing**
+(it used to refuse, which made a second app impossible to create), and `updateRoutingTable` keeps
+the first and says so rather than silently dropping the other's claim. Which one is first follows
+config filename order; give the second app a start URL of its own if that tie-break ever matters.
+
+A `routingUrls` claim on the viewer (e.g. `http://localhost:5001/edit/*.pdf`) is optional on top: it
+makes relay links of that kind open there from *anywhere* in voltage, not just from a click inside
+relay.
+
+### A fileless launch means "new document"
+
+`neueDateiEndung(pkg)` reads the app's own `mimeTypes` and answers with the extension relay would
+create — `docx`, `xlsx`, `pptx`. The table mirrors relay's `backend/blank/`: those three are the
+only kinds relay has a template for. **PDF answers null on purpose** — a PDF is exported, not
+created — so the PDF viewer keeps the plain file list, as does the desktop app.
+
+relay's side of it: `?neu=<ext>` opens the create dialog with that type preselected and takes the
+marker back out of the address (the same pattern as `?open=` and `?hl=`, so a reload does not tear
+it open again). An unknown or template-less extension opens nothing at all.
+
+Two details make it work end to end:
+
+- The dialog carries a hidden `ganzseitig` flag when it was reached that way, and `/create` then
+  redirects to the **full-page** editor instead of the file list with a drawn window inside it —
+  which would put the second desktop right back into a single-document app. In a browser nothing
+  changes; the toolbar button leaves the flag empty.
+- `loginRequired` now hands `req.originalUrl` to `?next=` instead of the bare path. The query is
+  part of the target, and it is the FIRST launch — with the login still pending — where a deep link
+  would otherwise be lost. `internesZiel()` already accepted path *and* query.
+
+### Who handles LOCAL files
+
+A viewer needs this plugin only if it is also the desktop handler for that file type — the
+`mimeTypes` / `acceptsFileArg` pair. That path is the plugin's original one: the file arrives as a
+launch argument, gets uploaded, opened, and written back on close. Without the plugin an
+`acceptsFileArg` app would silently ignore the file it was started with, because nothing else reads
+`launchArg`.
+
+For a viewer that is ONLY ever reached through a document URL, the plugin is dead weight — give the
+binding to whichever app should own the file type and leave the rest without it.
+
+The home button no longer follows from loading the plugin. `ownsDocumentList` decides: the button
+means "back to the document list", which is an answer only for the app whose home that list is. It
+asks voltage's own resolution (`claimsUrl`) who owns the backend root — the instance app answers
+yes, a viewer that owns one file type answers no. So a viewer can take the local-file handling
+without turning into a second desktop. A dev run owns nothing and therefore shows no home button.
+
 ## Limits
 
 - One file per window: a second file opened while a window is up starts a second window (the app is
-  deliberately **not** `singleInstance`); the plugin implements no `onLaunch` re-dispatch.
+  deliberately **not** `singleInstance` — which is also what lets the document windows above be
+  their own processes); the plugin implements no `onLaunch` re-dispatch.
+- Only an explicit CLICK routes a document to its own window. A deep link (`?open=…`) opens in place
+  as before — routing that too would risk a launch loop for no gain.
+- The extension→family table is mirrored from relay's `DOCTYPE`. A new format added there needs the
+  same line here, or it simply never leaves the relay window.
 - Conflict comparison downloads the server file to hash it (the list endpoint returns names only) —
   fine for Office-sized documents.
 - With forcesave (current backend) close is fast in both cases (instant when unchanged, ~1 s when

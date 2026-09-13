@@ -35,6 +35,7 @@
 // stays in place for relay capabilities that land here later.
 
 const { app, ipcMain } = require('electron')
+const { spawn } = require('node:child_process')
 const path   = require('node:path')
 const fs     = require('node:fs')
 const os     = require('node:os')
@@ -399,7 +400,10 @@ async function resolveLaunchUrl(win, ctx, localPath) {
 // host). null when the app doesn't load this plugin, or its URL isn't usable — inert either way.
 function configuredBaseUrl(pkg) {
   const rel = (pkg.plugins ?? []).find(p => /(^|\/)relay\//.test(p))
-  return rel ? resolveBaseUrl(pkg.url) : null
+  // startUrl, not url: launching the app with a URL argument (which is exactly what the PDF
+  // windows below do) replaces `url` with that document address — app-window.js keeps the
+  // configured start URL under startUrl precisely so this stays the service root.
+  return rel ? resolveBaseUrl(pkg.startUrl ?? pkg.url) : null
 }
 
 // Whether `url` is one of the backend's editor pages — the drag-zone shows the home button only
@@ -411,21 +415,272 @@ function isEditorUrl(pkg, url) {
   try { return new URL(url).pathname.startsWith('/edit/') } catch { return false }
 }
 
+// Is the home button meaningful in THIS app? It means "back to the document list", which is only
+// an answer for the app whose home that list actually is.
+//
+// The discriminator is ownership of the backend's URL space, asked through the same resolution
+// voltage uses everywhere (claimsUrl): the app that owns the relay instance is the one the list
+// belongs to. A viewer app owns one file type — its home is the document it was opened with, and
+// routing it to the list would turn it into a second desktop.
+//
+// Deliberately not a setting: it follows from what the app already IS. Note the consequence that a
+// dev run (`npm start`, no built profile) owns nothing and therefore shows no home button.
+function ownsDocumentList(pkg, claimsUrl) {
+  const base = configuredBaseUrl(pkg)
+  if (!base) return false
+  try { return claimsUrl(`${base}/`) === true } catch { return false }
+}
+
 // The home button's target: the backend's document list — the app's own URL, normalised.
 function homeUrl(pkg) {
   const base = configuredBaseUrl(pkg)
   return base ? `${base}/` : pkg.url
 }
 
-function attachPlugin(win, api) {
-  const filePath = fileFromArg(api.launchArg)
-  if (!filePath) return  // launched without a file → normal window (file list; log in there once)
+// ---- Documents in their own OS window --------------------------------------------------------
+// relay draws its own window manager inside the page — documents open as draggable pseudo-windows
+// on its desktop. Inside voltage that is a simulation of something the machine already has, so a
+// PDF gets a REAL window instead: a second instance of this very AppImage, launched with the
+// document's address. It shares the app profile, hence the relay session, and so opens already
+// signed in (verified: a concurrent second instance reads the persistent session cookie).
+//
+// Only PDFs. They are view-only in relay (routes/editor.js refuses edit rights for pdf), so two
+// windows on one document cannot produce competing editor sessions. Anything editable stays in the
+// one place that owns its save cycle.
+const RUNTIME_NAME = 'relay'
 
-  const base = resolveBaseUrl(pkg.url)
+// Dateiendung → Dokumentfamilie. Gespiegelt aus relays DOCTYPE (backend/config.js): dieselben vier
+// Familien, die auch der DocumentServer unterscheidet. Vier Einstellungen statt einer je Endung —
+// wer .docx einer App zuweist, meint .doc und .odt mit.
+const FAMILIE = {
+  docx: 'word',  doc: 'word',  odt: 'word', rtf: 'word', txt: 'word',
+  xlsx: 'cell',  xls: 'cell',  ods: 'cell', csv: 'cell',
+  pptx: 'slide', ppt: 'slide', odp: 'slide',
+  pdf:  'pdf',
+}
+// MIME-Typ der App → Endung einer NEUEN Datei dieser Art. Gespiegelt aus relays BLANKS
+// (backend/blank/): genau die drei Arten, die relay anlegen kann. PDF fehlt bewusst — dafuer gibt
+// es keine Vorlage, ein PDF entsteht durch Export, nicht durch "neu".
+const NEUE_DATEI = {
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':       'xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+}
+
+// Womit wurde die App gestartet? DREI Faelle, nicht zwei — der Unterschied zwischen den letzten
+// beiden ist der Grund, warum ein Dokument-Fenster sonst im Anlegen-Dialog landet:
+//
+//   'datei' — eine lokale Datei (Doppelklick im Dateimanager). Die muss hochgeladen und beim
+//             Schliessen zurueckgeschrieben werden; das ist der Ablauf unten.
+//   'ziel'  — eine ADRESSE. So wird ein Dokument-Fenster geoeffnet (siehe registerDocumentWindows),
+//             und app-window.js hat sie bereits zur Fenster-URL gemacht. Hier ist nichts zu tun —
+//             vor allem KEIN Anlegen-Dialog: die App wurde sehr wohl mit einem Dokument gestartet,
+//             es ist nur keine lokale Datei.
+//   'leer'  — gar nichts. Erst das heisst "neues Dokument".
+function startArt(launchArg) {
+  if (fileFromArg(launchArg)) return 'datei'
+  if (launchArg) return 'ziel'
+  return 'leer'
+}
+
+// Welche Dateiart legt DIESE App an, wenn sie ohne Datei gestartet wird? Nur eine App, die genau
+// einen Typ betreut (mimeTypes), hat darauf eine Antwort; die Desktop-App hat keine und oeffnet
+// wie bisher ihre Startseite.
+function neueDateiEndung(pkg) {
+  for (const mime of pkg.mimeTypes ?? []) {
+    if (NEUE_DATEI[mime]) return NEUE_DATEI[mime]
+  }
+  return null
+}
+
+// Familie → Schluessel im pluginConfig (die vier Auswahlfelder im Zahnrad-Dialog).
+const FAMILIE_KEY = { word: 'appWord', cell: 'appCell', slide: 'appSlide', pdf: 'appPdf' }
+// Der Eintrag "im relay-Fenster lassen" — die Vorgabe, wenn nichts gewaehlt ist.
+const INLINE = 'inline'
+
+// Die Dokumentfamilie hinter einer Editor-Adresse, oder null.
+function familieFuer(url) {
+  let pfad
+  try { pfad = new URL(url).pathname } catch { return null }
+  const letzte = decodeURIComponent(pfad.split('/').pop() || '')
+  const ext = (letzte.split('.').pop() || '').toLowerCase()
+  return FAMILIE[ext] ?? null
+}
+
+// Welches AppImage soll dieses Dokument oeffnen? Der konfigurierte Pfad, oder null wenn nichts
+// zugewiesen ist ("im relay-Fenster lassen"), die Familie unbekannt ist oder das AppImage nicht
+// (mehr) existiert — in all diesen Faellen entscheidet der Aufrufer weiter.
+function zielAppImage(config, url) {
+  const familie = familieFuer(url)
+  if (!familie) return null
+  const wahl = String(config?.[FAMILIE_KEY[familie]] ?? '').trim()
+  if (!wahl || wahl === INLINE) return null
+  return fs.existsSync(wahl) ? wahl : null
+}
+
+// The apps the gear dialog offers per document family. Runs in the MANAGER's main process (see
+// its ipc/handlers/plugins.js), which is the only place that can see the repo: a built AppImage
+// carries neither webapps/ nor dist/. So the list is gathered here, at configuration time, and
+// what gets stored is the AppImage's PATH — the same thing voltage's routing table stores, and
+// the only identity the runtime can act on without the repo.
+//
+// Only apps that are actually BUILT are offered: assigning a document to an AppImage that does not
+// exist would be a setting that silently does nothing. Same rule voltage's routing applies.
+function stacks() {
+  const webapps = path.join(__dirname, '..', '..')
+  const root    = path.join(webapps, '..')
+  let appName
+  try { ({ appName } = require(path.join(root, 'src', 'app-naming'))) } catch { return [] }
+
+  // Icon of a built app, as installed by scripts/lib.js. PNG first — the dialog renders <img>.
+  const icons = path.join(os.homedir(), '.local', 'share', 'icons')
+  const iconFor = (name) => {
+    const kandidaten = [
+      path.join(icons, 'voltage', '48x48',    'apps', `${name}.png`),
+      path.join(icons, 'voltage', 'scalable', 'apps', `${name}.svg`),
+      path.join(icons, 'hicolor', '48x48',    'apps', `${name}.png`),
+      path.join(icons, 'hicolor', 'scalable', 'apps', `${name}.svg`),
+    ]
+    for (const p of kandidaten) {
+      if (!fs.existsSync(p)) continue
+      const mime = p.endsWith('.svg') ? 'image/svg+xml' : 'image/png'
+      try { return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}` } catch { /* weiter */ }
+    }
+    return null
+  }
+
+  // Erster Eintrag: gar nicht weiterreichen. Das ist die Vorgabe, und sie braucht einen sichtbaren
+  // Namen — sonst waere "nichts gewaehlt" nicht von "im relay-Fenster lassen" zu unterscheiden.
+  // Der Text kommt aus voltages i18n; die Beschriftungen der Eintraege gehoeren dem Plugin, der
+  // Dialog-Host reicht sie nur durch.
+  let inlineLabel = 'relay'
+  try { inlineLabel = require(path.join(root, 'src', 'i18n')).t().relayConfigInline || inlineLabel }
+  catch { /* ohne i18n bleibt der Kurzname */ }
+  const liste = [{ id: INLINE, label: inlineLabel, icon: pluginIconUrl() }]
+  try {
+    for (const datei of fs.readdirSync(webapps).filter(f => /^build\..+\.json$/.test(f)).sort()) {
+      let cfg
+      try { cfg = JSON.parse(fs.readFileSync(path.join(webapps, datei), 'utf8')) } catch { continue }
+      if (!cfg.profile) continue
+      const name = appName(cfg.profile)
+      const appImage = path.join(root, 'dist', name)
+      if (!fs.existsSync(appImage)) continue
+      liste.push({ id: appImage, label: cfg.name || cfg.profile, icon: iconFor(name) })
+    }
+  } catch { /* kein webapps-Verzeichnis (gebaute App) — dann gibt es nichts zu waehlen */ }
+  return liste
+}
+
+// This plugin asks the preload for the runtime marker — that is what makes `window.voltage` appear
+// in the page (see preload.js). Apps without this plugin get nothing.
+function preloadArgs() {
+  return [`--voltage-runtime=${RUNTIME_NAME}`]
+}
+
+// May the page have a window for this address? Deliberately NOT a general window opener: it must
+// be an editor page of THIS app's own backend. Without that bound, any page the app ever navigates
+// to could talk the runtime into launching instances pointed anywhere.
+//
+// The check is a prefix test against the backend root INCLUDING its path prefix, so an app hosted
+// at http://black/relay cannot be steered to http://black/other. A bare origin test would allow
+// exactly that. Trailing "/edit/" also keeps the capability to documents — not, say, the admin
+// pages.
+function mayOpenDocumentWindow(base, url) {
+  if (!base) return false
+  const target = String(url ?? '')
+  if (!target.startsWith(`${base}/edit/`)) return false
+  // A "…/edit/" with nothing behind it is not a document.
+  return target.length > `${base}/edit/`.length
+}
+
+// Serves the page's openDocumentWindow request.
+//
+// Which AppImage opens the document is NOT decided here: voltage already keeps that mapping in its
+// routing table, where every app declares the URL space it owns (routingUrls, e.g. a PDF viewer
+// claiming ".../edit/*.pdf"). Consulting it instead of carrying a second table in this plugin keeps
+// one source of truth — the same reason the backend root is no longer a setting of its own — and
+// inherits the manager's overlap checks and its "routing beats base" rule for free.
+//
+// claimsUrl before routeUrl matters: routeUrl deliberately skips the current app, so inside the PDF
+// viewer itself a PDF would otherwise be handed on to whoever holds the base claim. claimsUrl asks
+// the same resolution INCLUDING ourselves — if we are the rightful owner, we open it.
+function registerDocumentWindows(win, api, base) {
+  const CHANNEL = 'voltage:open-document-window'
+  ipcMain.removeHandler(CHANNEL)   // one window per process, but never stack handlers
+  ipcMain.handle(CHANNEL, (_event, raw) => {
+    const url = String(raw ?? '')
+    if (!mayOpenDocumentWindow(base, url)) {
+      console.log(TAG, 'refused a document window outside the backend:', url)
+      return false
+    }
+    // 1. The explicit assignment from this plugin's settings (gear dialog): one app per document
+    //    family. It wins over everything else — it is the answer someone typed in on purpose.
+    const ziel = zielAppImage(api.config, url)
+    if (ziel) {
+      try {
+        spawn(ziel, ['--no-sandbox', url], { detached: true, stdio: 'ignore' }).unref()
+        return true
+      } catch (err) {
+        console.log(TAG, 'could not launch the assigned app:', err.message)
+        return false
+      }
+    }
+
+    // 2. No assignment: does another built app claim this address in voltage's routing table? That
+    //    table answers a different question — "who owns this URL, no matter who links to it" — so
+    //    it is consulted second, not instead. claimsUrl first because routeUrl skips the current
+    //    app: inside the viewer itself a document would otherwise be handed back to the base owner.
+    try {
+      if (!api.claimsUrl(url) && api.routeUrl(url)) return true
+    } catch (err) {
+      console.log(TAG, 'routing lookup failed:', err.message)
+    }
+
+    // 3. Nobody wants it → the page keeps its own window. Without an assignment relay behaves
+    //    exactly as it does in a browser; handing documents out is opt-in.
+    return false
+  })
+  win.once('closed', () => ipcMain.removeHandler(CHANNEL))
+}
+
+// Das WebContents der App. Mit dem widget-Plugin lebt die App in einer eingelassenen View, und
+// win.webContents waere nur die durchsichtige Wirtsseite.
+function contentsOf(win) { return win._voltageAppContents }
+
+function attachPlugin(win, api) {
+  // The backend root: the app's configured start URL, which survives a URL launch argument as
+  // startUrl (see configuredBaseUrl).
+  const base = resolveBaseUrl(pkg.startUrl ?? pkg.url)
   if (!base) {
-    console.log(TAG, `app URL unusable as a backend root (${pkg.url}) — plugin inactive`)
+    console.log(TAG, `app URL unusable as a backend root (${pkg.startUrl ?? pkg.url}) — plugin inactive`)
     return
   }
+
+  // Wired up on EVERY launch, with or without a file: the request comes from the page whenever the
+  // user opens a PDF, not from this launch.
+  registerDocumentWindows(win, api, base)
+
+  const art = startArt(api.launchArg)
+
+  // Mit einer Adresse gestartet (Dokument-Fenster): app-window.js laedt sie bereits. Nichts tun.
+  if (art === 'ziel') return
+
+  if (art === 'leer') {
+    // Fuer die Desktop-App heisst das "zeig die Dateiliste" — sie laedt ohnehin schon pkg.url.
+    //
+    // Eine App, die GENAU einen Dateityp betreut, wurde dagegen gerade aus dem Menue heraus
+    // aufgerufen, ohne dass es ein Dokument gaebe. Die einzige sinnvolle Absicht dahinter ist
+    // "neue Datei dieser Art" — also direkt in relays Anlegen-Dialog, statt den Nutzer erst durch
+    // eine Dateiliste zu schicken, die ihm diese App gar nicht zeigen will.
+    const endung = neueDateiEndung(pkg)
+    if (endung) {
+      contentsOf(win).stop()   // die Startseite laeuft schon los; wir wollen woanders hin
+      contentsOf(win).loadURL(`${base}/?neu=${endung}`)
+    }
+    return
+  }
+
+  const filePath = fileFromArg(api.launchArg)
 
   // Take over the initial load (window.js already kicked off pkg.url): loading page now, editor URL
   // once the upload settles. All page swaps target win._voltageAppContents — with the widget plugin
@@ -460,4 +715,4 @@ function attachPlugin(win, api) {
 }
 
 // Helpers exported for the unit tests; configurable → gear dialog (config.html).
-module.exports = { attachPlugin, fileFromArg, resolveBaseUrl, apiFileUrl, editUrl, sessionInfo, waitForSavedVersion, forceSave, buildConfirmPage, fmtBytes, configuredBaseUrl, isEditorUrl, homeUrl, configurable: true }
+module.exports = { attachPlugin, preloadArgs, stacks, mayOpenDocumentWindow, ownsDocumentList, neueDateiEndung, startArt, familieFuer, zielAppImage, fileFromArg, resolveBaseUrl, apiFileUrl, editUrl, sessionInfo, waitForSavedVersion, forceSave, buildConfirmPage, fmtBytes, configuredBaseUrl, isEditorUrl, homeUrl, configurable: true }

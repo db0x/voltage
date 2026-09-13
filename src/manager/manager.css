@@ -1075,6 +1075,13 @@ body.dark .toolbar-btn.danger:not(:disabled):hover img {
   color: #e74c3c;
 }
 
+/* Hinweis, der NICHT blockiert: die Eingabe ist zulaessig, hat aber eine Folge, die man kennen
+   sollte (zwei Apps auf derselben Adresse — nur eine kann sie beanspruchen). Bewusst anders als
+   .error, denn Speichern bleibt moeglich. */
+.field-hint.warn {
+  color: #d08700;
+}
+
 .btn-save {
   background: #3584e4;
   color: white;
@@ -1551,17 +1558,23 @@ body.dark .btn-reveal img {
   background: transparent;
 }
 
-/* docker-integration config: the stack chooser is a combobox — a bordered trigger (current icon +
-   label) that opens the shared .app-select-list/.app-select-item portal dropdown (see plugin-list.js) —
-   plus the read-only compose preview below it. */
+/* Combobox trigger for any [data-config-stacks] chooser in a plugin's config dialog: a bordered
+   button (current icon + label) that opens the shared .app-select-list/.app-select-item portal
+   dropdown (see plugin-list.js). Two class names because the docker plugin — the first user — named
+   it after itself; .stack-trigger is the name for everyone else (relay's per-file-type app pickers)
+   and the docker one stays so its dialog keeps working unchanged. */
+.stack-trigger,
 .docker-stack-trigger {
   width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 10px;
   border: 1px solid var(--card-shadow); border-radius: 8px; cursor: pointer;
   font-size: 13px; color: var(--card-fg); background: var(--card-bg);
 }
+.stack-trigger img ,
 .docker-stack-trigger img { flex-shrink: 0; object-fit: contain; }
+.stack-trigger:hover ,
 .docker-stack-trigger:hover { background: var(--card-hover); }
 /* Chevron via ::after (not baked into the JS-built label) so it stays put regardless of content. */
+.stack-trigger::after ,
 .docker-stack-trigger::after { content: '▾'; margin-left: auto; opacity: 0.6; font-size: 11px; }
 /* Highlights the currently selected row when the dropdown is reopened. */
 .app-select-item.active { background: var(--card-hover); }

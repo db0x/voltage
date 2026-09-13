@@ -198,7 +198,11 @@ module.exports = function setupAppWindow() {
     // A resolvable URL/file (draw.io) loads directly; otherwise pkg.url. A file destined for a
     // plugin (rclone-sync) leaves urlArg null and reaches the plugin via launchArg, which takes
     // over the initial load itself.
-    const basePkg = urlArg ? { ...pkg, url: urlArg } : pkg
+    // `url` becomes the launch target so createWindow loads it directly — but the app's CONFIGURED
+    // start URL must survive: plugins derive the service root from it (the relay plugin's
+    // configuredBaseUrl). Without startUrl a window opened on https://host/edit/x.pdf would take
+    // that whole document URL for the backend root and misplace every API call and the home button.
+    const basePkg = urlArg ? { ...pkg, url: urlArg, startUrl: pkg.url } : pkg
     // A plugin may resolve the real URL asynchronously (e.g. start a container). Hand createWindow a
     // resolver so it shows its in-window "starting…" page during the wait, then loads the resolved
     // URL (or falls back to pkg.url). Only passed when a resolver plugin is present, so ordinary apps

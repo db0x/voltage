@@ -41,17 +41,18 @@ test('create dialog: routing URL may overlap a base but not another routing URL'
 
 // Setup:    Create dialog open; URL field empty.
 // Action:   Type a base URL that overlaps a fixture app's base URL, then a unique one.
-// Expected: The overlapping base URL is flagged and blocks save (base↔base forbidden);
-//           a unique base URL validates cleanly.
-test('create dialog: base URL blocks overlap with another base URL', async ({ managerPage }) => {
+// Expected: The overlapping one is FLAGGED but not refused (see the warn test below — several apps
+//           on one service is a normal shape), while a unique base URL validates cleanly and shows
+//           no hint at all. The point kept from the original test: the field distinguishes the two.
+test('create dialog: base URL flags an overlap and stays clean without one', async ({ managerPage }) => {
   await managerPage.click('.card-add')
 
   await managerPage.fill('#create-url', 'https://example.com')
-  await expect(managerPage.locator('#create-url-hint.error')).toBeVisible()
-  await expect(managerPage.locator('#create-save')).toBeDisabled()
+  await expect(managerPage.locator('#create-url-hint.warn')).toBeVisible()
 
   await managerPage.fill('#create-url', 'https://unique-base.example.org')
   await expect(managerPage.locator('#create-url.valid')).toBeVisible()
+  await expect(managerPage.locator('#create-url-hint')).toBeEmpty()
 })
 
 // Setup:    Create dialog open.
@@ -65,18 +66,28 @@ test('create dialog: malformed routing URL is rejected', async ({ managerPage })
   await expect(managerPage.locator('#create-routing-list .domain-item')).toHaveCount(0)
 })
 
-// Setup:    Edit dialog open for a private app (test-user-app), no field changed yet.
+// Setup:    Edit dialog open for the private fixture app, no field changed yet.
 // Action:   Add a unique routing URL.
-// Expected: Save enables (form is now dirty) and the chip is shown.
+// Expected: Save enables (form is now dirty) and one more chip is shown.
+//
+// The app is addressed by PROFILE, not as the first private card, and the chip count is measured
+// relative to what was already there. Both matter: the manager lists the developer's real private
+// apps, so "the first one" is whichever config sorts first locally and "it has none" holds only
+// until someone's app declares a routing URL — which is exactly how this test broke once. The
+// sibling test below also writes a routing URL into this very config, so even the fixture's own
+// count is not a constant.
 test('edit dialog: adding a routing URL marks the form dirty', async ({ managerPage }) => {
-  const card = managerPage.locator('.card[data-private="true"]').first()
+  const card = managerPage.locator('.card[data-private="true"][data-profile="test-user-app"]')
   await card.hover()
   await card.locator('[data-action="edit"]').click()
   await expect(managerPage.locator('#edit-save')).toBeDisabled()
 
+  const chips = managerPage.locator('#edit-routing-list .domain-item')
+  const vorher = await chips.count()
+
   await managerPage.fill('#edit-routing-input', 'edit-routing-host.test/x')
   await managerPage.click('#edit-routing-add')
-  await expect(managerPage.locator('#edit-routing-list .domain-item')).toHaveCount(1)
+  await expect(chips).toHaveCount(vorher + 1)
   await expect(managerPage.locator('#edit-save')).toBeEnabled()
 })
 
@@ -101,4 +112,37 @@ test('edit dialog: routing URL persists to the private config', async ({ manager
       return cfg.routingUrls ?? []
     } catch { return [] }
   }).toContain('persisted-host.test/path')
+})
+
+// Setup:    Create dialog open. A fixture app already uses example.com as its base URL.
+// Action:   Enter that very URL as the new app's base URL.
+// Expected: A WARNING, and Save stays reachable. Two apps on one address is the normal case as soon
+//           as a service gets several applications (one relay instance with a text, a spreadsheet
+//           and a PDF app) — only one of them can hold the claim, and the others are reached through
+//           a routing rule or a plugin assignment. This used to be a hard block, which made such an
+//           app impossible to create here at all.
+test('create dialog: a base URL already used by another app warns but does not block', async ({ managerPage }) => {
+  await managerPage.click('.card-add')
+  await managerPage.fill('#create-profile', 'zweit-app-auf-einer-adresse')
+  await managerPage.fill('#create-name', 'Zweite App')
+  await managerPage.fill('#create-url', 'https://example.com')
+
+  const hint = managerPage.locator('#create-url-hint')
+  await expect(hint).toHaveClass(/warn/)
+  await expect(hint).not.toHaveClass(/error/)
+  await expect(hint).not.toBeEmpty()
+  await expect(managerPage.locator('#create-url')).not.toHaveClass(/invalid/)
+  await expect(managerPage.locator('#create-save')).toBeEnabled()
+})
+
+// Setup:    Create dialog open; a fixture app declares the routing URL routing-claim.example.net/app.
+// Action:   Claim the same routing URL.
+// Expected: Still a hard rejection. Unlike a shared base, two apps claiming the SAME pattern is
+//           genuinely undecidable — there is no fallback that could tell them apart.
+test('create dialog: a routing URL taken by another app is still refused', async ({ managerPage }) => {
+  await managerPage.click('.card-add')
+  await managerPage.fill('#create-routing-input', 'routing-claim.example.net/app')
+  await managerPage.click('#create-routing-add')
+  await expect(managerPage.locator('#create-routing-hint.error')).toBeVisible()
+  await expect(managerPage.locator('#create-routing-list .domain-item')).toHaveCount(0)
 })

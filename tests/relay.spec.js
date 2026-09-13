@@ -229,6 +229,178 @@ test('configuredBaseUrl/isEditorUrl/homeUrl derive from the app URL and honour a
   expect(plugin.configuredBaseUrl({ url: 'not-a-url', plugins: [rel] })).toBe(null)
 })
 
+// Setup:    A built app launched normally, and the same app launched WITH a document URL — which
+//           app-window.js turns into pkg.url while keeping the configured start URL as startUrl.
+// Action:   Resolve the backend root in both.
+// Expected: Both yield the service root. This is the case the PDF windows create: without startUrl
+//           the second instance would take the document address itself for the backend root and
+//           misplace every API call and the home button.
+test('the backend root survives a URL launch argument', () => {
+  const rel = 'plugins/relay/relay.js'
+  const normal = { url: 'http://black/relay', plugins: [rel] }
+  const gestartet = {
+    url: 'http://black/relay/edit/thomas/bericht.pdf',   // what app-window.js loads
+    startUrl: 'http://black/relay',                      // what it preserves
+    plugins: [rel],
+  }
+  expect(plugin.configuredBaseUrl(normal)).toBe('http://black/relay')
+  expect(plugin.configuredBaseUrl(gestartet)).toBe('http://black/relay')
+  expect(plugin.homeUrl(gestartet)).toBe('http://black/relay/')
+  expect(plugin.isEditorUrl(gestartet, 'http://black/relay/edit/thomas/bericht.pdf')).toBe(true)
+})
+
+// Setup:    The runtime marker the plugin asks the preload for.
+// Action:   Read it.
+// Expected: It names the runtime — this is the ONLY reason window.voltage appears in the page, so
+//           an app without this plugin hands its pages no way to spawn windows.
+test('preloadArgs carries the runtime marker that reveals voltage to the page', () => {
+  expect(plugin.preloadArgs()).toEqual(['--voltage-runtime=relay'])
+})
+
+// Setup:    A backend hosted under a reverse-proxy path prefix, and addresses around it.
+// Action:   Ask whether the page may have its own window for each.
+// Expected: Only editor pages of THIS backend. The prefix is part of the bound — a neighbour at the
+//           same origin must not pass, which a bare origin check would wave through. Without this
+//           the page could talk the runtime into launching instances pointed anywhere.
+test('a document window is bounded to this backend, path prefix included', () => {
+  const base = 'http://black/relay'
+  expect(plugin.mayOpenDocumentWindow(base, 'http://black/relay/edit/thomas/x.pdf')).toBe(true)
+  expect(plugin.mayOpenDocumentWindow(base, 'http://black/relay/edit/')).toBe(false)
+  expect(plugin.mayOpenDocumentWindow(base, 'http://black/relay/')).toBe(false)
+  expect(plugin.mayOpenDocumentWindow(base, 'http://black/relay/admin')).toBe(false)
+  expect(plugin.mayOpenDocumentWindow(base, 'http://black/other/edit/x.pdf')).toBe(false)
+  expect(plugin.mayOpenDocumentWindow(base, 'http://evil.example/edit/x.pdf')).toBe(false)
+  expect(plugin.mayOpenDocumentWindow(base, 'file:///etc/passwd')).toBe(false)
+  expect(plugin.mayOpenDocumentWindow(base, '')).toBe(false)
+  expect(plugin.mayOpenDocumentWindow(null, 'http://black/relay/edit/x.pdf')).toBe(false)
+})
+
+// Setup:    Editor addresses across the document families relay knows (DOCTYPE in its config.js)
+//           plus one it does not.
+// Action:   Derive the family.
+// Expected: The four families the DocumentServer distinguishes — so ONE setting covers .docx,
+//           .doc and .odt together instead of one knob per extension. Anything else is null and is
+//           never handed out.
+test('the document family comes from the extension, four families for all of them', () => {
+  const f = (name) => plugin.familieFuer(`http://black/relay/edit/thomas/${name}`)
+  expect(f('bericht.pdf')).toBe('pdf')
+  expect([f('brief.docx'), f('brief.doc'), f('brief.odt'), f('notiz.txt')]).toEqual(
+    ['word', 'word', 'word', 'word'])
+  expect([f('zahlen.xlsx'), f('zahlen.ods'), f('liste.csv')]).toEqual(['cell', 'cell', 'cell'])
+  expect([f('vortrag.pptx'), f('vortrag.odp')]).toEqual(['slide', 'slide'])
+  expect(f('archiv.zip')).toBe(null)
+  expect(f('ohne-endung')).toBe(null)
+})
+
+// Setup:    An assignment naming a real file for one family and nothing for the others.
+// Action:   Resolve the target for each kind of document.
+// Expected: Only the assigned family resolves. Everything else yields null — meaning "leave it in
+//           relay", which is also what an unconfigured app does: handing documents out is opt-in,
+//           so a fresh app behaves exactly like relay in a browser.
+test('only an assigned family is handed out, and only to an app that exists', () => {
+  const echt = __filename                       // irgendeine existierende Datei als "AppImage"
+  const cfg  = { appPdf: echt, appWord: 'inline', appCell: '/nicht/vorhanden/vExcel' }
+  const z = (name) => plugin.zielAppImage(cfg, `http://black/relay/edit/thomas/${name}`)
+
+  expect(z('bericht.pdf')).toBe(echt)
+  expect(z('brief.docx'), 'ausdrücklich "im relay-Fenster"').toBe(null)
+  expect(z('zahlen.xlsx'), 'zugewiesene App gibt es nicht (mehr)').toBe(null)
+  expect(z('vortrag.pptx'), 'gar nichts zugewiesen').toBe(null)
+  expect(z('archiv.zip'), 'keine Dokumentart').toBe(null)
+  expect(plugin.zielAppImage({}, `http://black/relay/edit/x.pdf`), 'unkonfiguriert').toBe(null)
+})
+
+// Setup:    The plugin's app discovery, as the manager calls it when opening the gear dialog.
+// Action:   List the choosable targets.
+// Expected: A first entry that keeps the document in relay, then one entry per BUILT app, each
+//           identified by its AppImage PATH. The path is the identity because the runtime cannot
+//           see the repo — a built AppImage carries neither webapps/ nor dist/.
+test('the dialog offers the built apps, identified by their AppImage path', () => {
+  const liste = plugin.stacks()
+  expect(Array.isArray(liste)).toBe(true)
+  expect(liste[0].id).toBe('inline')
+  expect(liste[0].label, 'die Vorgabe braucht einen lesbaren Namen').toBeTruthy()
+  for (const eintrag of liste.slice(1)) {
+    expect(eintrag.id.startsWith('/'), `${eintrag.id} ist kein absoluter Pfad`).toBe(true)
+    expect(eintrag.label).toBeTruthy()
+  }
+})
+
+// Setup:    Two apps that BOTH load this plugin: the one owning the relay instance, and a viewer
+//           that loads it only for local-file handling (a double-clicked .docx arrives as a launch
+//           argument, which no other plugin reads). claimsUrl stands in for voltage's resolution.
+// Action:   Ask whether the home button belongs in each.
+// Expected: Only in the app the document list belongs to. Loading the plugin is deliberately NOT
+//           the criterion any more — that would put a "back to the list" button into a viewer whose
+//           home is the one document it was opened with, turning it into a second desktop.
+test('the home button belongs to the app that owns the document list, not to every plugin user', () => {
+  const rel = 'plugins/relay/relay.js'
+  const pkg = { url: 'http://black/relay', plugins: [rel, 'plugins/widget/widget.js'] }
+  const besitzer   = (url) => url === 'http://black/relay/'   // diese App gewinnt die Auflösung
+  const betrachter = () => false                              // eine andere App besitzt die Liste
+
+  expect(plugin.ownsDocumentList(pkg, besitzer)).toBe(true)
+  expect(plugin.ownsDocumentList(pkg, betrachter)).toBe(false)
+
+  // Die Frage wird gegen die Wurzel gestellt, nicht gegen irgendeine Editor-Adresse — sonst
+  // beantwortete sie ein Betrachter mit seinem eigenen Dateityp-Anspruch mit "ja".
+  const nurPdf = (url) => url.endsWith('.pdf')
+  expect(plugin.ownsDocumentList(pkg, nurPdf)).toBe(false)
+
+  // Ohne brauchbare App-URL gibt es keine Liste, auf die der Knopf zeigen könnte.
+  expect(plugin.ownsDocumentList({ url: 'kaputt', plugins: [rel] }, besitzer)).toBe(false)
+  // Und eine App ohne dieses Plugin hat ohnehin keinen.
+  expect(plugin.ownsDocumentList({ url: 'http://black/relay', plugins: [] }, besitzer)).toBe(false)
+  // Wirft die Auflösung, gilt das als "nein" statt den Fensteraufbau zu sprengen.
+  expect(plugin.ownsDocumentList(pkg, () => { throw new Error('kein routing.json') })).toBe(false)
+})
+
+// Setup:    The three shapes a launch argument can have: a local file, a document ADDRESS (how a
+//           document window is opened), and nothing at all.
+// Action:   Classify the launch.
+// Expected: Three distinct answers. The middle one is the point: a document window is started with
+//           a URL, which is not a local file — reading that as "started with nothing" made a
+//           single-type app overwrite the document it was just handed with its create dialog.
+test('a launch with an ADDRESS is not a launch with nothing', () => {
+  const tmp = path.join(os.tmpdir(), `voltage-relay-start-${process.pid}.docx`)
+  fs.writeFileSync(tmp, 'x')
+  try {
+    expect(plugin.startArt(tmp)).toBe('datei')
+    expect(plugin.startArt(`file://${tmp}`)).toBe('datei')
+
+    expect(plugin.startArt('http://localhost:5001/edit/thomas/brief.docx')).toBe('ziel')
+    expect(plugin.startArt('https://black/relay/edit/t/x.pdf')).toBe('ziel')
+    // Auch ein Pfad, der nicht (mehr) existiert, ist ein Auftrag — nur eben keiner, den wir
+    // ausfuehren koennen. "Neues Dokument" waere die falsche Antwort darauf.
+    expect(plugin.startArt('/gibt/es/nicht.docx')).toBe('ziel')
+
+    expect(plugin.startArt(null)).toBe('leer')
+    expect(plugin.startArt('')).toBe('leer')
+    expect(plugin.startArt(undefined)).toBe('leer')
+  } finally { fs.rmSync(tmp, { force: true }) }
+})
+
+// Setup:    The app configs as built: the desktop app (no file type of its own) and the four
+//           viewers, each declaring exactly one.
+// Action:   Ask what a launch WITHOUT a file should create.
+// Expected: The extension of that app's own type — starting a single-type app from the menu with no
+//           document can only mean "a new one of these". The desktop app answers null and keeps its
+//           file list. PDF answers null too: relay has no blank for it (backend/blank/), a PDF is
+//           exported, not created.
+test('an app for one file type knows what a fileless launch should create', () => {
+  const W = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  const C = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  const S = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
+  expect(plugin.neueDateiEndung({ mimeTypes: [W] })).toBe('docx')
+  expect(plugin.neueDateiEndung({ mimeTypes: [C] })).toBe('xlsx')
+  expect(plugin.neueDateiEndung({ mimeTypes: [S] })).toBe('pptx')
+  expect(plugin.neueDateiEndung({ mimeTypes: ['application/pdf'] }), 'kein Blank fuer PDF').toBe(null)
+  expect(plugin.neueDateiEndung({}), 'die Desktop-App').toBe(null)
+  expect(plugin.neueDateiEndung({ mimeTypes: [] })).toBe(null)
+  expect(plugin.neueDateiEndung({ mimeTypes: ['text/plain'] }), 'unbekannter Typ').toBe(null)
+})
+
 // Setup:    Byte counts across the KB/MB/GB thresholds.
 // Action:   Format them for the conflict comparison table.
 // Expected: Compact human-readable units — the table must stay legible, not print raw byte counts.
@@ -260,13 +432,12 @@ test('buildConfirmPage embeds the local-vs-server comparison', () => {
 })
 
 // Setup:    Create dialog open; plugins discovered from the real webapps/plugins tree.
-// Action:   Add relay, open its gear dialog, close it again with Apply.
-// Expected: The dialog opens and asks for NOTHING — both former fields are gone on purpose: the
-//           API token (the profile's login session replaces it) and the server URL (the app's own
-//           url is the backend root, see relay.js: configuredBaseUrl). The empty shell is kept
-//           deliberately for relay capabilities that land here later, so it must still open, show
-//           its explanatory hint and close cleanly rather than throw on a dialog with no controls.
-test('create dialog: relay ships a config dialog that asks for nothing', async ({ managerPage }) => {
+// Action:   Add relay, open its gear dialog, pick an app for PDF, Apply — then reopen.
+// Expected: Four choosers, one per document family, each filled from the plugin's discovered apps
+//           and each starting on "leave it in relay". The selection round-trips. The two FORMER
+//           fields must be gone: the API token (the login session replaced it) and the server URL
+//           (the app's own url is the backend root).
+test('create dialog: relay offers one app chooser per document family', async ({ managerPage }) => {
   await managerPage.click('.card-add')
   await managerPage.click('#create-plugin-trigger')
   await managerPage.locator('.app-select-list .app-select-item', { hasText: 'relay' }).click()
@@ -275,16 +446,26 @@ test('create dialog: relay ships a config dialog that asks for nothing', async (
 
   const overlay = managerPage.locator('.plugin-config-overlay:not(.hidden)')
   await expect(overlay).toHaveCount(1)
-  await expect(overlay.locator('[data-config-key]')).toHaveCount(0)
   await expect(overlay.locator('#relay-config-baseurl')).toHaveCount(0)
   await expect(overlay.locator('#relay-config-apitoken')).toHaveCount(0)
-  await expect(overlay.locator('.field-hint')).not.toBeEmpty()
+
+  const waehler = overlay.locator('[data-config-stacks]')
+  await expect(waehler).toHaveCount(4)
+  for (const key of ['appPdf', 'appWord', 'appCell', 'appSlide'])
+    await expect(overlay.locator(`[data-config-stacks="${key}"]`)).toHaveCount(1)
+
+  // Der PDF-Waehler oeffnet die Liste; der erste Eintrag ist "im relay-Fenster lassen".
+  await overlay.locator('[data-config-stacks="appPdf"]').click()
+  const liste = managerPage.locator('.app-select-list:visible').last()
+  await expect(liste.locator('.app-select-item').first()).toBeVisible()
+  const gewaehlt = await liste.locator('.app-select-item').first().textContent()
+  await liste.locator('.app-select-item').first().click()
+  await expect(overlay.locator('[data-config-stacks="appPdf"]')).toContainText(gewaehlt.trim())
 
   await overlay.locator('.plugin-config-apply').click()
   await expect(managerPage.locator('.plugin-config-overlay:not(.hidden)')).toHaveCount(0)
 
-  // and it reopens just as cleanly
   await managerPage.locator('#create-plugin-list .domain-item', { hasText: 'relay' })
     .locator('.domain-configure-btn').click()
-  await expect(managerPage.locator('.plugin-config-overlay:not(.hidden)')).toHaveCount(1)
+  await expect(managerPage.locator('[data-config-stacks="appPdf"]')).toContainText(gewaehlt.trim())
 })
