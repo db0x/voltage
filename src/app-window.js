@@ -11,7 +11,7 @@ const zlib = require('node:zlib')
 const pkg = require(app.getAppPath() + '/package.json')
 const { createWindow, dispatchLaunchArg } = require('./window')
 const { parseMailtoFields }         = require('./mailto')
-const { wmClass }                   = require('./app-naming')
+const { wmClass, appName }          = require('./app-naming')
 const { profileDir }                = require('./app-paths')
 const { t }                         = require('./i18n')
 
@@ -162,6 +162,14 @@ module.exports = function setupAppWindow() {
   // the rename never migrates a user's stored data.
   app.setName(wmClass(pkg.profile))
   app.commandLine.appendSwitch('wm-class', wmClass(pkg.profile))
+  // Notifications: GNOME resolves a notification's owning app through the `desktop-entry` hint,
+  // which Electron derives from app.getName() — i.e. the LOWERCASED wm-class form ("vteams").
+  // The installed launcher is "vTeams.desktop" (appName) and GNOME's lookup is case-sensitive, so
+  // without this the hint matches nothing: notifications show without the app's icon and name, and
+  // the user's per-app notification settings in GNOME never apply to them. setDesktopName is the
+  // only API that sets this hint independently of the app name; it is still present at runtime in
+  // Electron 42, only absent from the published typings — hence the guard.
+  try { app.setDesktopName(`${appName(pkg.profile)}.desktop`) } catch { /* older/other Electron */ }
   // Session/profile lives under the per-app profileDir override (baked into the AppImage at build
   // time) or the default <appData>/voltage/<profile>. The raw profile stays the identity key.
   app.setPath('userData', profileDir(pkg, path.join(app.getPath('appData'), 'voltage')))

@@ -607,6 +607,7 @@ ipcMain.on('voltage:menu-action', (event, { id } = {}) => {
 // export is what marks a file as a main-process plugin. The api gives plugins what they need
 // without reaching into window.js internals:
 //   profile, appOrigin, internalDomains  — window identity / same-origin classification
+//   desktopId                            — this app's installed .desktop id ("vTeams.desktop")
 //   launchArg                            — the raw CLI argument the app opened with (or null)
 //   routeUrl(url) → bool                 — route a URL to another built app (true on a hit)
 //   claimsUrl(url) → bool                — whether THIS app owns the URL (self, which routeUrl skips)
@@ -621,6 +622,10 @@ function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg, a
     profile:         pkg.profile,
     // Human-readable app name (build-time displayName, else profile) — for plugin-built UI.
     displayName:     pkg.displayName || pkg.profile,
+    // The app's installed launcher id ("vTeams.desktop"). Plugins need it to address this app from
+    // outside the process — the notifications plugin hands it to the GNOME Shell extension, which
+    // identifies windows by launcher id, to raise the window when a notification is clicked.
+    desktopId:       `${appName(pkg.profile)}.desktop`,
     appOrigin,
     internalDomains,
     launchArg:       launchArg ?? null,

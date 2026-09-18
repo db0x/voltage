@@ -9,5 +9,8 @@
         "x-scheme-handler/mailto"
     ],
     "mailtoTemplate": "https://outlook.cloud.microsoft/mail/deeplink/compose",
-    "category": "microsoft"
+    "category": "microsoft",
+    "plugins": [
+        "plugins/notifications/notifications.js"
+    ]
 }
