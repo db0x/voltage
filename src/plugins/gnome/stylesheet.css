@@ -1,0 +1,29 @@
+/* Loaded into the shell theme by GNOME whenever this extension is enabled.
+ *
+ * Why it exists: GNOME's own theme forces the small app icon in a notification header to be
+ * drawn as a symbolic icon —
+ *
+ *   .message .message-header .message-source-icon {
+ *     icon-size: 1.091em;
+ *     -st-icon-style: symbolic; }
+ *
+ * — and that is not a lookup preference but a rendering one: whatever the launcher's Icon= points
+ * at is flattened to a single foreground colour at the icon's own opacities. A Voltage app icon,
+ * which is a full-colour SVG with shading layers, comes out as a grey smudge. Nothing the app can
+ * send over org.freedesktop.Notifications changes this: the header icon follows the desktop entry,
+ * never the notification's own icon/image hints.
+ *
+ * The escape hatch is GNOME's, not ours: the stock theme uses the very same property to keep app
+ * icons in the background-apps menu in colour (`.background-app-item .popup-menu-icon {
+ * -st-icon-style: regular !important; }`). We apply it to the notification header.
+ *
+ * Scope, stated plainly: this is a theme rule, so it colours the header icon of EVERY app's
+ * notifications, not just Voltage's. That is the only granularity St offers — the header icon
+ * carries no per-app style class to select on.
+ *
+ * !important because the theme's rule and ours have equal specificity and extension stylesheets
+ * are not guaranteed a particular load order against a user theme.
+ */
+.message .message-header .message-source-icon {
+  -st-icon-style: regular !important;
+}

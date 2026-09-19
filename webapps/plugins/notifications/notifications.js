@@ -18,12 +18,16 @@
 // only originate from the running page's own live connection. Keeping the app running is the whole
 // mechanism; there is no background delivery to fix.
 //
-// GNOME specifics, both handled outside this file:
+// GNOME specifics, all handled outside this file:
 //   - the `desktop-entry` hint must match the installed launcher or GNOME shows the notification
 //     without the app's icon/name and ignores its per-app notification settings — see
 //     app.setDesktopName() in src/app-window.js.
 //   - raising the window on click is a compositor decision under Wayland, not a client one — see
 //     activateWindow() below and the ActivateApp D-Bus method in src/plugins/gnome/extension.js.
+//   - the small app icon in the notification HEADER is drawn from the launcher's Icon=, and GNOME's
+//     theme forces it to symbolic (single-colour) rendering. No icon we pass here reaches it — the
+//     `icon` below is the large image in the body, which is the one place GNOME allows colour. The
+//     header icon is freed by a theme rule shipped in src/plugins/gnome/stylesheet.css.
 
 const { ipcMain, Notification, nativeImage } = require('electron')
 const { execFile } = require('node:child_process')

@@ -18,10 +18,13 @@ const { runAsync } = require('../lib/subprocess')
 const EXT_UUID = 'voltage@db0x.de'
 const BUNDLED_DIR = path.join(APP_ROOT, 'src', 'plugins', 'gnome')
 // Files that make up the extension; copied verbatim on install. geometry.js holds the pure
-// window-placement rules imported by extension.js. The sibling package.json is intentionally NOT
-// shipped — it only marks the source folder as ESM for node-based unit tests; GNOME Shell parses
-// the extension as ESM regardless.
-const EXT_FILES = ['extension.js', 'geometry.js', 'metadata.json']
+// window-placement rules imported by extension.js. stylesheet.css is picked up by GNOME on its
+// own — an extension directory's stylesheet.css is loaded into the shell theme on enable, which
+// is how we get the notification header's app icon out of GNOME's forced symbolic rendering; see
+// the file itself for why that cannot be done from the app side. The sibling package.json is
+// intentionally NOT shipped — it only marks the source folder as ESM for node-based unit tests;
+// GNOME Shell parses the extension as ESM regardless.
+const EXT_FILES = ['extension.js', 'geometry.js', 'metadata.json', 'stylesheet.css']
 
 function installedExtDir() {
   // VOLTAGE_TEST_GNOME_EXT_DIR redirects the install target in tests so the real
