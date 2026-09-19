@@ -410,7 +410,9 @@ function updateRoutingTable() {
   const routing = { base: {}, routing: {} }
   try {
     const webappsDir = path.join(PROJECT_ROOT, 'webapps')
-    for (const f of fs.readdirSync(webappsDir).filter(f => /^build\..+\.json$/.test(f))) {
+    // .sort() wie in build.js und install.js: bei doppelt beanspruchter Basis-URL behaelt der
+    // ERSTE sie (siehe unten), und "der erste" darf nicht von der Verzeichnisreihenfolge abhaengen.
+    for (const f of fs.readdirSync(webappsDir).filter(f => /^build\..+\.json$/.test(f)).sort()) {
       let cfg
       try { cfg = JSON.parse(fs.readFileSync(path.join(webappsDir, f), 'utf8')) } catch { continue }
       const appImagePath = path.join(PROJECT_ROOT, 'dist', appName(cfg.profile))
@@ -432,7 +434,19 @@ function updateRoutingTable() {
         ].find(p => fs.existsSync(p)) || null
         const entry = { path: appImagePath, name, ...(icon && { icon }) }
         const baseKey = primaryKeyFromUrl(cfg.url)
-        if (baseKey) routing.base[baseKey] = entry
+        // Zwei Apps mit derselben Basis-URL beanspruchen denselben Raum — das laesst sich nicht
+        // beides erfuellen. Frueher gewann stillschweigend die zuletzt gelesene Datei und der
+        // Anspruch der anderen verschwand wortlos (zwei Apps auf EINER relay-Instanz: der Link auf
+        // die Instanz landete plötzlich beim PDF-Betrachter). Jetzt behaelt der erste den
+        // Anspruch und die Kollision wird benannt — aufloesen muss sie der Mensch, ueber eine
+        // eigene Start-URL oder eine routingUrls-Regel fuer die zweite App.
+        if (baseKey && routing.base[baseKey]) {
+          console.log(`  ! Basis-URL doppelt beansprucht: "${baseKey}" — "${routing.base[baseKey].name}" `
+            + `behaelt sie, "${name}" bekommt sie NICHT. Der zweiten App eine eigene Start-URL `
+            + `oder routingUrls geben.`)
+        } else if (baseKey) {
+          routing.base[baseKey] = entry
+        }
         for (const key of routingUrlKeys(cfg)) routing.routing[key] = entry
       } catch {}
     }

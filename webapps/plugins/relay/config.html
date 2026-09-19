@@ -1,0 +1,60 @@
+<!-- Config dialog shipped by the relay plugin. The manager's plugin-config host
+     (src/manager/plugin-config.js) renders this into the manager DOM and owns the generic
+     open/close + Apply/Cancel wiring; the markup reuses the manager's .dialog-* classes so it
+     matches every other dialog. {{pluginIcon}} is the plugin's icon (a var); {{relayConfig*}} are
+     i18n keys.
+
+     Which app opens which kind of document. relay draws its own window manager inside the page —
+     in a browser tab the only possible answer, but inside voltage the machine already has one. So
+     a document can be handed to a REAL application window instead: a separate AppImage, with its
+     own icon, its own taskbar entry and its own zoom.
+
+     Four fields, not one per extension: they follow relay's own document families (backend
+     config.js DOCTYPE), so assigning .docx covers .doc and .odt with it.
+
+     The choices are icon+label comboboxes (data-config-stacks) rather than native <select>, which
+     cannot show per-entry icons. The host fills them from the plugin's stacks() — the apps that are
+     actually built. The first entry keeps the document where it is; that is also the default, so an
+     unconfigured app behaves exactly like relay in a browser.
+
+     There is nothing else to configure: the backend address is the app's own url, and the
+     credential is the profile's relay login session. -->
+<div class="dialog-overlay plugin-config-overlay hidden">
+  <div class="dialog">
+    <div class="dialog-header">
+      <img src="{{pluginIcon}}" alt="">
+      <span class="dialog-title">{{relayConfigTitle}}</span>
+      <button class="dialog-close" type="button">✕</button>
+    </div>
+    <div class="dialog-fields">
+      <span class="field-hint">{{relayConfigOpenWithHint}}</span>
+
+      <div class="dialog-field">
+        <label>{{relayConfigPdf}}</label>
+        <button type="button" class="stack-trigger"
+                data-config-stacks="appPdf" data-config-placeholder="relayConfigChoose"></button>
+      </div>
+      <div class="dialog-field">
+        <label>{{relayConfigWord}}</label>
+        <button type="button" class="stack-trigger"
+                data-config-stacks="appWord" data-config-placeholder="relayConfigChoose"></button>
+      </div>
+      <div class="dialog-field">
+        <label>{{relayConfigCell}}</label>
+        <button type="button" class="stack-trigger"
+                data-config-stacks="appCell" data-config-placeholder="relayConfigChoose"></button>
+      </div>
+      <div class="dialog-field">
+        <label>{{relayConfigSlide}}</label>
+        <button type="button" class="stack-trigger"
+                data-config-stacks="appSlide" data-config-placeholder="relayConfigChoose"></button>
+      </div>
+    </div>
+    <!-- Apply commits the edit to the app's config; Cancel/✕/Esc discard. The host wires these by
+         class (.plugin-config-apply / .plugin-config-cancel). -->
+    <div class="confirm-actions">
+      <button class="btn-cancel plugin-config-cancel" type="button">{{pluginConfigCancel}}</button>
+      <button class="btn-save plugin-config-apply" type="button">{{pluginConfigApply}}</button>
+    </div>
+  </div>
+</div>

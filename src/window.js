@@ -607,6 +607,7 @@ ipcMain.on('voltage:menu-action', (event, { id } = {}) => {
 // export is what marks a file as a main-process plugin. The api gives plugins what they need
 // without reaching into window.js internals:
 //   profile, appOrigin, internalDomains  — window identity / same-origin classification
+//   desktopId                            — this app's installed .desktop id ("vTeams.desktop")
 //   launchArg                            — the raw CLI argument the app opened with (or null)
 //   routeUrl(url) → bool                 — route a URL to another built app (true on a hit)
 //   claimsUrl(url) → bool                — whether THIS app owns the URL (self, which routeUrl skips)
@@ -621,6 +622,10 @@ function loadPlugins(mainWindow, pkg, { appOrigin, internalDomains, launchArg, a
     profile:         pkg.profile,
     // Human-readable app name (build-time displayName, else profile) — for plugin-built UI.
     displayName:     pkg.displayName || pkg.profile,
+    // The app's installed launcher id ("vTeams.desktop"). Plugins need it to address this app from
+    // outside the process — the notifications plugin hands it to the GNOME Shell extension, which
+    // identifies windows by launcher id, to raise the window when a notification is clicked.
+    desktopId:       `${appName(pkg.profile)}.desktop`,
     appOrigin,
     internalDomains,
     launchArg:       launchArg ?? null,
@@ -714,13 +719,13 @@ function usesZoomPlugin(pkg) {
   return (pkg.plugins ?? []).some(p => /(^|\/)zoom\//.test(p))
 }
 
-// The only-office plugin module when the app loads it, else null (same path convention as
+// The relay plugin module when the app loads it, else null (same path convention as
 // loadPlugins; the require cache makes this free after the first call). The widget drag-zone's
-// home button asks THIS module about the backend's URL space — isEditorUrl / homeUrl — because
-// that layout (<baseUrl>/edit/… vs. the document list, incl. reverse-proxy path prefixes) is the
+// home button asks THIS module about the relay server's URL space — isEditorUrl / homeUrl — because
+// that layout (<base>/edit/… vs. the document list, incl. reverse-proxy path prefixes) is the
 // plugin's business knowledge, not window.js's.
-function onlyOfficePluginModule(pkg) {
-  const rel = (pkg.plugins ?? []).find(p => /(^|\/)only-office\//.test(p))
+function relayPluginModule(pkg) {
+  const rel = (pkg.plugins ?? []).find(p => /(^|\/)relay\//.test(p))
   try { return rel ? require(path.join(__dirname, '..', 'webapps', rel)) : null } catch { return null }
 }
 
@@ -881,16 +886,22 @@ function createWindow(pkg, opts = {}) {
         .replace('{{iconSrc}}',     dragIconSrc || '')
       dragOverlay.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(dragHtml))
 
-      // only-office apps: the home button shows only while an editor page (/edit/…) is open. On the
+      // relay apps: the home button shows only while an editor page (/edit/…) is open. On the
       // document list "/" — the very page it routes to — it would be a no-op, so it stays hidden
       // there (and on the plugin's data: loading/prompt pages). The state is pushed on every
       // navigation, plus once when the overlay finishes loading — the app navigates before the
       // overlay page is ready, so that first push would otherwise be lost.
-      const ooPlugin = onlyOfficePluginModule(pkg)
-      if (ooPlugin) {
+      //
+      // And only in the app the list BELONGS to. Loading the plugin is no longer enough: a viewer
+      // app loads it for the local-file handling (a double-clicked .docx arrives as a launch
+      // argument, which only this plugin reads), but its home is the one document it was opened
+      // with — routing it to the list would make a second desktop out of it. ownsDocumentList
+      // answers that from the routing table, not from a setting.
+      const relayPlugin = relayPluginModule(pkg)
+      if (relayPlugin && relayPlugin.ownsDocumentList(pkg, (u) => appClaimsUrl(u, pkg.profile))) {
         const sendHomeState = () => {
           let onEditor = false
-          try { onEditor = ooPlugin.isEditorUrl(pkg, appContents.getURL()) } catch {}
+          try { onEditor = relayPlugin.isEditorUrl(pkg, appContents.getURL()) } catch {}
           try { dragOverlay.webContents.send('voltage:dragzone-home', onEditor) } catch {}
         }
         appContents.on('did-navigate', sendHomeState)
@@ -1014,10 +1025,10 @@ function createWindow(pkg, opts = {}) {
           case 'configure': openConfigInManager(pkg);     break
           // Detached so the tools don't shrink the frameless widget's own view.
           case 'devtools': appContents.openDevTools({ mode: 'detach' }); break
-          // Back to the only-office backend's document list — the plugin knows where that lives
-          // (its configured baseUrl, incl. reverse-proxy path prefixes like http://black/relay).
+          // Back to the relay server's document list — the plugin knows where that lives
+          // (derived from the app's own url, incl. reverse-proxy prefixes like http://black/relay).
           case 'home': {
-            const home = onlyOfficePluginModule(pkg)?.homeUrl(pkg) ?? pkg.url
+            const home = relayPluginModule(pkg)?.homeUrl(pkg) ?? pkg.url
             appContents.loadURL(home)
             break
           }

@@ -155,8 +155,8 @@
   .ctl.devtools { display: none; }
   body.devtools-enabled .ctl.devtools { display: flex; }
 
-  /* Home button — shown only for apps that load the only-office plugin (body.home-enabled): routes
-     the app view back to "/" (the backend's document list). Its glyph is the only-office plugin icon,
+  /* Home button — shown only for apps that load the relay plugin (body.home-enabled): routes
+     the app view back to "/" (the relay server's document list). Its glyph is the relay plugin icon,
      which brings its own fill colors — so no currentColor stroke like the other buttons. */
   .ctl.home { display: none; }
   body.home-enabled .ctl.home { display: flex; }
@@ -237,8 +237,8 @@
         </button>
     </div>
     <div class="sep"></div>
-    <!-- Home — only-office apps only (body.home-enabled): navigates the app view back to "/", the
-         backend's document list. Uses the only-office plugin.svg glyph (own colors, no stroke). -->
+    <!-- Home — relay apps only (body.home-enabled): navigates the app view back to "/", the
+         relay server's document list. Uses the relay plugin.svg glyph (own colors, no stroke). -->
     <div class="ctl home"><span class="label">{{homeLabel}}</span>
       <button class="btn btn-home" data-action="home">
         <svg viewBox="0 0 16 16">

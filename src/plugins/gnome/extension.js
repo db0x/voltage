@@ -29,11 +29,18 @@
 // let GNOME place the window normally — a window must never vanish into a monitor that no longer
 // exists. See geometry.js for the visibility rule and profile-id derivation.
 
+// Third responsibility — activating a window on request: under Wayland a client may not raise
+// itself, the request has to come from the compositor. A Voltage app that wants to come forward
+// (today: the notifications plugin, when the user clicks one of its notifications) therefore asks
+// US to do it, over the small D-Bus interface below. Without this extension the app can only call
+// Electron's focus(), which under GNOME usually just marks the dash icon as "ready".
+
 import Gio from 'gi://Gio'
 import GLib from 'gi://GLib'
 import Shell from 'gi://Shell'
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js'
+import * as Main from 'resource:///org/gnome/shell/ui/main.js'
 
 import { isRectVisible, sanitizeRect, profileFromDesktopId, planWidgetReposition, isCycleAbnormalState, centerRectIn } from './geometry.js'
 
@@ -50,6 +57,21 @@ const APPLICATIONS_DIR = GLib.build_filenamev([GLib.get_home_dir(), '.local', 's
 // Filename, inside a Voltage app's profile folder, that stores its last window geometry. Named for
 // historical reasons (the feature began with widgets); it now applies to every Voltage app.
 const GEOMETRY_FILE = 'widget-geometry.json'
+
+// D-Bus surface a running Voltage app uses to ask the shell to bring one of its windows forward.
+// The app addresses itself by its launcher id ("vTeams.desktop") — the same identity this
+// extension already keys every app by — so no extra handshake or pid tracking is needed.
+const DBUS_NAME = 'de.db0x.Voltage'
+const DBUS_PATH = '/de/db0x/Voltage'
+const DBUS_IFACE = `
+<node>
+  <interface name="de.db0x.Voltage">
+    <method name="ActivateApp">
+      <arg type="s" direction="in"  name="desktopId"/>
+      <arg type="b" direction="out" name="activated"/>
+    </method>
+  </interface>
+</node>`
 
 export default class VoltageExtension extends Extension {
   enable() {
@@ -92,6 +114,15 @@ export default class VoltageExtension extends Extension {
     for (const actor of global.get_window_actors()) {
       this._trackAppWindow(actor.meta_window)
     }
+
+    // --- Window activation on request --------------------------------------------------------
+    // Exported last so the interface only appears once the rest of the extension is live. Owning
+    // the name is what lets a client fail fast (gdbus reports "name has no owner") and fall back
+    // to its own focus() when this extension is not installed or not enabled.
+    this._dbusImpl = Gio.DBusExportedObject.wrapJSObject(DBUS_IFACE, this)
+    this._dbusImpl.export(Gio.DBus.session, DBUS_PATH)
+    this._dbusNameId = Gio.bus_own_name(
+      Gio.BusType.SESSION, DBUS_NAME, Gio.BusNameOwnerFlags.NONE, null, null, null)
   }
 
   disable() {
@@ -124,6 +155,36 @@ export default class VoltageExtension extends Extension {
       this._trackedWindows = null
     }
     this._tracker = null
+
+    // Drop the D-Bus surface. Unowning the name is what makes a client's call fail immediately
+    // (and fall back) instead of waiting for a service that is no longer listening.
+    if (this._dbusNameId) {
+      Gio.bus_unown_name(this._dbusNameId)
+      this._dbusNameId = null
+    }
+    if (this._dbusImpl) {
+      try { this._dbusImpl.unexport() } catch { /* already gone */ }
+      this._dbusImpl = null
+    }
+  }
+
+  // D-Bus: bring the given Voltage app's most recently used window to the front. Returns false —
+  // rather than throwing — when the app is unknown or has no window, so a caller that raced a
+  // closing window just learns the activation did not happen.
+  //
+  // Shell.App.get_windows() is ordered most-recently-used first, which is the window the user
+  // means when an app has several open. We deliberately do NOT fall back to app.activate(): that
+  // would LAUNCH the app if it had no windows, and a notification click must never start anything.
+  ActivateApp(desktopId) {
+    try {
+      const app = this._appSystem?.lookup_app(desktopId)
+      const windows = app?.get_windows?.() ?? []
+      if (!windows.length) return false
+      Main.activateWindow(windows[0])
+      return true
+    } catch {
+      return false
+    }
   }
 
   // Rebuild the hidden set, then nudge the shell to redisplay so a freshly added/removed

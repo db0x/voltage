@@ -339,3 +339,56 @@ test.describe('port-aware keys — local Docker apps on localhost', () => {
     expect(keyMatches('localhost:5001/edit', 'localhost:8888', '/edit/x.docx')).toBe(false)
   })
 })
+
+test.describe('two apps on ONE self-hosted service, split by file type', () => {
+  // The relay case: a document app owns the instance, a PDF viewer owns only its PDFs. Unlike the
+  // SharePoint apps — which each have their OWN host as base and share only routing claims — both
+  // of these live on the same host:port, so the base claim is the contested one.
+
+  // Setup:    the table as updateRoutingTable builds it: the document app holds the base claim,
+  //           the viewer claims PDFs through routingUrls.
+  // Action:   resolve the addresses that actually occur.
+  // Expected: PDFs (including in subfolders) go to the viewer, everything else stays with the
+  //           document app. A routing claim beating a base claim is what makes this expressible
+  //           at all — a base claim could only take the WHOLE instance.
+  const tabelle = {
+    base:    { 'localhost:5001': 'moria' },
+    routing: { 'localhost:5001/edit/*.pdf': 'oo-pdf' },
+  }
+  const wer = (pfad) => {
+    const treffer = findRoute(tabelle, 'localhost:5001', pfad)
+    return treffer && treffer.entry
+  }
+
+  test('PDFs go to the viewer, every other document stays', () => {
+    expect(wer('/edit/thomas/bericht.pdf')).toBe('oo-pdf')
+    expect(wer('/edit/thomas/steuern/2026.pdf')).toBe('oo-pdf')   // '*' spans '/'
+    expect(wer('/edit/thomas/brief.docx')).toBe('moria')
+    expect(wer('/edit/thomas/tabelle.xlsx')).toBe('moria')
+    expect(wer('/')).toBe('moria')
+    expect(wer('/chat')).toBe('moria')
+  })
+
+  test('the port is part of the claim — a neighbour on the same host is untouched', () => {
+    expect(findRoute(tabelle, 'localhost:8888', '/edit/x.pdf')).toBe(null)
+  })
+
+  // Setup:    the viewer's PDF claim against the document app's base claim.
+  // Action:   ask whether they overlap.
+  // Expected: they do — and that is ALLOWED, because the two are of different kinds. The manager
+  //           forbids base↔base and routing↔routing only; a routing claim overlapping a base claim
+  //           is exactly how a second app carves a file type out of a service another app owns.
+  test('the viewer may carve PDFs out of a service the other app owns', () => {
+    expect(keyOverlaps('localhost:5001/edit/*.pdf', 'localhost:5001')).toBe(true)
+  })
+
+  // Setup:    both apps' primary URLs.
+  // Action:   derive their base keys.
+  // Expected: IDENTICAL — which is why the viewer must not rely on a base claim, and why
+  //           updateRoutingTable now reports the collision instead of silently letting the
+  //           alphabetically later config steal the other's claim.
+  test('two apps on one instance derive the SAME base key', () => {
+    expect(primaryKeyFromUrl('http://localhost:5001')).toBe('localhost:5001')
+    expect(primaryKeyFromUrl('http://localhost:5001')).toBe(primaryKeyFromUrl('http://localhost:5001'))
+  })
+})

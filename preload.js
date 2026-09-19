@@ -70,6 +70,164 @@ if (_blockClose) {
   if (css) { try { webFrame.insertCSS(css) } catch {} }
 }
 
+// ── notifications plugin: re-point the persistent-notification API at the main process ──────────
+// Electron implements only NON-persistent web notifications. `new Notification()` reaches the
+// desktop, but ServiceWorkerRegistration.showNotification() — the path Teams/Outlook and every
+// other PWA-style app use — is accepted, resolves, and is then dropped without ever reaching the
+// org.freedesktop.Notifications D-Bus service. Its sibling getNotifications() never settles at all,
+// which stalls any app that awaits it before showing anything. Both are replaced here.
+//
+// Why contextBridge.executeInMainWorld and not a plain assignment: the preload runs in an ISOLATED
+// world, so patching ServiceWorkerRegistration.prototype here would only patch our own copy — the
+// page's calls go through the MAIN world's prototype. executeInMainWorld runs the shim over there
+// while keeping the IPC entry points as proxied function ARGUMENTS, so — unlike an exposed global —
+// nothing the page can reach ever holds a way to raise desktop notifications. The shim function is
+// serialized across the world boundary, so it may not close over anything in this file; everything
+// it needs is passed in as an argument.
+//
+// Opt-in per app (the notifications plugin's preloadArgs), because this replaces a standard web API
+// for the whole page — an app whose notifications already work should keep Chromium's own path.
+const NOTIFICATIONS_ARG = '--voltage-notifications'
+if (process.isMainFrame && process.argv.includes(NOTIFICATIONS_ARG)) {
+  const listeners = new Set()
+  ipcRenderer.on('voltage:notification-event', (_e, payload) => {
+    for (const cb of listeners) { try { cb(payload) } catch {} }
+  })
+
+  contextBridge.executeInMainWorld({
+    args: [{
+      show:      (payload) => ipcRenderer.invoke('voltage:notification-show', payload),
+      close:     (id)      => ipcRenderer.send('voltage:notification-close', String(id)),
+      subscribe: (cb)      => { listeners.add(cb) },
+      // Kept in sync with MAX_ICON_BYTES in webapps/plugins/notifications/notifications.js, which
+      // rejects anything larger — matching here avoids shipping a payload main will only discard.
+      maxIconBytes: 512 * 1024,
+    }],
+    func: (bridge) => {
+      const live = new Map()   // our id -> record for every notification currently on screen
+      let seq = 0
+
+      // The page's icon URL is usually a same-origin avatar behind the session cookie, so it has to
+      // be fetched HERE (this world holds the cookies) and handed to main as a data URL — main has
+      // no way to authenticate that request. Bounded by size and time: an icon is decoration and
+      // must never delay, let alone block, the message itself.
+      const iconToDataUrl = (src) => {
+        if (typeof src !== 'string' || !src) return Promise.resolve(null)
+        if (src.startsWith('data:')) return Promise.resolve(src.length <= bridge.maxIconBytes ? src : null)
+        return new Promise((resolve) => {
+          let done = false
+          const finish = (v) => { if (!done) { done = true; resolve(v) } }
+          setTimeout(() => finish(null), 2000)
+          fetch(src, { credentials: 'include' }).then((r) => {
+            if (!r.ok) return finish(null)
+            return r.blob().then((blob) => {
+              if (blob.size > bridge.maxIconBytes) return finish(null)
+              const fr = new FileReader()
+              fr.onload  = () => finish(typeof fr.result === 'string' ? fr.result : null)
+              fr.onerror = () => finish(null)
+              fr.readAsDataURL(blob)
+            })
+          }).catch(() => finish(null))
+        })
+      }
+
+      // Mints the id both sides use to talk about one notification and starts the async hand-off.
+      // Returns the record synchronously so a constructor (which cannot await) still gets its id.
+      const send = (title, options, target) => {
+        const opts = options || {}
+        const id = 'vn' + (++seq)
+        const rec = {
+          id, target: target || null,
+          title: String(title),
+          body: opts.body == null ? '' : String(opts.body),
+          tag:  opts.tag  == null ? '' : String(opts.tag),
+          icon: opts.icon || '', data: opts.data,
+        }
+        live.set(id, rec)
+        rec.sent = iconToDataUrl(opts.icon).then((icon) => bridge.show({
+          id, title: rec.title, body: rec.body, tag: rec.tag,
+          silent: !!opts.silent, requireInteraction: !!opts.requireInteraction, icon,
+        })).catch(() => { live.delete(id); return false })
+        return rec
+      }
+
+      // Main reports what became of a notification so the page object fires the same events it
+      // would have fired natively. A service-worker notification has no page object (target null) —
+      // it is only tracked so getNotifications() can still answer for it.
+      bridge.subscribe((ev) => {
+        const rec = live.get(ev.id)
+        if (!rec) return
+        if (ev.type === 'close' || ev.type === 'error') live.delete(ev.id)
+        const target = rec.target
+        if (!target) return
+        let evt
+        try { evt = new Event(ev.type) } catch { return }
+        try { if (typeof target['on' + ev.type] === 'function') target['on' + ev.type].call(target, evt) } catch {}
+        try { target.dispatchEvent(evt) } catch {}
+      })
+
+      // What getNotifications() hands back: enough of the Notification surface to inspect and close.
+      const handleFor = (rec) => ({
+        title: rec.title, body: rec.body, tag: rec.tag, icon: rec.icon, data: rec.data,
+        close: () => { try { bridge.close(rec.id) } catch {} live.delete(rec.id) },
+      })
+
+      const swProto = window.ServiceWorkerRegistration && window.ServiceWorkerRegistration.prototype
+      if (swProto) {
+        // Resolves once main has accepted it, which matches the spec's "notification shown"
+        // contract far better than Chromium's dead path here, which resolved and showed nothing.
+        swProto.showNotification = function (title, options) {
+          return send(title, options, null).sent.then(() => undefined)
+        }
+        // Answered from our own records. The native one never settles under Electron, so an app
+        // that awaits it to de-duplicate would hang before showing anything at all.
+        swProto.getNotifications = function (filter) {
+          const tag = filter && filter.tag ? String(filter.tag) : ''
+          const out = []
+          live.forEach((rec) => {
+            if (rec.target) return
+            if (tag && rec.tag !== tag) return
+            out.push(handleFor(rec))
+          })
+          return Promise.resolve(out)
+        }
+      }
+
+      // The non-persistent path already works in Electron, but it is routed through main too so
+      // both kinds get the same GNOME identity and the same click-raises-the-window behaviour.
+      const Native = window.Notification
+      if (typeof Native === 'function') {
+        const Wrapped = class Notification extends EventTarget {
+          constructor(title, options) {
+            super()
+            const opts = options || {}
+            this.title = String(title)
+            this.body  = opts.body == null ? '' : String(opts.body)
+            this.tag   = opts.tag  == null ? '' : String(opts.tag)
+            this.icon  = opts.icon || ''
+            this.data  = opts.data
+            this.dir   = opts.dir || 'auto'
+            this.lang  = opts.lang || ''
+            this.silent = !!opts.silent
+            this.onclick = null; this.onclose = null; this.onerror = null; this.onshow = null
+            const rec = send(title, opts, this)
+            this._voltageId = rec.id
+            // If the bridge is unavailable (plugin not attached, handler gone), fall back to the
+            // native notification: that path works today, so a broken shim must never be worse
+            // than no shim at all.
+            rec.sent.then((ok) => { if (ok === false) { try { new Native(title, opts) } catch {} } })
+          }
+          close() { try { bridge.close(this._voltageId) } catch {} live.delete(this._voltageId) }
+        }
+        Object.defineProperty(Wrapped, 'permission', { get: () => Native.permission })
+        Object.defineProperty(Wrapped, 'maxActions', { get: () => Native.maxActions })
+        Wrapped.requestPermission = (cb) => Native.requestPermission(cb)
+        window.Notification = Wrapped
+      }
+    },
+  })
+}
+
 // Widget drag-zone reveal: report the cursor position so main can show/hide its overlay drag strip
 // (see src/window.js). The strip itself can't sense hover — its -webkit-app-region:drag surface
 // swallows pointer events — and on Wayland main can't query the global cursor position, but the app's
@@ -101,6 +259,28 @@ if (_blockClose) {
     if (dt >= 40) flush()
     else if (!timer) timer = setTimeout(flush, 40 - dt)
   }, { passive: true, capture: true })
+}
+
+// ── Runtime marker for the hosted web app ───────────────────────────────────────────────────────
+// A web app cannot otherwise tell that it is running inside voltage rather than in a browser tab —
+// and relay wants to know: inside voltage there is a REAL window manager, so a document belongs in
+// its own OS window instead of a dragged pseudo-window inside its page.
+//
+// Opt-in per app: only a plugin that asks for it (relay, via preloadArgs) gets this marker, so an
+// arbitrary app's page is not handed a way to spawn windows. The arg arrives through
+// additionalArguments, i.e. at document-start before any page script — so the app never has to
+// poll for it.
+//
+// openDocumentWindow resolves true only if the main process actually launched something; the page
+// can therefore fall back to its own in-page view instead of silently doing nothing. Main validates
+// the URL (see the relay plugin) — this is not a general-purpose window opener.
+const RUNTIME_ARG = '--voltage-runtime='
+const runtimeArg = process.argv.find(a => a.startsWith(RUNTIME_ARG))
+if (runtimeArg) {
+  contextBridge.exposeInMainWorld('voltage', {
+    runtime: runtimeArg.slice(RUNTIME_ARG.length) || 'voltage',
+    openDocumentWindow: (url) => ipcRenderer.invoke('voltage:open-document-window', String(url)),
+  })
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {

@@ -48,6 +48,8 @@ const highlightYaml = src => String(src).split('\n').map(highlightYamlLine).join
 //   [data-config-swatch]                   — a colour-preview element; gets the value as the CSS
 //                                            var --swatch-color (style the element to use it)
 //   [data-config-enabled-by="<toggleKey>"] — dimmed + disabled while that toggle is off
+//   [data-config-placeholder="<i18nKey>"]  — on a stacks trigger: the text shown while nothing is
+//                                            selected (defaults to the docker wording)
 //   [data-config-stacks="<key>"]           — a dropdown combobox (trigger button + portal list, like
 //                                            the app pickers elsewhere) whose selection is config[key],
 //                                            filled from the plugin's discovered stacks
@@ -261,8 +263,11 @@ export function initPluginConfig({ i18n, icons, plugins }) {
       const apply = (id) => {
         cfg[key] = id || ''
         const meta = stacks.find(s => s.id === id)
+        // Placeholder text belongs to the plugin, not to this host: data-config-placeholder names
+        // the i18n key. Falls back to the docker wording so the existing dialog is unchanged.
+        const platzhalter = i18n[trigger.dataset.configPlaceholder] || i18n.dockerConfigStackChoose || ''
         trigger.innerHTML = meta ? `${IMG(meta.icon)}<span>${meta.label}</span>`
-                                  : `<span class="app-select-hint">${i18n.dockerConfigStackChoose || ''}</span>`
+                                  : `<span class="app-select-hint">${platzhalter}</span>`
         trigger._close?.()
         for (const li of ul.children) li.classList.toggle('active', li.dataset.id === id)
         if (codeEl) codeEl.innerHTML = highlightYaml((meta || {}).content || '')

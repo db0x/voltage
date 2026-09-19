@@ -203,10 +203,16 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
       const { conflict } = await window.managerAPI.checkRoutingOverlap(currentProfile, val, 'base')
       if (urlInput.value.trim() !== val) return
       if (conflict) {
-        urlValid = false
-        urlInput.className = 'invalid'
-        urlHint.textContent = tr('routingUrlConflict', { app: conflict })
-        urlHint.className = 'field-hint error'
+        // Zwei Apps duerfen dieselbe Adresse haben — das ist der Normalfall, sobald ein Dienst
+        // mehrere Anwendungen bekommt (eine relay-Instanz mit Text-, Tabellen- und PDF-App).
+        // Beanspruchen kann die Adresse aber nur EINE: an ihr entscheidet sich, wohin ein Link
+        // von aussen geht. Die zweite App wird stattdessen ueber eine Routing-Regel oder eine
+        // Zuordnung im Plugin geoeffnet. Darum ein Hinweis statt einer Sperre — frueher liess
+        // sich eine solche App hier gar nicht erst anlegen.
+        urlValid = true
+        urlInput.className = ''
+        urlHint.textContent = tr('urlBaseOverlap', { app: conflict })
+        urlHint.className = 'field-hint warn'
       } else {
         urlValid = true
         urlInput.className = 'valid'

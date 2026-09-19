@@ -39,7 +39,7 @@ bar up; leaving the zone before that cancels it:
   handed-over AppImage the click could only fail silently, so the button is hidden entirely.
 - **right:** window controls — DevTools (hidden when the app sets `"devTools": false`),
   About, minimize, maximize, close. For apps that also load the **zoom** plugin: − / live % / +.
-  For apps that also load the **only-office** plugin: a home button (the only-office glyph) that
+  For apps that also load the **relay** plugin: a home button (the relay glyph) that
   routes the app back to the backend's document list (the plugin's configured `baseUrl`, so
   reverse-proxy path prefixes like `http://black/relay` work too), which the editor page has no way
   back to. It appears only while an editor page (`<baseUrl>/edit/…`) is open; on the list itself it
