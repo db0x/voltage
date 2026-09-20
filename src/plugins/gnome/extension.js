@@ -19,15 +19,25 @@
 //
 // Second responsibility — window placement for EVERY Voltage app (not only widgets): for the same
 // Wayland reason (a client cannot position its own window, only the compositor can), this extension
-// remembers each Voltage app window's frame when it closes and restores it on the next launch. This
-// is deliberately independent of the taskbar/widget setting — it applies to all Voltage AppImages
+// remembers each Voltage app window's frame and restores it on the next launch. This is
+// deliberately independent of the taskbar/widget setting — it applies to all Voltage AppImages
 // whenever the extension is active. The geometry is persisted inside the app's own profile-data
 // folder (widget-geometry.json), next to the rest of its data rather than in a shared global file.
+//
+// Frames are remembered PER MONITOR LAYOUT, and recorded continuously (debounced) rather than only
+// on close. That combination is what makes docking work: the positions for the layout you are
+// leaving are already on disk when you unplug, so plugging the dock back in can put every window
+// back where it was on the dock, and unplugging it restores the laptop-panel positions. A layout
+// the app has never been open on falls back to its last known frame, repaired to fit.
 // An app is recognised, and its folder located, via the launcher's X-Voltage-ProfileDir line that
 // the Manager writes on every Voltage app (override-aware; default-convention fallback). Restore is
-// guarded: if the monitor layout changed so the saved frame would land off-screen, we skip it and
-// let GNOME place the window normally — a window must never vanish into a monitor that no longer
-// exists. See geometry.js for the visibility rule and profile-id derivation.
+// guarded: a saved frame is never reproduced verbatim when the layout has changed under it. One
+// that would land off-screen is slid back onto the nearest monitor, and one whose size is no longer
+// usable — a monitor/resolution switch can leave Mutter having shrunk the window to its minimum —
+// is replaced by a centred default size. A window must never come back invisible, on a monitor that
+// no longer exists, or as a speck the user cannot find. The same repair runs on the live windows
+// when the monitor layout changes, so a shrunken window is rescued right away rather than at the
+// next launch. See geometry.js for the repair rules and profile-id derivation.
 
 // Third responsibility — activating a window on request: under Wayland a client may not raise
 // itself, the request has to come from the compositor. A Voltage app that wants to come forward
@@ -42,7 +52,8 @@ import Shell from 'gi://Shell'
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js'
 import * as Main from 'resource:///org/gnome/shell/ui/main.js'
 
-import { isRectVisible, sanitizeRect, profileFromDesktopId, planWidgetReposition, isCycleAbnormalState, centerRectIn } from './geometry.js'
+import { sanitizeRect, profileFromDesktopId, planWidgetReposition, isCycleAbnormalState, centerRectIn,
+         resolveRestoreFrame, isUsableSize, rectsEqual, layoutSignature, readGeometry, writeGeometry } from './geometry.js'
 
 // Window title the Voltage app sets ONLY on its transient "app unavailable" notice window (see
 // src/notice/window.js — NOTICE_WINDOW_TITLE there). It is a stable, non-localized sentinel, never
@@ -57,6 +68,16 @@ const APPLICATIONS_DIR = GLib.build_filenamev([GLib.get_home_dir(), '.local', 's
 // Filename, inside a Voltage app's profile folder, that stores its last window geometry. Named for
 // historical reasons (the feature began with widgets); it now applies to every Voltage app.
 const GEOMETRY_FILE = 'widget-geometry.json'
+
+// How long to wait after a monitor/resolution change before repairing window frames. Mutter emits
+// several monitors-changed signals for one plug event and keeps re-fitting windows for a moment
+// afterwards; repairing earlier would simply be overwritten by the compositor's own re-fit.
+const LAYOUT_SETTLE_MS = 800
+
+// How long a window must sit still before its frame is written to disk. Debouncing keeps a drag
+// from causing a write per pointer motion, while still getting the frame persisted long before the
+// user unplugs a monitor — which is what makes the outgoing layout's positions survive the switch.
+const FRAME_PERSIST_DEBOUNCE_MS = 2000
 
 // D-Bus surface a running Voltage app uses to ask the shell to bring one of its windows forward.
 // The app addresses itself by its launcher id ("vTeams.desktop") — the same identity this
@@ -107,7 +128,30 @@ export default class VoltageExtension extends Extension {
     this._tracker = Shell.WindowTracker.get_default()
     // win -> array of per-window handler ids, so every per-window signal is disconnected on disable.
     this._trackedWindows = new Map()
+    // win -> F11 cycle state of a widget window. Kept out of the closure that creates it so the
+    // layout-change repair can correct a remembered frame that the new layout invalidated.
+    this._widgetStates = new Map()
+    // win -> app id, so the layout switch can look up each window's remembered frame.
+    this._windowApps = new Map()
+    // win -> { appId, rect }: where each tracked window currently sits under the active layout.
+    // Held in memory and flushed debounced, because the frames that matter for a monitor switch
+    // are the ones from BEFORE it — they have to be on disk by the time the switch happens.
+    this._lastFrames = new Map()
+    // Pending settle timer of the layout switch, and pending debounced disk write (0 = none).
+    this._settleId = 0
+    this._flushId = 0
+    // True from the first monitors-changed signal until the compositor has settled: frames
+    // reported in that window belong to no layout and must not be recorded.
+    this._layoutBusy = false
+    // Key every frame is stored under. Resolved before the first window is tracked.
+    this._layoutSignature = this._currentLayoutSignature()
     this._windowCreatedId = global.display.connect('window-created', (_d, win) => this._onWindowCreated(win))
+    // A monitor being plugged/unplugged or a resolution switch is the one event that changes a
+    // window's frame without the user asking: Mutter re-fits windows to the new layout and can
+    // leave one shrunk to its minimum, somewhere the user will not find it — and it never puts
+    // them back when the old layout returns. So we switch to the new layout's remembered
+    // positions ourselves, instead of waiting for the next launch.
+    this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => this._onMonitorsChanged())
     // Attach the save-on-close handler to Voltage windows already open at enable time (e.g. after a
     // shell restart). We do NOT reposition them — they are already placed and moving them would be
     // surprising; restore only ever applies to windows created from here on.
@@ -147,6 +191,24 @@ export default class VoltageExtension extends Extension {
       global.display.disconnect(this._windowCreatedId)
       this._windowCreatedId = null
     }
+    if (this._monitorsChangedId) {
+      Main.layoutManager.disconnect(this._monitorsChangedId)
+      this._monitorsChangedId = null
+    }
+    if (this._settleId) {
+      GLib.source_remove(this._settleId)
+      this._settleId = 0
+    }
+    // Flush synchronously before dropping the timer: a disable (or a shell restart) must not lose
+    // the positions of windows that are still open.
+    if (this._flushId) {
+      GLib.source_remove(this._flushId)
+      this._flushId = 0
+      this._flushFrames()
+    }
+    this._widgetStates = null
+    this._windowApps = null
+    this._lastFrames = null
     if (this._trackedWindows) {
       for (const [win, ids] of this._trackedWindows) {
         for (const id of ids) { try { win.disconnect(id) } catch { /* window already gone */ } }
@@ -340,14 +402,27 @@ export default class VoltageExtension extends Extension {
     // Under Wayland the client cannot restore its own position when it returns to windowed (the size
     // comes back but the compositor drops it at the wrong spot — "falsche Position"), so we remember
     // the windowed frame here and move the window back once it leaves maximized/fullscreen.
-    if (this._hiddenIds?.has(appId)) {
-      const state = { lastNormalFrame: sanitizeRect(win.get_frame_rect()), abnormal: this._isAbnormal(win) }
-      const onFrameChanged = () => this._repositionWidget(win, state)
-      handlerIds.push(win.connect('size-changed', onFrameChanged))
-      handlerIds.push(win.connect('position-changed', onFrameChanged))
-    }
+    const state = this._hiddenIds?.has(appId)
+      ? { lastNormalFrame: sanitizeRect(win.get_frame_rect()), abnormal: this._isAbnormal(win) }
+      : null
+    if (state) this._widgetStates?.set(win, state)
 
+    // One handler for both jobs, so a window never carries two sets of frame signals: the widget
+    // F11 reposition (widgets only) and the frame recording that feeds the per-layout memory (all
+    // Voltage apps). Recording on every move/resize — not only on close — is what lets the frames
+    // of the OUTGOING layout already be on disk by the time a monitor is unplugged.
+    const onFrameChanged = () => {
+      if (state) this._repositionWidget(win, state)
+      this._recordFrame(win, appId)
+    }
+    handlerIds.push(win.connect('size-changed', onFrameChanged))
+    handlerIds.push(win.connect('position-changed', onFrameChanged))
+
+    this._windowApps?.set(win, appId)
     this._trackedWindows.set(win, handlerIds)
+    // Seed the memory with where the window is right now, so a window that is opened and never
+    // touched again still has a frame recorded for this layout.
+    this._recordFrame(win, appId)
   }
 
   // Disconnect every per-window handler and stop tracking the window.
@@ -356,6 +431,9 @@ export default class VoltageExtension extends Extension {
     if (!ids) return
     for (const id of ids) { try { win.disconnect(id) } catch { /* already gone */ } }
     this._trackedWindows.delete(win)
+    this._widgetStates?.delete(win)
+    this._windowApps?.delete(win)
+    this._lastFrames?.delete(win)
   }
 
   // Whether the window is in a state the F11 cycle passes through (full maximize / fullscreen) —
@@ -366,35 +444,177 @@ export default class VoltageExtension extends Extension {
   }
 
   // On a widget window's frame change, run the pure state machine; when it asks for a restore, move
-  // the window back to its remembered windowed frame — but only while that frame is still on usable
-  // screen space (same visibility guard as launch-time restore).
+  // the window to the repaired version of its remembered windowed frame — the remembered frame may
+  // predate a layout change, and restoring it verbatim is what used to strand a widget off-screen
+  // or at a size it cannot be grabbed by.
   _repositionWidget(win, state) {
-    const target = planWidgetReposition(state, this._isAbnormal(win), win.get_frame_rect())
-    if (target && isRectVisible(target, this._workAreas()))
-      win.move_resize_frame(false, target.x, target.y, target.width, target.height)
+    const planned = planWidgetReposition(state, this._isAbnormal(win), win.get_frame_rect())
+    if (!planned) return
+    const target = resolveRestoreFrame(planned, this._workAreas())
+    if (!target) return
+    state.lastNormalFrame = target
+    win.move_resize_frame(false, target.x, target.y, target.width, target.height)
   }
 
-  // Put the window back exactly where it last closed — but only if that frame still lands on
-  // usable screen space. When the monitor layout has changed so the saved frame would be off-
-  // screen, we deliberately do nothing and let GNOME place the window normally, so a widget can
-  // never disappear into a non-existent monitor (the whole point of the visibility guard).
+  // Put the window back where it last was ON THIS MONITOR LAYOUT (falling back to its last known
+  // frame for a layout it has never been open on). The frame is run through the repair rules
+  // first: one that no longer fits is slid back on screen instead of being reproduced off-screen,
+  // and one whose *size* is unusable (a layout change had shrunk the window to its minimum) is
+  // replaced by a centred default. Never restore a window into a state the user cannot see or
+  // grab — that is worse than ignoring the saved frame.
   _restoreWindow(win, appId) {
-    const saved = this._loadGeometry(appId)[appId]
-    if (!saved) return
-    if (!isRectVisible(saved, this._workAreas())) return
-    win.move_resize_frame(false, saved.x, saved.y, saved.width, saved.height)
+    const saved = readGeometry(this._loadGeometry(appId), appId, this._layoutSignature)
+    const target = resolveRestoreFrame(saved, this._workAreas())
+    if (!target) return
+    win.move_resize_frame(false, target.x, target.y, target.width, target.height)
   }
 
   // Persist the window's current frame into its app's profile folder, keyed by app id. The id key
   // (rather than a bare rect) keeps things correct in the rare case two launchers share a profile
   // folder. Invalid rects are dropped rather than stored, so a bad value can never be restored.
+  //
+  // A frame below the usable minimum is dropped too, keeping the previously saved (good) one: a
+  // window closed while the compositor had it shrunk to its minimum — the usual aftermath of a
+  // monitor switch — must not overwrite the size the user actually chose.
   _saveWindowGeometry(win, appId) {
-    const path = this._geometryPathFor(appId)
     const rect = sanitizeRect(win.get_frame_rect())
-    if (!path || !rect) return
-    const data = this._loadGeometry(appId)
-    data[appId] = rect
-    this._persistGeometry(path, data)
+    if (!rect || !isUsableSize(rect)) return
+    this._storeGeometry(appId, rect)
+  }
+
+  // Write one app's frame into its geometry file, under the current layout and as the flat
+  // fallback (see writeGeometry). Read-modify-write per call: the file is tiny and written rarely
+  // (debounced), and re-reading is what keeps two windows of the same app from clobbering entries
+  // the other one wrote.
+  _storeGeometry(appId, rect) {
+    const path = this._geometryPathFor(appId)
+    if (!path) return
+    this._persistGeometry(path, writeGeometry(this._loadGeometry(appId), appId, this._layoutSignature, rect))
+  }
+
+  // Remember where a window currently sits, for the layout currently in effect. Only sane frames
+  // count: a minimized, maximized or fullscreen window has no placement of its own to remember,
+  // and a sub-minimum frame is the compositor's doing rather than the user's.
+  //
+  // Suppressed entirely while a layout change is in flight (_layoutBusy): between unplugging a
+  // monitor and the compositor settling, every frame Mutter reports belongs to no layout in
+  // particular, and recording those is exactly how the positions of the outgoing layout get lost.
+  _recordFrame(win, appId) {
+    if (this._layoutBusy || !this._lastFrames) return
+    let rect
+    try {
+      if (win.minimized || this._isAbnormal(win)) return
+      rect = sanitizeRect(win.get_frame_rect())
+    } catch {
+      return
+    }
+    if (!rect || !isUsableSize(rect)) return
+    const known = this._lastFrames.get(win)
+    if (known && rectsEqual(known.rect, rect)) return
+    this._lastFrames.set(win, { appId, rect })
+    this._scheduleFlush()
+  }
+
+  // Debounce the disk write: a drag emits a frame change per pointer motion, and the position that
+  // matters is the one the window is left at. The delay also has to stay well below how long a
+  // window typically sits still before the user unplugs a monitor — otherwise the outgoing
+  // layout's frames would not have reached disk yet when the switch happens.
+  _scheduleFlush() {
+    if (this._flushId) GLib.source_remove(this._flushId)
+    this._flushId = GLib.timeout_add(GLib.PRIORITY_DEFAULT_IDLE, FRAME_PERSIST_DEBOUNCE_MS, () => {
+      this._flushId = 0
+      this._flushFrames()
+      return GLib.SOURCE_REMOVE
+    })
+  }
+
+  // Persist every recorded frame. Collapsed per app first, so an app with several windows causes
+  // one write rather than one per window (the file is keyed by app id, so the last window wins —
+  // the same rule that has always applied to save-on-close).
+  _flushFrames() {
+    if (!this._lastFrames?.size) return
+    const perApp = new Map()
+    for (const { appId, rect } of this._lastFrames.values()) perApp.set(appId, rect)
+    for (const [appId, rect] of perApp) this._storeGeometry(appId, rect)
+  }
+
+  // Coalesce the burst of monitors-changed signals one plug/resolution event produces, then apply
+  // the new layout once the compositor has settled. Restarting the timer on every signal means a
+  // rapid sequence (dock plugged in, several outputs appearing) counts as a single layout change.
+  _onMonitorsChanged() {
+    // Stop recording immediately, and drop both the pending write and the in-memory frames: by the
+    // time this signal arrives Mutter may already have re-fitted the windows, so what is in
+    // _lastFrames can be the compositor's doing rather than the user's placement — writing it would
+    // overwrite the outgoing layout's good positions with the re-fitted ones. Those good positions
+    // were already flushed FRAME_PERSIST_DEBOUNCE_MS after the user last touched the window, which
+    // is why dropping them here is safe: the only thing lost is a move made seconds before the
+    // switch.
+    this._layoutBusy = true
+    if (this._flushId) { GLib.source_remove(this._flushId); this._flushId = 0 }
+    this._lastFrames?.clear()
+
+    if (this._settleId) GLib.source_remove(this._settleId)
+    this._settleId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, LAYOUT_SETTLE_MS, () => {
+      this._settleId = 0
+      this._applyLayout()
+      return GLib.SOURCE_REMOVE
+    })
+  }
+
+  // The compositor has settled on a new monitor arrangement: switch to that layout's remembered
+  // positions. Every tracked window goes back to the frame it last had on THIS layout — plugging
+  // the dock back in puts the windows where they were on the dock, unplugging it puts them where
+  // they were on the laptop panel. A window with nothing remembered for this layout is merely
+  // repaired (kept usable and on screen) rather than moved somewhere arbitrary.
+  //
+  // Maximized, fullscreen and minimized windows are skipped: their frame is not a placement we own,
+  // and moving them would un-maximize or otherwise surprise the user.
+  _applyLayout() {
+    this._layoutSignature = this._currentLayoutSignature()
+    this._layoutBusy = false
+    if (!this._trackedWindows) return
+    const areas = this._workAreas()
+    if (!areas.length) return
+    // Geometry is stored per app, not per window, so the remembered frame is handed to the first
+    // window of an app only — otherwise a second window of the same app would be stacked exactly
+    // on top of the first. The others are simply kept usable where they are.
+    const placed = new Set()
+    for (const win of this._trackedWindows.keys()) {
+      try {
+        if (win.minimized || this._isAbnormal(win)) continue
+        const appId = this._windowApps?.get(win)
+        const current = sanitizeRect(win.get_frame_rect())
+        const saved = appId && !placed.has(appId)
+          ? readGeometry(this._loadGeometry(appId), appId, this._layoutSignature)
+          : null
+        if (saved && appId) placed.add(appId)
+        const target = resolveRestoreFrame(saved ?? current, areas)
+        if (!target) continue
+        if (!rectsEqual(target, current))
+          win.move_resize_frame(false, target.x, target.y, target.width, target.height)
+        // Keep the F11 cycle's restore target in sync, otherwise the next return-to-windowed would
+        // undo this by moving the widget back to its pre-layout-change frame.
+        const state = this._widgetStates?.get(win)
+        if (state) state.lastNormalFrame = target
+        if (appId) this._lastFrames?.set(win, { appId, rect: target })
+      } catch {
+        // A window that vanished mid-loop simply needs no placement.
+      }
+    }
+  }
+
+  // Signature of the monitor arrangement in effect right now — the key everything is stored under.
+  // Built from monitor geometry rather than work areas on purpose; see layoutSignature.
+  _currentLayoutSignature() {
+    try {
+      const monitors = []
+      const n = global.display.get_n_monitors()
+      for (let i = 0; i < n; i++) monitors.push(global.display.get_monitor_geometry(i))
+      return layoutSignature(monitors)
+    } catch {
+      // No signature means the flat, layout-agnostic entry is used — the pre-layouts behaviour.
+      return null
+    }
   }
 
   // Absolute path to an app's geometry file inside its profile folder, or null when the folder is

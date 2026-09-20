@@ -103,9 +103,12 @@ export function planWidgetReposition(state, isAbnormal, currentFrame) {
     state.abnormal = false
     return state.lastNormalFrame ?? null
   }
-  // Genuine windowed move/resize: this becomes the new restore target.
+  // Genuine windowed move/resize: this becomes the new restore target — unless the frame is too
+  // small to be a placement the user chose. A monitor/resolution switch makes Mutter re-fit the
+  // window, sometimes down to its minimum; remembering that would turn a transient compositor
+  // shrink into the frame we keep forcing the widget back to.
   const rect = sanitizeRect(currentFrame)
-  if (rect) state.lastNormalFrame = rect
+  if (rect && isUsableSize(rect)) state.lastNormalFrame = rect
   return null
 }
 
@@ -120,4 +123,132 @@ export function sanitizeRect(rect) {
   const height = Math.round(rect.height)
   if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null
   return { x, y, width, height }
+}
+
+// Smallest frame we still accept as a window a user can actually work with. A layout change
+// (monitor unplugged, resolution switched) can make Mutter re-fit a window down to its client
+// minimum; that shrunken frame then gets remembered and faithfully restored, which is how a
+// Voltage app ends up as an unfindable speck on the desktop. Anything below this counts as
+// "never intended by the user" — Voltage apps default to 1280×1024 and even a small widget is
+// far larger — so it is replaced by a sane default rather than reproduced.
+export const MIN_USABLE_WIDTH = 240
+export const MIN_USABLE_HEIGHT = 160
+
+// Share of the work area used for the replacement size when a remembered frame is unusable.
+// Large enough to be immediately visible and operable, small enough to still look like a window.
+const FALLBACK_FRACTION = 0.6
+
+// Whether a frame is big enough to be grabbed, read and resized by hand.
+export function isUsableSize(rect) {
+  return !!rect && rect.width >= MIN_USABLE_WIDTH && rect.height >= MIN_USABLE_HEIGHT
+}
+
+// Exact frame equality — lets callers skip a move that would change nothing (and thus avoid
+// re-entering their own size-changed/position-changed handlers for no reason).
+export function rectsEqual(a, b) {
+  return !!a && !!b && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+}
+
+function overlapArea(a, b) {
+  const w = Math.min(a.x + a.width,  b.x + b.width)  - Math.max(a.x, b.x)
+  const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+  return w > 0 && h > 0 ? w * h : 0
+}
+
+// The work area a frame most belongs to: the one it overlaps most. With no overlap at all (the
+// frame's monitor is gone) this falls back to the first area, which is the primary monitor — the
+// one place the user is guaranteed to be looking.
+export function pickWorkArea(rect, workAreas) {
+  if (!Array.isArray(workAreas) || workAreas.length === 0) return null
+  let best = workAreas[0]
+  let bestOverlap = 0
+  for (const area of workAreas) {
+    const o = rect ? overlapArea(rect, area) : 0
+    if (o > bestOverlap) { bestOverlap = o; best = area }
+  }
+  return best
+}
+
+// One extent (width or height) of the replacement size: a fraction of the work area, never below
+// the usable minimum and never larger than the area itself (which wins on a very small monitor).
+function fallbackExtent(areaExtent, min) {
+  return Math.min(areaExtent, Math.max(min, Math.round(areaExtent * FALLBACK_FRACTION)))
+}
+
+// Turn a remembered frame into one that is guaranteed usable on the current layout.
+//
+// Returns null only when there is nothing to work with (no saved frame, or no monitors) — the
+// caller then leaves placement to GNOME. Otherwise it always returns a frame:
+//  - unchanged, when the remembered one is still fully on screen and big enough;
+//  - same size, slid back inside the nearest work area, when only the position went stale (a
+//    monitor was unplugged) — the user keeps the window size they chose;
+//  - a centred default size, when the remembered size itself is unusable — the case where a
+//    layout change had shrunk the window to its minimum. Centring matters as much as the size:
+//    a rescued window must be where the user is already looking, not in a corner.
+export function resolveRestoreFrame(saved, workAreas) {
+  const rect = sanitizeRect(saved)
+  if (!rect) return null
+  const area = pickWorkArea(rect, workAreas)
+  if (!area) return null
+  if (isUsableSize(rect) && isRectVisible(rect, workAreas)) return rect
+
+  if (!isUsableSize(rect)) {
+    const width  = fallbackExtent(area.width,  MIN_USABLE_WIDTH)
+    const height = fallbackExtent(area.height, MIN_USABLE_HEIGHT)
+    return { ...centerRectIn(area, { width, height }), width, height }
+  }
+
+  // Size is fine, only the position is stale: keep it (capped to the area) and clamp it in.
+  const width  = Math.min(rect.width,  area.width)
+  const height = Math.min(rect.height, area.height)
+  const x = Math.min(Math.max(rect.x, area.x), area.x + area.width  - width)
+  const y = Math.min(Math.max(rect.y, area.y), area.y + area.height - height)
+  return { x, y, width, height }
+}
+
+// Key under which the per-layout frames live inside a persisted geometry map. It can never collide
+// with an app id, because every app id ends in ".desktop".
+export const LAYOUT_KEY = 'layouts'
+
+// Stable identifier for a monitor arrangement — the same set of monitors, in the same places, must
+// always produce the same string, and any other arrangement a different one.
+//
+// Built from raw monitor geometry, deliberately NOT from work areas: work areas shrink and grow
+// whenever a dock or panel appears, autohides or changes size, which would keep inventing "new"
+// layouts and fragment the stored positions across near-identical keys. Sorted so the order the
+// compositor happens to report the monitors in cannot change the key.
+export function layoutSignature(monitors) {
+  if (!Array.isArray(monitors) || monitors.length === 0) return null
+  return monitors
+    .map(m => `${Math.round(m.width)}x${Math.round(m.height)}+${Math.round(m.x)}+${Math.round(m.y)}`)
+    .sort()
+    .join('|')
+}
+
+// Read an app's frame out of a persisted geometry map for the given layout.
+//
+// The per-layout entry wins; the flat top-level entry is the fallback and covers two cases at once:
+// a file written before layouts existed, and a layout the user has never had this app open on. In
+// the second case the last known frame is the best guess available — the caller repairs it into the
+// current layout (resolveRestoreFrame), and from then on this layout has an entry of its own.
+export function readGeometry(data, appId, signature) {
+  if (!data || typeof data !== 'object' || !appId) return null
+  const perLayout = signature ? data[LAYOUT_KEY]?.[signature]?.[appId] : null
+  return sanitizeRect(perLayout) ?? sanitizeRect(data[appId])
+}
+
+// Return a copy of the geometry map with `rect` stored for `appId`, both under the current layout
+// and as the flat fallback. Pure (no mutation) so the persisted shape is easy to reason about and
+// unit-testable; the flat write keeps the file readable by an older extension version.
+export function writeGeometry(data, appId, signature, rect) {
+  const base = data && typeof data === 'object' ? data : {}
+  const clean = sanitizeRect(rect)
+  if (!clean || !appId) return base
+  const next = { ...base, [appId]: clean }
+  if (signature) {
+    const layouts = { ...(base[LAYOUT_KEY] ?? {}) }
+    layouts[signature] = { ...(layouts[signature] ?? {}), [appId]: clean }
+    next[LAYOUT_KEY] = layouts
+  }
+  return next
 }
