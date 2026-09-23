@@ -30,9 +30,11 @@ cross-origin iframes some apps render their toolbars in (e.g. Office documents).
 (1 px) until the cursor reaches the top-centre edge, then fades in as a translucent bar. The reveal
 zone is the topmost **18 px** of the app view, across the centred handle's width (the handle aims for
 960 px, clamped to 50–90 % of the window width — so it covers a larger share as the window narrows).
-The bar appears immediately on entering that zone, and hides again once the cursor has clearly left
+The bar appears immediately on entering that zone. It hides again once the cursor has clearly left
 the whole overlay (below it, or past either side, each with a small grace so the edges don't
-flicker):
+flicker) — and then only after a 150 ms delay, so a diagonal exit across a corner or a wobble while
+reaching for a button doesn't snap it away. Any evidence the pointer came back cancels that. A
+button press closes the bar immediately:
 
 - **far left:** the app's own icon (same resolver the About panel uses) — opt-in via the `dragZoneIcon`
   config toggle (default off). Purely identifying — not a button.

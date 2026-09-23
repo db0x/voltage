@@ -412,6 +412,11 @@ const DRAG_ZONE_PAD            = 16
 const DRAG_ZONE_SHOW_AT        = 18
 const DRAG_ZONE_EDGE_GRACE     = 8      // grace past the view edges before hiding, so edges don't flicker
 const DRAG_ZONE_FADE_MS        = 160
+// Grace period between the pointer leaving the bar and the bar going away. Without it the strip
+// snaps shut on the first report that lands outside it — which happens on a diagonal exit across a
+// corner, or a wobble while reaching for a button — and the user has to approach the top edge again.
+// Only pointer-driven hides wait; a button press or the presence watchdog closes immediately.
+const DRAG_ZONE_HIDE_DELAY_MS  = 150
 // Watchdog interval for the "has the pointer left the window?" check while the strip is shown. It is
 // a SAFETY NET for the exits no event reaches us for — chiefly a fast flick straight out of the
 // window that skips the overlay's 6px sensor band between two pointer samples, stranding the strip.
@@ -928,6 +933,9 @@ function createWindow(pkg, opts = {}) {
       }
 
       let collapseTimer = null
+      let hideTimer = null
+      // Drops a pending hide — the pointer came back before the grace period elapsed.
+      const cancelHide = () => { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null } }
 
       // Last moment the pointer was evidenced anywhere we can observe it: an app-view cursor report,
       // or the overlay's :hover poll (see DRAG_ZONE_PRESENCE_MS).
@@ -953,6 +961,7 @@ function createWindow(pkg, opts = {}) {
       const setShown = (shown) => {
         if (shown === dragShown) return
         dragShown = shown
+        cancelHide()
         if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null }
         if (shown) {
           layoutView()
@@ -966,6 +975,13 @@ function createWindow(pkg, opts = {}) {
           collapseTimer = setTimeout(() => { collapseTimer = null; if (!dragShown) layoutView() }, DRAG_ZONE_FADE_MS)
         }
       }
+      // Pointer-driven hide: armed once the pointer is seen outside the bar, cancelled by any
+      // evidence it came back (a cursor report inside the overlay, or the overlay's own :hover poll).
+      const scheduleHide = () => {
+        if (!dragShown || hideTimer) return
+        hideTimer = setTimeout(() => { hideTimer = null; setShown(false) }, DRAG_ZONE_HIDE_DELAY_MS)
+      }
+
       dragZoneControllers.set(appContents.id, {
         // 2-D hysteresis. Reveal only near the very top AND within the centered control's horizontal
         // span; hide once the cursor has clearly LEFT that control — below it, or out past either side
@@ -991,8 +1007,12 @@ function createWindow(pkg, opts = {}) {
             // it, and the reports are already throttled to 40ms by the preload.
             if (y < DRAG_ZONE_SHOW_AT && dx <= handleW / 2) setShown(true)
           } else if (y > viewH + DRAG_ZONE_EDGE_GRACE || dx > viewW / 2 + DRAG_ZONE_EDGE_GRACE) {
-            // Hide once the cursor has left the whole overlay view (control + shadow pad).
-            setShown(false)
+            // The cursor has left the whole overlay view (control + shadow pad) — start the grace
+            // period rather than hiding outright.
+            scheduleHide()
+          } else {
+            // Still inside the overlay: whatever hide was pending is off.
+            cancelHide()
           }
         },
       })
@@ -1005,11 +1025,12 @@ function createWindow(pkg, opts = {}) {
         // Not a button: the overlay's top sensor band reporting that the cursor left it upward, i.e.
         // off the top of the window. The app view can't report that — the strip covers it — and on
         // Wayland main can't query the cursor either, so this is the only signal for that exit.
-        if (action === 'exit') { setShown(false); return }
+        if (action === 'exit') { scheduleHide(); return }
         // Also not a button: the overlay's :hover poll reporting the cursor still on the strip, which
         // keeps the presence watchdog from closing a bar the cursor is resting on (as far as it can
         // see it — see DRAG_ZONE_PRESENCE_MS).
-        if (action === 'present') { notePointer(); return }
+        // It also proves the pointer came back, so any pending hide is cancelled.
+        if (action === 'present') { notePointer(); cancelHide(); return }
         // Zoom buttons keep the strip open (you usually step a few times) and only update the display.
         if (action === 'zoom-in')  { applyDragZoom(1);  return }
         if (action === 'zoom-out') { applyDragZoom(-1); return }
@@ -1037,6 +1058,7 @@ function createWindow(pkg, opts = {}) {
         dragZoneControllers.delete(appContents.id)
         dragZoneActions.delete(overlayId)
         if (collapseTimer) clearTimeout(collapseTimer)
+        cancelHide()
         cancelPresence()
       })
     }
