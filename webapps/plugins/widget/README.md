@@ -28,8 +28,11 @@ separate `WebContentsView` on top of the app view) rather than marking a region 
 Chromium only honours `-webkit-app-region: drag` from a frame voltage owns — not from the
 cross-origin iframes some apps render their toolbars in (e.g. Office documents). It is invisible
 (1 px) until the cursor reaches the top-centre edge, then fades in as a translucent bar. The reveal
-waits for a short dwell (150 ms) so that merely sweeping the pointer past the top edge doesn't pop the
-bar up; leaving the zone before that cancels it:
+zone is the topmost **18 px** of the app view, across the centred handle's width (the handle aims for
+960 px, clamped to 50–90 % of the window width — so it covers a larger share as the window narrows).
+The bar appears immediately on entering that zone, and hides again once the cursor has clearly left
+the whole overlay (below it, or past either side, each with a small grace so the edges don't
+flicker):
 
 - **far left:** the app's own icon (same resolver the About panel uses) — opt-in via the `dragZoneIcon`
   config toggle (default off). Purely identifying — not a button.

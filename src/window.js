@@ -404,15 +404,14 @@ const DRAG_ZONE_HEIGHT         = 42     // visible control height (must match .h
 // Transparent room around the control inside its overlay view, so the control's border + drop shadow
 // render INSIDE the view instead of being clipped by its bounds. Must match the inset in drag-zone.html.
 const DRAG_ZONE_PAD            = 16
-const DRAG_ZONE_SHOW_AT        = 6      // reveal when the cursor is within this many px of the top
+// Reveal when the cursor is within this many px of the app view's top edge. Wide enough to be hit
+// without aiming: the preload throttles cursor reports to 40ms (see preload.js), so a narrower band
+// can fall entirely between two samples when the pointer approaches the edge quickly, and the strip
+// then simply never appears. Still far below the hide threshold (DRAG_ZONE_HEIGHT + pad + grace),
+// which is what keeps the hysteresis intact.
+const DRAG_ZONE_SHOW_AT        = 18
 const DRAG_ZONE_EDGE_GRACE     = 8      // grace past the view edges before hiding, so edges don't flicker
 const DRAG_ZONE_FADE_MS        = 160
-// Dwell time the cursor has to stay in the reveal zone before the strip appears. Without it the bar
-// pops up on every pointer sweep that merely PASSES the top edge (e.g. reaching for the app's own
-// top-row UI), which reads as the bar "jumping at" the user. Cancelled by the first cursor report
-// that leaves the zone; a cursor parked in the zone sends no further reports, so the timer firing on
-// its own is exactly the "still there" case we want.
-const DRAG_ZONE_REVEAL_DELAY_MS = 150
 // Watchdog interval for the "has the pointer left the window?" check while the strip is shown. It is
 // a SAFETY NET for the exits no event reaches us for — chiefly a fast flick straight out of the
 // window that skips the overlay's 6px sensor band between two pointer samples, stranding the strip.
@@ -929,10 +928,6 @@ function createWindow(pkg, opts = {}) {
       }
 
       let collapseTimer = null
-      let revealTimer = null
-      // Drops a pending reveal — the cursor left the zone (or the strip is being hidden) before the
-      // dwell time elapsed.
-      const cancelReveal = () => { if (revealTimer) { clearTimeout(revealTimer); revealTimer = null } }
 
       // Last moment the pointer was evidenced anywhere we can observe it: an app-view cursor report,
       // or the overlay's :hover poll (see DRAG_ZONE_PRESENCE_MS).
@@ -958,7 +953,6 @@ function createWindow(pkg, opts = {}) {
       const setShown = (shown) => {
         if (shown === dragShown) return
         dragShown = shown
-        cancelReveal()
         if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null }
         if (shown) {
           layoutView()
@@ -992,12 +986,10 @@ function createWindow(pkg, opts = {}) {
           const viewH   = DRAG_ZONE_HEIGHT + DRAG_ZONE_PAD
           const dx      = Math.abs(x - innerW / 2)
           if (!dragShown) {
-            // Reveal only near the very top AND over the visible control (not the transparent pad),
-            // and only after the cursor has DWELLED there for DRAG_ZONE_REVEAL_DELAY_MS — a sweep
-            // through the zone cancels itself on the next report.
-            if (y < DRAG_ZONE_SHOW_AT && dx <= handleW / 2) {
-              if (!revealTimer) revealTimer = setTimeout(() => { revealTimer = null; setShown(true) }, DRAG_ZONE_REVEAL_DELAY_MS)
-            } else cancelReveal()
+            // Reveal as soon as the cursor is near the very top AND over the visible control (not the
+            // transparent pad). No dwell time: the bar is meant to be there the moment you reach for
+            // it, and the reports are already throttled to 40ms by the preload.
+            if (y < DRAG_ZONE_SHOW_AT && dx <= handleW / 2) setShown(true)
           } else if (y > viewH + DRAG_ZONE_EDGE_GRACE || dx > viewW / 2 + DRAG_ZONE_EDGE_GRACE) {
             // Hide once the cursor has left the whole overlay view (control + shadow pad).
             setShown(false)
@@ -1045,7 +1037,6 @@ function createWindow(pkg, opts = {}) {
         dragZoneControllers.delete(appContents.id)
         dragZoneActions.delete(overlayId)
         if (collapseTimer) clearTimeout(collapseTimer)
-        cancelReveal()
         cancelPresence()
       })
     }
