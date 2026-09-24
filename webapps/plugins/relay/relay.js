@@ -1,8 +1,10 @@
 // relay plugin (main-process module). The voltage-side client for a self-hosted **relay** server
 // (Express backend + OnlyOffice DocumentServer; relay keeps its own desktop as the backend). Today
-// it covers relay's document editing: double-click a .docx → the AppImage uploads it via relay's
-// file API, navigates to relay's editor page, and pulls the edited file back over the local one
-// when the window closes. Named after the service, not that one feature — further
+// it covers relay's document editing: double-click a .docx → the AppImage uploads it to relay,
+// navigates to relay's editor page, and pulls the edited file back over the local one when the
+// window closes. WHERE it uploads depends on whether relay already holds that document: a file of
+// the user's own goes to their folder and stays, a purely local one goes to relay's SCRATCH area
+// and is deleted again after the last sync — so a local document never quietly becomes two. Named after the service, not that one feature — further
 // relay capabilities land here rather than in a second plugin. Mirrors the rclone-sync plugin's
 // architecture (launch-arg takeover, loading page, conflict dialog, sync-back on close) with plain
 // REST instead of the rclone binary.
@@ -19,6 +21,15 @@
 //   POST   <base>/api/files/<name>/forcesave                             (X-CSRF-Token)
 //   GET    <base>/edit/<name>        — the editor page; /login carries ?next= so the editor
 //                                      target survives the first login.
+// and, for documents relay does NOT own (scratch — see fileTarget/scratchTarget below):
+//   POST   <base>/api/scratch?name=<basename> — hand up a local file, RAW body (X-CSRF-Token)
+//                                      → { id, name, bytes, edit }
+//   GET    <base>/api/scratch/<id>   — download the current state (the sync-back reads this)
+//   DELETE <base>/api/scratch/<id>   — drop the copy; idempotent            (X-CSRF-Token)
+//   POST   <base>/api/scratch/<id>/forcesave                                (X-CSRF-Token)
+//   GET    <base>/scratch/edit/<id>  — the editor page for a scratch copy
+// A relay without the scratch area answers 404 to the POST; the plugin then falls back to the
+// file API, so an outdated server costs the tidy-up but not the ability to edit.
 //
 // The cookie lives in the app's own persistent partition, so the user logs in ONCE in the app
 // window and stays logged in until the profile is discarded (relay sets rolling 90-day sessions).
@@ -106,6 +117,26 @@ function resolveBaseUrl(raw) {
 // strips separators there), so it is URI-encoded as one component.
 function apiFileUrl(base, name) { return `${base}/api/files/${encodeURIComponent(name)}` }
 function editUrl(base, name)    { return `${base}/edit/${encodeURIComponent(name)}` }
+
+// Where a document lives on the server, as the three URLs everything after the launch decision
+// needs. Introduced because a document can now sit in one of TWO places, and the sync-back has no
+// business knowing which:
+//
+//   target('file')    — the user's own folder. The file BELONGS to relay: it was already there, or
+//                       the user explicitly overwrote it. It stays after the window closes.
+//   target('scratch') — relay's scratch area, for a document that only exists on the local disk.
+//                       It is uploaded solely because OnlyOffice needs a URL, never appears in the
+//                       file list, and is DELETED once the last sync is through (the server also
+//                       expires it after 12h in case we never get to ask).
+//
+// The distinction is made once, at launch, and carried in `kind`. Nothing downstream re-derives it
+// — that is the whole point: deleting on close must be impossible for a real user file.
+function fileTarget(base, name) {
+  return { kind: 'file', name, url: apiFileUrl(base, name), forcesave: `${apiFileUrl(base, name)}/forcesave`, edit: editUrl(base, name) }
+}
+function scratchTarget(base, id, name) {
+  return { kind: 'scratch', name, id, url: `${base}/api/scratch/${id}`, forcesave: `${base}/api/scratch/${id}/forcesave`, edit: `${base}/scratch/edit/${id}` }
+}
 
 // Normalises a launch argument to an absolute local file path, or null if it isn't one.
 function fileFromArg(raw) {
@@ -252,11 +283,11 @@ function askPrompt(win, vars) {
 // i.e. until the DocumentServer's post-close save callback has landed — and returns the new bytes.
 // Returns null when nothing changed within the window: a viewed-only session never triggers a save,
 // so there is nothing to pull. The first probe runs immediately, catching mid-session saves at once.
-async function waitForSavedVersion(ctx, name, baselineHash, waitMs = SAVE_WAIT_MS) {
+async function waitForSavedVersion(ctx, target, baselineHash, waitMs = SAVE_WAIT_MS) {
   const deadline = Date.now() + waitMs
   for (;;) {
     try {
-      const res = await apiFetch(ctx, apiFileUrl(ctx.base, name), { timeoutMs: 10_000 })
+      const res = await apiFetch(ctx, target.url, { timeoutMs: 10_000 })
       if (res.ok) {
         const buf = Buffer.from(await res.arrayBuffer())
         if (md5(buf) !== baselineHash) return buf
@@ -271,9 +302,9 @@ async function waitForSavedVersion(ctx, name, baselineHash, waitMs = SAVE_WAIT_M
 // so the edited file is written within ~1s instead of after the DocumentServer's ~10s post-disconnect
 // grace. Returns { saved, reason } | null. null = endpoint missing/unreachable (older backend) → the
 // caller falls back to plain polling. `saved:false, reason:"no-changes"` means nothing to sync.
-async function forceSave(ctx, name) {
+async function forceSave(ctx, target) {
   try {
-    const res = await apiFetch(ctx, `${apiFileUrl(ctx.base, name)}/forcesave`, { method: 'POST', timeoutMs: 10_000 })
+    const res = await apiFetch(ctx, target.forcesave, { method: 'POST', timeoutMs: 10_000 })
     if (res.ok) return await res.json()
   } catch { /* unreachable / not implemented → fall back */ }
   return null
@@ -288,9 +319,10 @@ async function forceSave(ctx, name) {
 //   alwaysWrite — write the server version even when no NEW save arrives (the open-existing path:
 //                 the server file already differed from local, so "overwrite" must apply it).
 // Best-effort: failures leave the local file untouched and never block the window from closing.
-function registerSyncBack(win, ctx, name, localPath, baselineHash, { prompt = false, alwaysWrite = false } = {}) {
+function registerSyncBack(win, ctx, target, localPath, baselineHash, { prompt = false, alwaysWrite = false } = {}) {
   if (win.isDestroyed()) return
   const de = isDe()
+  const name = target.name
   win.once('close', async (event) => {
     event.preventDefault()
     if (prompt) {
@@ -311,7 +343,7 @@ function registerSyncBack(win, ctx, name, localPath, baselineHash, { prompt = fa
     // upload. So the pull decision is always the content comparison below (md5 vs. baseline); the
     // forcesave result only bounds how long we wait for a still-pending write to land. (Trusting
     // "no-changes" to skip the pull silently dropped every autosaved edit — the sync-back regression.)
-    const forced = await forceSave(ctx, name)
+    const forced = await forceSave(ctx, target)
     const noNewSave = forced?.saved === false && forced.reason === 'no-changes'
     if (!win.isDestroyed()) win._voltageAppContents.loadURL(buildLoadingPage(de ? 'Wird synchronisiert …' : 'Syncing …'))
     try {
@@ -321,16 +353,47 @@ function registerSyncBack(win, ctx, name, localPath, baselineHash, { prompt = fa
       // wait the full window for the pending save (forcesave lands it in ~1s; the older-backend
       // fallback, forced === null, waits out the DS's ~10s grace).
       const waitMs = noNewSave ? 1500 : SAVE_WAIT_MS
-      let buf = await waitForSavedVersion(ctx, name, baselineHash, waitMs)
+      let buf = await waitForSavedVersion(ctx, target, baselineHash, waitMs)
       if (!buf && alwaysWrite) {
-        const res = await apiFetch(ctx, apiFileUrl(ctx.base, name))
+        const res = await apiFetch(ctx, target.url)
         if (res.ok) buf = Buffer.from(await res.arrayBuffer())
       }
       if (buf) { fs.writeFileSync(localPath, buf); console.log(TAG, `synced back: ${localPath}`) }
       else console.log(TAG, 'sync-back: no newer server version — local file left as-is')
     } catch (err) { console.log(TAG, 'sync-back failed:', err.message) }
+    // A scratch copy has now served its only purpose: the local file is the truth again, so the
+    // server must not keep a second one. Deliberately AFTER the pull above and outside its
+    // try — a failed sync is exactly when the copy is still wanted, but a failed DELETE must not
+    // keep the window open either. Whatever happens here, relay expires the copy on its own.
+    if (target.kind === 'scratch') await discardScratch(ctx, target)
     if (!win.isDestroyed()) win.destroy()
   })
+}
+
+// Drops the server-side scratch copy. Best-effort and idempotent: relay answers 200 even when the
+// copy is already gone, so a repeat is harmless, and a failure here is not worth bothering anyone
+// with — the server expires scratch copies by itself.
+async function discardScratch(ctx, target) {
+  try {
+    const res = await apiFetch(ctx, target.url, { method: 'DELETE', timeoutMs: 10_000 })
+    console.log(TAG, res.ok ? `scratch copy discarded: ${target.id}` : `scratch discard failed: ${res.status}`)
+  } catch (err) { console.log(TAG, 'scratch discard failed:', err.message) }
+}
+
+// Hands a purely local file to relay's scratch area and returns its target, or null.
+//
+// 404 has a meaning of its own here: a relay that predates the scratch area. Rather than failing,
+// the caller then takes the old route and uploads into the user's folder — an outdated server
+// should cost the tidy-up, not the ability to edit.
+async function uploadScratch(ctx, name, localPath) {
+  try {
+    const res = await apiFetch(ctx, `${ctx.base}/api/scratch?name=${encodeURIComponent(name)}`,
+      { method: 'POST', body: fs.readFileSync(localPath) })
+    if (res.status === 404) { console.log(TAG, 'no scratch area on this relay — using the file API'); return null }
+    if (!res.ok) { console.log(TAG, `scratch upload failed: server answered ${res.status}`); return null }
+    const { id } = await res.json()
+    return id ? scratchTarget(ctx.base, id, name) : null
+  } catch (err) { console.log(TAG, 'scratch upload failed:', err.message); return null }
 }
 
 // Uploads the local file (raw-body PUT, matching `curl -T`) and returns whether the server took it.
@@ -359,8 +422,10 @@ async function resolveLaunchUrl(win, ctx, localPath) {
     const remoteBuf = remoteRes.ok ? Buffer.from(await remoteRes.arrayBuffer()) : null
     if (remoteBuf && md5(remoteBuf) === localHash) {
       // Identical → nothing to upload; still sync back silently (the server copy may get edited).
-      registerSyncBack(win, ctx, name, localPath, localHash)
-      return editUrl(ctx.base, name)
+      // This IS a relay file — scratch never enters the picture, and nothing gets deleted.
+      const target = fileTarget(ctx.base, name)
+      registerSyncBack(win, ctx, target, localPath, localHash)
+      return target.edit
     }
     // Same name, different content → the user decides which version wins, shown a local-vs-server
     // comparison. Server mtime/size come from the download we just did (res.download sets Last-Modified
@@ -374,17 +439,33 @@ async function resolveLaunchUrl(win, ctx, localPath) {
       // Keep the server version: local stays untouched for now, so ask before pulling it back — and
       // if the user then confirms, apply the server version even without a NEW save (it differed
       // from local from the start; baseline = the server state we just downloaded).
-      registerSyncBack(win, ctx, name, localPath, remoteBuf ? md5(remoteBuf) : localHash,
+      const target = fileTarget(ctx.base, name)
+      registerSyncBack(win, ctx, target, localPath, remoteBuf ? md5(remoteBuf) : localHash,
         { prompt: true, alwaysWrite: true })
-      return editUrl(ctx.base, name)
+      return target.edit
     }
     win._voltageAppContents.loadURL(buildLoadingPage(de ? 'Wird hochgeladen …' : 'Uploading …'))
   }
 
+  // Nothing of this name on the server → the document exists ONLY on the local disk. It goes to
+  // the scratch area, not into the user's folder: uploading it there would silently turn one local
+  // file into two, and the copy would show up in the file list, the search, the used space and the
+  // backup. The scratch copy is deleted again as soon as the last sync is through.
+  //
+  // The two branches above are the exact opposite case and stay untouched: there the file already
+  // IS a relay file, and nothing may delete it.
+  const scratch = await uploadScratch(ctx, name, localPath)
+  if (scratch) {
+    // Baseline = exactly what was uploaded: only a DS save NEWER than that must be pulled back.
+    registerSyncBack(win, ctx, scratch, localPath, localHash)
+    return scratch.edit
+  }
+
+  // Fallback for a relay without the scratch area: the old route, into the user's folder.
   if (!await upload(ctx, name, localPath)) return null
-  // Baseline = exactly what was uploaded: only a DS save NEWER than that must be pulled back.
-  registerSyncBack(win, ctx, name, localPath, localHash)
-  return editUrl(ctx.base, name)
+  const target = fileTarget(ctx.base, name)
+  registerSyncBack(win, ctx, target, localPath, localHash)
+  return target.edit
 }
 
 // ---- Host-side helpers (called by window.js, not by attachPlugin) -----------------------------
@@ -715,4 +796,4 @@ function attachPlugin(win, api) {
 }
 
 // Helpers exported for the unit tests; configurable → gear dialog (config.html).
-module.exports = { attachPlugin, preloadArgs, stacks, mayOpenDocumentWindow, ownsDocumentList, neueDateiEndung, startArt, familieFuer, zielAppImage, fileFromArg, resolveBaseUrl, apiFileUrl, editUrl, sessionInfo, waitForSavedVersion, forceSave, buildConfirmPage, fmtBytes, configuredBaseUrl, isEditorUrl, homeUrl, configurable: true }
+module.exports = { attachPlugin, preloadArgs, stacks, mayOpenDocumentWindow, ownsDocumentList, neueDateiEndung, startArt, familieFuer, zielAppImage, fileFromArg, resolveBaseUrl, apiFileUrl, editUrl, sessionInfo, waitForSavedVersion, forceSave, uploadScratch, discardScratch, fileTarget, scratchTarget, buildConfirmPage, fmtBytes, configuredBaseUrl, isEditorUrl, homeUrl, configurable: true }

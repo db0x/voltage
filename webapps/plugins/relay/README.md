@@ -6,10 +6,15 @@ after one feature — further relay capabilities belong here, not in a second pl
 
 What it does today is relay's document editing: it syncs a local Office file to the relay server and
 opens it there. Double-click a `.docx`/`.xlsx`/`.pptx` in the file browser → the AppImage uploads it
-to your personal folder on relay via its file API, navigates to relay's editor page, and **pulls the
-edited file back over the local one when the window closes** — the local file stays the source of
-truth. It carries no credential of its own: everything rides on the relay login session the app
-profile already holds.
+to relay, navigates to relay's editor page, and **pulls the edited file back over the local one when
+the window closes** — the local file stays the source of truth. It carries no credential of its own:
+everything rides on the relay login session the app profile already holds.
+
+**Where it uploads depends on whose file it is.** A document that already lives in your relay folder
+goes there, as before, and stays. A document that only exists on your local disk goes to relay's
+**scratch area** instead and is **deleted again after the last sync** — it is uploaded solely because
+OnlyOffice needs a URL to open, so it never appears in the file list, the search, your used space or
+the backup. Without that split, editing a local file quietly turned one document into two.
 
 Architecturally this is the [rclone-sync](../rclone-sync/rclone-sync.js) pattern (launch-arg
 takeover → loading page → upload → editor → sync-back on close, with a conflict dialog) speaking
@@ -27,6 +32,21 @@ authenticates with the same thing: the **relay login session** of the app's own 
 | `PUT` | `/api/files/<name>` | upload/overwrite (raw body, `X-CSRF-Token`) |
 | `GET` | `/api/files/<name>` | download |
 | `POST` | `/api/files/<name>/forcesave` | save the open editor session now (`X-CSRF-Token`) |
+
+For a document relay does **not** own, the same four steps run against the scratch area instead:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/scratch?name=<basename>` | hand a local file up (raw body, `X-CSRF-Token`) → `{ id, name, bytes, edit }` |
+| `GET` | `/api/scratch/<id>` | download the current state (this is what the sync-back reads) |
+| `DELETE` | `/api/scratch/<id>` | drop the copy; idempotent (`X-CSRF-Token`) |
+| `POST` | `/api/scratch/<id>/forcesave` | save the open editor session now (`X-CSRF-Token`) |
+
+The **id comes from the server and is random** — the file name lives in the query string, as a title
+and a source of the extension, never as the address. Two `brief.docx` open at once from different
+folders would otherwise overwrite each other. A relay that predates the scratch area answers `404`
+to the `POST`; the plugin then takes the old route into the user's folder, so an outdated server
+costs the tidy-up but not the ability to edit.
 
 A session only ever sees its own user folder. Because the API hangs on a cookie, relay checks it
 for CSRF like any form — hence the header on the writing calls, and hence `/api/session`, which
@@ -81,7 +101,8 @@ required field.
 2. Launched **with** a file: loading page, then `GET /api/session`. Not signed in → relay's login
    page, and the flow resumes once it is through; backend unreachable → straight to `pkg.url`.
    Then
-   - not on the server yet → upload → editor.
+   - not on the server yet → **scratch upload** → editor. This is the purely local document: relay
+     keeps the copy only for as long as the window is open.
    - on the server with **identical content** (md5) → skip the upload, open the editor directly.
    - on the server with **different content** → a **comparison dialog** (like the rclone/Google flow):
      the file's name plus a local-vs-server table of *modified time* and *size*, then **Overwrite**
@@ -105,6 +126,13 @@ required field.
    Silent after an upload; with a prompt after "open existing" (and there the server version is applied
    even without a new save, since it differed from local from the start). A failed download leaves the
    local file untouched and never blocks the window from closing.
+
+   **Then, for a scratch copy only, the plugin deletes it** (`DELETE /api/scratch/<id>`) — after the
+   pull, deliberately, and outside its error handling: a failed sync is exactly when the copy is still
+   wanted, and a failed delete must not keep the window open. Whatever happens, relay expires scratch
+   copies by itself after 12 hours, so a crash or a dead network cannot leave one behind for good. A
+   file that belongs to the user in relay is **never** deleted — the two cases are decided once, at
+   launch, and carried in the target's `kind`.
 
    The forcesave path needs the backend to know the open session's document key, which it captures when
    `/edit` is served (an in-memory map). After a backend restart the key is gone → forcesave reports

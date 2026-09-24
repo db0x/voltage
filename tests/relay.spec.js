@@ -117,6 +117,22 @@ function ctxFor(base, { csrf = 'csrf-proof', cookie = 'relay.sid=s3ss10n' } = {}
 
 const md5 = (buf) => require('node:crypto').createHash('md5').update(buf).digest('hex')
 
+// Wohin ein Dokument auf dem Server gehoert. Seit es zwei Orte gibt (Nutzerordner und
+// Arbeitsablage) reichen Sync und Forcesave kein "name" mehr herum, sondern dieses Buendel —
+// die Tests bauen es hier genauso wie relay.js es baut.
+const zielDatei = (base, name = 'x.docx') => ({
+  kind: 'file', name,
+  url: `${base}/api/files/${encodeURIComponent(name)}`,
+  forcesave: `${base}/api/files/${encodeURIComponent(name)}/forcesave`,
+  edit: `${base}/edit/${encodeURIComponent(name)}`,
+})
+const zielScratch = (base, id = 'a'.repeat(32), name = 'x.docx') => ({
+  kind: 'scratch', name, id,
+  url: `${base}/api/scratch/${id}`,
+  forcesave: `${base}/api/scratch/${id}/forcesave`,
+  edit: `${base}/scratch/edit/${id}`,
+})
+
 // Setup:    A stub backend still serving the uploaded state; the "save" (new content) lands 300 ms
 //           later — modelling the DocumentServer's post-close callback delay.
 // Action:   waitForSavedVersion with the uploaded state's hash as baseline.
@@ -126,7 +142,7 @@ test('waitForSavedVersion waits out the DocumentServer save delay', async () => 
   const server = await stubBackend(Buffer.from('uploaded-state'))
   try {
     setTimeout(() => server.setBytes(Buffer.from('edited-state')), 300)
-    const buf = await plugin.waitForSavedVersion(ctxFor(server.base), 'x.docx', md5(Buffer.from('uploaded-state')), 5000)
+    const buf = await plugin.waitForSavedVersion(ctxFor(server.base), zielDatei(server.base), md5(Buffer.from('uploaded-state')), 5000)
     expect(buf?.toString()).toBe('edited-state')
     expect(server.getCookie()).toBe('relay.sid=s3ss10n')
   } finally { await server.close() }
@@ -139,7 +155,7 @@ test('waitForSavedVersion waits out the DocumentServer save delay', async () => 
 test('waitForSavedVersion returns null when no save ever arrives', async () => {
   const server = await stubBackend(Buffer.from('uploaded-state'))
   try {
-    const buf = await plugin.waitForSavedVersion(ctxFor(server.base), 'x.docx', md5(Buffer.from('uploaded-state')), 500)
+    const buf = await plugin.waitForSavedVersion(ctxFor(server.base), zielDatei(server.base), md5(Buffer.from('uploaded-state')), 500)
     expect(buf).toBe(null)
   } finally { await server.close() }
 })
@@ -152,7 +168,7 @@ test('waitForSavedVersion returns immediately when the save already landed', asy
   const server = await stubBackend(Buffer.from('edited-state'))
   try {
     const t0 = Date.now()
-    const buf = await plugin.waitForSavedVersion(ctxFor(server.base), 'x.docx', md5(Buffer.from('uploaded-state')), 5000)
+    const buf = await plugin.waitForSavedVersion(ctxFor(server.base), zielDatei(server.base), md5(Buffer.from('uploaded-state')), 5000)
     expect(buf?.toString()).toBe('edited-state')
     expect(Date.now() - t0).toBeLessThan(1000)
   } finally { await server.close() }
@@ -184,7 +200,7 @@ function forcesaveStub(reply, status = 200) {
 test('forceSave POSTs to the forcesave endpoint and returns the result', async () => {
   const server = await forcesaveStub({ saved: false, reason: 'no-changes' })
   try {
-    const result = await plugin.forceSave(ctxFor(server.base, { csrf: 'proof9' }), 'x.docx')
+    const result = await plugin.forceSave(ctxFor(server.base, { csrf: 'proof9' }), zielDatei(server.base))
     expect(result).toEqual({ saved: false, reason: 'no-changes' })
     expect(server.seen()).toEqual({ method: 'POST', csrf: 'proof9', url: '/api/files/x.docx/forcesave' })
   } finally { await server.close() }
@@ -197,7 +213,112 @@ test('forceSave POSTs to the forcesave endpoint and returns the result', async (
 test('forceSave returns null when the endpoint is missing (older backend)', async () => {
   const server = await forcesaveStub(null, 404)
   try {
-    expect(await plugin.forceSave(ctxFor(server.base), 'x.docx')).toBe(null)
+    expect(await plugin.forceSave(ctxFor(server.base), zielDatei(server.base))).toBe(null)
+  } finally { await server.close() }
+})
+
+// --- Arbeitsablage: Dokumente, die relay NICHT gehoeren -------------------------------------
+// Ein Server, der die Arbeitsablage beherrscht: nimmt den Upload an, vergibt eine Kennung und
+// merkt sich jeden Aufruf. status 404 spielt ein relay ohne Arbeitsablage.
+function scratchStub({ status = 201, id = 'b'.repeat(32) } = {}) {
+  const http = require('node:http')
+  const gesehen = []
+  const srv = http.createServer((req, res) => {
+    const teile = []
+    req.on('data', c => teile.push(c))
+    req.on('end', () => {
+      gesehen.push({ method: req.method, url: req.url, csrf: req.headers['x-csrf-token'],
+                     bytes: Buffer.concat(teile).length })
+      if (status === 404) { res.writeHead(404); res.end(); return }
+      res.writeHead(req.method === 'POST' ? 201 : 200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(req.method === 'POST'
+        ? { id, name: 'x.docx', bytes: Buffer.concat(teile).length, edit: `/scratch/edit/${id}` }
+        : { ok: true, deleted: id }))
+    })
+  })
+  return new Promise(resolve => srv.listen(0, '127.0.0.1', () => resolve({
+    base: `http://127.0.0.1:${srv.address().port}`,
+    gesehen: () => gesehen,
+    close: () => new Promise(r => srv.close(r)),
+  })))
+}
+
+// Setup:    Eine rein lokale Datei und ein relay mit Arbeitsablage.
+// Action:   uploadScratch.
+// Expected: POST auf /api/scratch mit dem Namen in der Query und dem CSRF-Nachweis; zurueck kommt
+//           ein Ziel der Art "scratch", dessen Adressen alle auf die Kennung zeigen. Der Name
+//           steht in der Query und NICHT im Pfad: er ist nur Titel und Endung, die Adresse ist die
+//           Kennung — sonst wuerden zwei gleichnamige Dateien einander ueberschreiben.
+test('uploadScratch hands a local file up and returns a scratch target', async () => {
+  const server = await scratchStub()
+  const tmp = path.join(os.tmpdir(), `relay-scratch-${Date.now()}.docx`)
+  fs.writeFileSync(tmp, Buffer.from('lokaler-inhalt'))
+  try {
+    const ziel = await plugin.uploadScratch(ctxFor(server.base, { csrf: 'proof7' }), 'Brief für Oma.docx', tmp)
+    expect(ziel.kind).toBe('scratch')
+    expect(ziel.edit).toBe(`${server.base}/scratch/edit/${'b'.repeat(32)}`)
+    expect(ziel.url).toBe(`${server.base}/api/scratch/${'b'.repeat(32)}`)
+    expect(server.gesehen()[0]).toEqual({
+      method: 'POST', url: `/api/scratch?name=${encodeURIComponent('Brief für Oma.docx')}`,
+      csrf: 'proof7', bytes: 14,
+    })
+  } finally { fs.unlinkSync(tmp); await server.close() }
+})
+
+// Setup:    Ein aelteres relay, das /api/scratch nicht kennt (404).
+// Action:   uploadScratch.
+// Expected: null statt eines Fehlers — der Aufrufer faellt dann auf den Dateiordner zurueck. Ein
+//           veralteter Server darf das Aufraeumen kosten, nicht die Faehigkeit zu bearbeiten.
+test('uploadScratch yields null on a relay without the scratch area', async () => {
+  const server = await scratchStub({ status: 404 })
+  const tmp = path.join(os.tmpdir(), `relay-scratch-${Date.now()}.docx`)
+  fs.writeFileSync(tmp, Buffer.from('x'))
+  try {
+    expect(await plugin.uploadScratch(ctxFor(server.base), 'x.docx', tmp)).toBe(null)
+  } finally { fs.unlinkSync(tmp); await server.close() }
+})
+
+// Setup:    Ein Ziel in der Arbeitsablage.
+// Action:   discardScratch.
+// Expected: DELETE auf die Kennung, mit CSRF-Nachweis. Das ist der Schritt, der aus "die Datei
+//           liegt jetzt doppelt" wieder "nur lokal" macht.
+test('discardScratch deletes the server-side copy', async () => {
+  const server = await scratchStub()
+  try {
+    await plugin.discardScratch(ctxFor(server.base, { csrf: 'proof8' }), zielScratch(server.base))
+    expect(server.gesehen()[0]).toEqual({
+      method: 'DELETE', url: `/api/scratch/${'a'.repeat(32)}`, csrf: 'proof8', bytes: 0,
+    })
+  } finally { await server.close() }
+})
+
+// Setup:    Beide Zielarten.
+// Action:   Die Adressen ansehen.
+// Expected: Eine Datei des Nutzers zeigt in den Dateiordner, eine Arbeitskopie auf die Kennung —
+//           und `kind` haelt die Unterscheidung fest. Daran haengt, was beim Schliessen geloescht
+//           wird: NUR "scratch". Eine Datei, die dem Nutzer in relay gehoert, darf das Plugin
+//           niemals wegraeumen, auch wenn sie ueber denselben Weg geoeffnet wurde.
+test('a scratch copy is disposable, a user file is not', () => {
+  const datei = plugin.fileTarget('http://h/relay', 'x.docx')
+  const kopie = plugin.scratchTarget('http://h/relay', 'c'.repeat(32), 'x.docx')
+  expect(datei.kind).toBe('file')
+  expect(datei.url).toBe('http://h/relay/api/files/x.docx')
+  expect(datei.edit).toBe('http://h/relay/edit/x.docx')
+  expect(kopie.kind).toBe('scratch')
+  expect(kopie.url).toBe(`http://h/relay/api/scratch/${'c'.repeat(32)}`)
+  expect(kopie.forcesave).toBe(`http://h/relay/api/scratch/${'c'.repeat(32)}/forcesave`)
+})
+
+// Setup:    Ein Ziel in der Arbeitsablage.
+// Action:   forceSave.
+// Expected: Der Ruf geht an die Arbeitsablage, nicht an den Dateiordner — sonst spaeche das
+//           Plugin beim Schliessen ueber eine Datei, die es gar nicht gibt.
+test('forceSave follows the target into the scratch area', async () => {
+  const server = await forcesaveStub({ saved: true })
+  try {
+    const r = await plugin.forceSave(ctxFor(server.base), zielScratch(server.base))
+    expect(r).toEqual({ saved: true })
+    expect(server.seen().url).toBe(`/api/scratch/${'a'.repeat(32)}/forcesave`)
   } finally { await server.close() }
 })
 
