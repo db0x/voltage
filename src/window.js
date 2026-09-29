@@ -1160,14 +1160,18 @@ function createWindow(pkg, opts = {}) {
   appContents.setWindowOpenHandler(({ url }) => {
     try {
       const targetUrl = new URL(url)
-      // Allow same-origin URLs (OAuth redirects, etc.)
-      if (targetUrl.origin === appOrigin) {
-        return { action: 'allow' }
-      }
-      // Allow whitelisted internal domains (e.g., accounts.google.com)
+      // Allow whitelisted internal domains (e.g., accounts.google.com). Checked FIRST because the
+      // whitelist exists precisely to keep those pages in the app window — externalPopups must not
+      // defeat it, or setting both options would silently break an SSO popup flow.
       if (internalDomains.some(domain =>
         targetUrl.hostname === domain || targetUrl.hostname.endsWith('.' + domain)
       )) {
+        return { action: 'allow' }
+      }
+      // Allow same-origin URLs (OAuth redirects, etc.) — unless the app asked for every pop-up to go
+      // to the system browser. Some apps use target=_blank on their OWN pages as a "new tab", which
+      // has no meaning here and would otherwise spawn a second Electron window per link.
+      if (!pkg.externalPopups && targetUrl.origin === appOrigin) {
         return { action: 'allow' }
       }
       // External URLs: route to another voltage app or open in system browser
@@ -1367,6 +1371,7 @@ function createWindow(pkg, opts = {}) {
       `const unsafeSrc       = ${JSON.stringify(unsafeIconDataUrl)};`,
       `const appOrigin       = ${JSON.stringify(appOrigin)};`,
       `const internalDomains = ${JSON.stringify(internalDomains)};`,
+      `const externalPopups  = ${JSON.stringify(!!pkg.externalPopups)};`,
       `const routeEntries    = ${JSON.stringify(routeEntries)};`,
       `const mailtoLabel     = ${JSON.stringify(mailtoLabel)};`,
     ].join('\n')

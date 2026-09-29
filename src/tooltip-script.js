@@ -55,14 +55,24 @@ function getRouteInfo(url) {
   } catch { return null; }
 }
 
-// Mirrors setWindowOpenHandler — only show tooltip for links that leave the app.
-function isExternalLink(url) {
+// Mirrors setWindowOpenHandler — only show tooltip for links that leave the app. `anchor` is the
+// hovered <a>: under externalPopups a same-origin link still navigates in place, so ONLY one that
+// would open a pop-up (target=_blank) leaves the app, and the target attribute is the one thing that
+// tells the two apart.
+function isExternalLink(url, anchor) {
   try {
     const { origin, hostname } = new URL(url);
-    if (origin === appOrigin) return false;
     if (internalDomains.some(d => hostname === d || hostname.endsWith('.' + d))) return false;
+    if (origin === appOrigin) return externalPopups && opensInNewTab(anchor);
     return true;
   } catch { return false; }
+}
+
+// Whether the link asks for a new browsing context. Anything other than a named/blank target stays
+// in the current frame, so only these can become the pop-up the window-open handler sees.
+function opensInNewTab(anchor) {
+  const target = anchor?.target;
+  return target === '_blank' || target === '_new';
 }
 
 // Tooltip element lives in the main frame — position:fixed is relative to the main viewport.
@@ -128,8 +138,9 @@ function hookDoc(doc) {
   hookedDocs.add(doc);
   // capture: true fires before any stopPropagation() in the app's own handlers.
   doc.addEventListener('mouseover', e => {
-    const url = e.target.closest('a[href]')?.href ?? '';
-    if (url && !url.startsWith('javascript:') && (url.startsWith('mailto:') || isExternalLink(url))) showTooltip(url);
+    const anchor = e.target.closest('a[href]');
+    const url = anchor?.href ?? '';
+    if (url && !url.startsWith('javascript:') && (url.startsWith('mailto:') || isExternalLink(url, anchor))) showTooltip(url);
     else hideTooltip();
   }, { passive: true, capture: true });
   doc.addEventListener('mouseout', e => {

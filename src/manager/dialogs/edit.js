@@ -119,6 +119,7 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
       singleInstance:       document.getElementById('edit-single-instance').classList.contains('active'),
       // DevTools default ON, so the toggle's *active* state maps to the absence of "devTools": false.
       devTools:             document.getElementById('edit-devtools').classList.contains('active'),
+      externalPopups:       document.getElementById('edit-external-popups').classList.contains('active'),
       mailHandler:          document.getElementById('edit-mail-handler').classList.contains('active'),
       // Sorted join so the dirty check ignores checkbox ordering and only reacts to which
       // plugins are selected.
@@ -235,6 +236,10 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     e.currentTarget.classList.toggle('active')
     updateSaveBtn()
   })
+  document.getElementById('edit-external-popups').addEventListener('click', e => {
+    e.currentTarget.classList.toggle('active')
+    updateSaveBtn()
+  })
   document.getElementById('edit-single-instance').addEventListener('click', e => {
     e.currentTarget.classList.toggle('active')
     updateSaveBtn()
@@ -328,6 +333,10 @@ export function initEditDialog({ i18n, tr, appDefaultSrc, uaPresets, plugins, ic
     const siBtn = document.getElementById('edit-single-instance')
     if (app.singleInstance) siBtn.classList.add('active')
     else siBtn.classList.remove('active')
+
+    const epBtn = document.getElementById('edit-external-popups')
+    if (app.externalPopups) epBtn.classList.add('active')
+    else epBtn.classList.remove('active')
 
     // DevTools are on unless the config explicitly disabled them, so the toggle starts active for
     // every app that hasn't set "devTools": false.

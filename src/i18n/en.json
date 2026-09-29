@@ -221,6 +221,7 @@
   "createRoutingUrls":    "Routing URLs",
   "createCoi":            "Cross-Origin Isolation (SharedArrayBuffer / WASM)",
   "createSingleInstance": "Allow only one instance",
+  "createExternalPopups": "Open pop-ups in the default browser",
   "createDevTools":       "Allow DevTools",
   "createMailHandler":    "Register as mail handler",
   "createPlugins":        "Plugins",
@@ -237,6 +238,7 @@
   "createUaDefault":      "— Default (not set) —",
 
   "tooltipSingleInstance": "Prevents the app from being opened more than once. A second launch brings the existing window to the front instead.",
+  "tooltipExternalPopups": "Pages the app opens in a new tab or window are handed to the default browser instead of creating a second app window. Internal domains are unaffected and still open inside the app window.",
   "tooltipUAgent":         "Some websites block Electron or work better with a specific browser identity. The app can pose as Chrome, Firefox or Edge.",
   "tooltipDomains":        "Links to these domains open inside the app window instead of the default browser — e.g. for login pages or SSO providers.",
   "tooltipRoutingUrls":    "Extra URLs that get routed to this app — from every other voltage app and from Obsidian. Wildcards with * are allowed, e.g. *.example.com or example.com/docs/*. Overlaps with other apps are prevented.",

@@ -106,6 +106,7 @@ function expandConfig(app) {
       ...(app.crossOriginIsolation && { crossOriginIsolation: true }),
       ...(app.largeAssetCache     && { largeAssetCache:      true }),
       ...(app.singleInstance      && { singleInstance:       true }),
+      ...(app.externalPopups      && { externalPopups:       true }),
       // DevTools default ON, so only an explicit off must travel into the AppImage — otherwise the
       // runtime's pkg.devTools is undefined and devToolsEnabled() falls back to enabled.
       ...(app.devTools === false  && { devTools:             false }),
