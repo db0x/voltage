@@ -79,6 +79,16 @@ const LAYOUT_SETTLE_MS = 800
 // user unplugs a monitor — which is what makes the outgoing layout's positions survive the switch.
 const FRAME_PERSIST_DEBOUNCE_MS = 2000
 
+// Retry budget for associating a freshly mapped window with its Voltage app. Shell.WindowTracker
+// resolves a Wayland window's app from its app_id against the installed launchers, and right after
+// login that association can lag the window's first frame by a few hundred ms while the shell is
+// still cold and several apps start at once. Giving up on the first miss left those windows both
+// unrestored AND untracked (so their position was never saved either) — the failure mode that only
+// shows up across a logout/login, because during a hot monitor swap every window is long
+// established. 20 x 150ms ≈ 3s, after which the window is genuinely not one of ours.
+const APP_ID_RETRY_MS    = 150
+const APP_ID_RETRY_LIMIT = 20
+
 // D-Bus surface a running Voltage app uses to ask the shell to bring one of its windows forward.
 // The app addresses itself by its launcher id ("vTeams.desktop") — the same identity this
 // extension already keys every app by — so no extra handshake or pid tracking is needed.
@@ -137,6 +147,8 @@ export default class VoltageExtension extends Extension {
     // Held in memory and flushed debounced, because the frames that matter for a monitor switch
     // are the ones from BEFORE it — they have to be on disk by the time the switch happens.
     this._lastFrames = new Map()
+    // GLib source ids of in-flight app-association retries, so none outlives the extension.
+    this._pendingAssoc = new Set()
     // Pending settle timer of the layout switch, and pending debounced disk write (0 = none).
     this._settleId = 0
     this._flushId = 0
@@ -205,6 +217,11 @@ export default class VoltageExtension extends Extension {
       GLib.source_remove(this._flushId)
       this._flushId = 0
       this._flushFrames()
+    }
+    if (this._pendingAssoc) {
+      for (const id of this._pendingAssoc) GLib.source_remove(id)
+      this._pendingAssoc.clear()
+      this._pendingAssoc = null
     }
     this._widgetStates = null
     this._windowApps = null
@@ -377,11 +394,30 @@ export default class VoltageExtension extends Extension {
   }
 
   // Restore a freshly shown Voltage window to its saved frame, then track it for save-on-close.
-  _restoreAndTrack(win) {
+  //
+  // The app association is retried rather than required on the first try: see APP_ID_RETRY_MS. A
+  // window that is still unassociated after the budget is simply not ours (every ordinary non-
+  // Voltage window ends here), so the give-up path stays silent.
+  _restoreAndTrack(win, attempt = 0) {
     const appId = this._voltageAppIdForWindow(win)
-    if (!appId) return
-    this._restoreWindow(win, appId)
-    this._trackAppWindow(win, appId)
+    if (appId) {
+      this._restoreWindow(win, appId)
+      this._trackAppWindow(win, appId)
+      return
+    }
+    if (attempt >= APP_ID_RETRY_LIMIT || !this._pendingAssoc) return
+    const sourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, APP_ID_RETRY_MS, () => {
+      this._pendingAssoc?.delete(sourceId)
+      // Bail out if the extension was disabled meanwhile, or the window closed before it could ever
+      // be identified — get_compositor_private() is null once the actor is gone.
+      try {
+        if (this._pendingAssoc && win.get_compositor_private()) this._restoreAndTrack(win, attempt + 1)
+      } catch {
+        // window already destroyed
+      }
+      return GLib.SOURCE_REMOVE
+    })
+    this._pendingAssoc.add(sourceId)
   }
 
   // Connect the save-on-close handler exactly once per window. `appId` is passed in on the
