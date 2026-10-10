@@ -302,6 +302,50 @@ function routeSuffixFor(pkg, config) {
   return resolvePathOverride(config) ?? urlSuffixFrom(pkg.url)
 }
 
+// Identity of the app build + stack definition a container was last created from. Two independent
+// things can change under a running container, and neither is something compose notices on its own:
+//
+//  - the APP was rebuilt. For a stack that builds from source (`build:` in the compose), the new
+//    code sits in the build context; compose's config hash only covers the compose FILE, so an
+//    `up -d` happily keeps serving the old image. "I rebuilt and nothing changed" starts here.
+//  - the stack DEFINITION changed (a new bundled compose, or an edited custom one).
+//
+// The AppImage's own mtime is the app-build signal: every rebuild writes a new artifact. Outside an
+// AppImage (development, tests) there is none, and the compose hash alone then decides.
+function buildFingerprint(spec) {
+  const h = crypto.createHash('sha256')
+  h.update(spec.content ?? '')
+  if (spec.file) { try { h.update(fs.readFileSync(spec.file)) } catch { /* unreadable → content only */ } }
+  const artifact = process.env.APPIMAGE
+  if (artifact) { try { h.update(String(fs.statSync(artifact).mtimeMs)) } catch { /* not accessible */ } }
+  return h.digest('hex')
+}
+
+// Where the last-used fingerprint is remembered: the app's own profile directory, which the runtime
+// has already pointed at the per-app location (app-window.js setPath('userData')) by the time a
+// launch hook runs. Returns null outside Electron, where the whole mechanism simply stays off.
+function stateFile() {
+  try {
+    const { app } = require('electron')
+    return path.join(app.getPath('userData'), 'docker-stack.json')
+  } catch { return null }
+}
+
+function readFingerprint() {
+  const f = stateFile()
+  if (!f) return null
+  try { return JSON.parse(fs.readFileSync(f, 'utf8')).fingerprint ?? null } catch { return null }
+}
+
+function writeFingerprint(fingerprint) {
+  const f = stateFile()
+  if (!f) return
+  try {
+    fs.mkdirSync(path.dirname(f), { recursive: true })
+    fs.writeFileSync(f, JSON.stringify({ fingerprint }))
+  } catch (err) { log('could not record the stack fingerprint:', err.message) }
+}
+
 // Set when THIS process started the container (drives teardown); the reuse path leaves it null so a
 // container that was already running is never torn down under another window/process.
 let session = null
@@ -332,9 +376,18 @@ async function resolveLaunch(pkg, api = {}) {
   // subcommand; without values it spams unset-variable warnings. The port is patched in once known.
   const env = composeEnvFor(config, 0, stack.meta)
 
+  // Has the app been rebuilt, or the stack redefined, since this container was last created? Then the
+  // running one is stale by definition — neither reuse it nor let compose decide it is up to date.
+  const fingerprint = buildFingerprint(spec)
+  const previous = readFingerprint()
+  // No record at all means a first launch (or a profile wiped clean), not a change — rebuilding then
+  // would just make every new app pay a full image build it does not need.
+  const fresh = previous !== null && previous !== fingerprint
+  if (fresh) log('app build or stack changed since the last start → rebuilding the container')
+
   // Already up (a second window, or a leftover from a previous session)? Reuse its published port and
   // do NOT mark it as ours, so we won't tear it down.
-  if (service && containerPort) {
+  if (!fresh && service && containerPort) {
     const existing = await container.composeHostPort(spec, project, service, containerPort, env)
     if (existing) {
       log('reusing already-running container on port', existing)
@@ -353,7 +406,7 @@ async function resolveLaunch(pkg, api = {}) {
 
   try {
     log('compose up on port', port, '…')
-    await container.composeUp(spec, project, env)
+    await container.composeUp(spec, project, env, { fresh })
   } catch (err) {
     log('compose up failed:', (err.stderr || err.message || '').toString().trim())
     // Free-at-probe but taken-at-up (the brief race): retry once with another free port — but only
@@ -362,11 +415,14 @@ async function resolveLaunch(pkg, api = {}) {
     port = await container.findFreePort(range)
     if (!port) return null
     env.VOLTAGE_PORT = String(port)
-    try { await container.composeUp(spec, project, env) }
+    try { await container.composeUp(spec, project, env, { fresh }) }
     catch (err2) { log('compose up retry failed:', (err2.stderr || err2.message || '').toString().trim()); return null }
   }
 
   session = { spec, project, env }  // we own it now → tear down on last window close
+  // Only now, with a container actually created from them: a failed up must stay "stale" so the next
+  // launch retries the rebuild instead of assuming it happened.
+  writeFingerprint(fingerprint)
   // Best-effort readiness gates; if something never answers we still return the URL and the window's
   // load guard surfaces the connection error (better than hanging the launch indefinitely). Beyond the
   // primary service, the stack may declare further waitFor targets (e.g. OnlyOffice's DocumentServer,
@@ -415,7 +471,7 @@ function attachPlugin(win, api) {
 // container), so the Manager locks the URL field while it's selected. composeEnvFor/urlSuffixFrom/
 // resolvePathOverride/routeSuffixFor/materializeStack are exported for the unit tests.
 module.exports = {
-  ensureHostDirs,
+  ensureHostDirs, buildFingerprint,
   attachPlugin, resolveLaunch, launchInfo, available, stacks,
   materializeStack, composeEnvFor, urlSuffixFrom, resolvePathOverride, routeSuffixFor,
   completeConfig, waitForTargets,

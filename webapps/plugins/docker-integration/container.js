@@ -137,8 +137,14 @@ async function composeHostPort(spec, project, service, containerPort, env) {
 // Bring the stack up detached. `up -d` pulls the image synchronously before returning, so this can run
 // for minutes on the very first launch — the caller shows a splash meanwhile. env carries the compose
 // ${VAR} substitutions (VOLTAGE_PORT, optionally VOLTAGE_DATA_DIR). Throws on failure (e.g. port in use).
-async function composeUp(spec, project, env) {
-  const { bin, args, input } = composeInvoke(spec, project, ['up', '-d'])
+// `fresh` adds --build --force-recreate: rebuild the image from its context and replace the running
+// container even when compose would consider the existing one up to date. That judgement is compose's
+// config hash, which cannot see a changed BUILD CONTEXT (the app's own source) at all — so after the
+// app is rebuilt, only an explicit --build picks the new code up. --build on an image-only stack is a
+// no-op, so this needs no per-stack knowledge of whether a build section exists.
+async function composeUp(spec, project, env, { fresh = false } = {}) {
+  const tail = fresh ? ['up', '-d', '--build', '--force-recreate'] : ['up', '-d']
+  const { bin, args, input } = composeInvoke(spec, project, tail)
   await run(bin, args, { input, env, timeout: 600_000 })
 }
 

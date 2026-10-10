@@ -136,10 +136,29 @@ A declared secret still missing at launch (config never saved through the Manage
 1. **Reuse:** if the compose project (`voltage-<profile>`) is already up (second window, leftover
    from a crash), its published port is reused and the container is **not** considered owned — it
    will not be torn down by this process.
+**A page that remembers things wants a fixed `port`.** The auto-port makes the routed URL
+`http://localhost:<whatever was free>`, and a browser keys `localStorage`, `sessionStorage`, cookies
+and permissions by **origin** — so a port that moves between launches silently discards every
+preference the page stored. It bites hardest where the app hands a page to the *system browser*
+(pop-ups, a presentation view): that browser then accumulates one origin per port the app ever used,
+and a setting made under one is simply absent under the next. Pin `port` for any such app, and
+ideally pin it to the port the baked `url` already names, so the online fallback shares the origin
+too and a failed container start does not lose the state either.
+
 2. **Auto-port:** first free port in `portRange` (default 18000–18099), probed by binding; a port
    conflict at `up` time (probe/up race) retries once with a fresh port. A user-fixed `port` never
    retries — a conflict there is a real error → online fallback.
 3. **`compose up -d`** (may pull/build for minutes on first launch — the splash covers this).
+   **After the app is rebuilt**, or the stack definition changes, this becomes
+   `up -d --build --force-recreate` and the reuse step above is skipped, so the running container is
+   replaced rather than kept. Both are needed: compose's own config hash covers the compose *file*
+   only, so for a stack that builds from source it cannot see that the build context (the app's own
+   code) changed and would happily keep serving the old image — "I rebuilt and nothing changed".
+   The trigger is a fingerprint of the compose definition plus the AppImage artifact's mtime, kept in
+   `docker-stack.json` in the app's profile folder and written only after a container was actually
+   created from it (a failed `up` stays stale, so the next launch retries). Outside an AppImage
+   (development) there is no artifact and the compose definition alone decides. A first launch — no
+   record yet — is not a change: a new app must not pay a forced rebuild.
 4. **Readiness:** the routed service's `healthPath` is polled, then every `waitFor` gate.
    **Ready means an HTTP status < 400** — a 502 must *not* count: OnlyOffice's DocumentServer fronts
    itself with nginx that answers 502 within seconds while the actual service boots for another

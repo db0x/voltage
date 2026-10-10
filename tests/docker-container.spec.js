@@ -385,3 +385,47 @@ test('sweepStaleTmpFiles removes only the files no compose call can still need',
   expect(fs.existsSync(other)).toBe(true)   // not ours, never touched
   for (const f of [fresh, other]) fs.rmSync(f, { force: true })
 })
+
+// ── Rebuilding the app must reach the container ──────────────────────────────────────────────────
+const { buildFingerprint } = require('../webapps/plugins/docker-integration/docker-integration.js')
+
+// Setup:    The same stack definition, twice, with no app rebuild in between.
+// Action:   Fingerprint both.
+// Expected: Equal — an ordinary relaunch must not trigger a rebuild, or every start would pay a full
+//           image build.
+test('buildFingerprint is stable across an ordinary relaunch', () => {
+  const spec = { content: 'services:\n  app:\n    image: x\n' }
+  expect(buildFingerprint(spec)).toBe(buildFingerprint(spec))
+})
+
+// Setup:    A stack definition that then changes (a new bundled compose, or an edited custom one).
+// Action:   Fingerprint before and after.
+// Expected: Different, so the running container is replaced instead of being kept because compose
+//           considers it current.
+test('buildFingerprint changes when the stack definition does', () => {
+  const before = buildFingerprint({ content: 'services:\n  app:\n    image: x\n' })
+  const after  = buildFingerprint({ content: 'services:\n  app:\n    image: x\n    init: true\n' })
+  expect(before).not.toBe(after)
+})
+
+// Setup:    An unchanged stack, but the AppImage artifact replaced — i.e. the app was rebuilt, which
+//           for a stack building from source means new code in the build context.
+// Action:   Fingerprint before and after the artifact's mtime moves.
+// Expected: Different. Compose's own config hash covers only the compose file and would keep serving
+//           the old image, which is exactly the "I rebuilt and nothing changed" case.
+test('buildFingerprint changes when the app has been rebuilt', () => {
+  const artifact = path.join(os.tmpdir(), `voltage-fp-${process.pid}.AppImage`)
+  fs.writeFileSync(artifact, 'x')
+  const prev = process.env.APPIMAGE
+  process.env.APPIMAGE = artifact
+  try {
+    const spec = { content: 'services:\n  app:\n    build: ./src\n' }
+    const before = buildFingerprint(spec)
+    const later = Date.now() + 10_000
+    fs.utimesSync(artifact, later / 1000, later / 1000)
+    expect(buildFingerprint(spec)).not.toBe(before)
+  } finally {
+    if (prev === undefined) delete process.env.APPIMAGE; else process.env.APPIMAGE = prev
+    fs.rmSync(artifact, { force: true })
+  }
+})
