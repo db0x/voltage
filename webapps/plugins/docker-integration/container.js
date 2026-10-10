@@ -153,6 +153,52 @@ function composeDownSync(spec, project, env) {
   if (spec._tmpFile) { try { fs.unlinkSync(spec._tmpFile) } catch {} }
 }
 
+// Tear the stack down WITHOUT blocking: `down` is started in its own process group and unref'd, so
+// it outlives this process instead of being killed with it.
+//
+// This is the whole reason the teardown used to be synchronous — an ordinary child is killed when
+// the parent exits, so `down` had to finish first. But execFileSync blocks the Electron MAIN thread,
+// and `compose down` is not quick: a container whose PID 1 ignores SIGTERM costs docker's full 10s
+// grace period, a cold daemon costs more. The window has already gone by then, so the desktop sees
+// an application that stopped answering and offers to kill it ("trivialSlides antwortet nicht").
+// detached + unref gives both: the app quits immediately and docker still finishes its work.
+//
+// The one thing lost is ordering: relaunching within the teardown's window can find the old
+// container still going away, and reuse a port that is about to disappear. That race is sub-second
+// in practice (see the `init:` note in the plugin README) and self-corrects on the next launch —
+// a frozen UI on every single close does not.
+function composeDownDetached(spec, project, env) {
+  try {
+    const { bin, args, input } = composeInvoke(spec, project, ['down'])
+    const child = spawn(bin, args, {
+      env: withEnv(env),
+      detached: true,
+      stdio: [input === undefined ? 'ignore' : 'pipe', 'ignore', 'ignore'],
+    })
+    // Compose files are a few KB — well inside the pipe buffer, so this never blocks.
+    if (input !== undefined) child.stdin.end(input)
+    child.unref()
+  } catch { /* no compose, nothing to tear down */ }
+  // The v1 temp file cannot be removed here — the detached child is still reading it. Stale ones are
+  // swept at the next launch (sweepStaleTmpFiles).
+}
+
+// Remove compose temp files left behind by a detached teardown (or a crash). Anything older than an
+// hour cannot belong to a live compose call. Best-effort and silent: a leftover 2 KB file in /tmp is
+// not worth failing a launch over.
+function sweepStaleTmpFiles(maxAgeMs = 3_600_000) {
+  const dir = os.tmpdir()
+  let entries = []
+  try { entries = fs.readdirSync(dir) } catch { return }
+  for (const name of entries) {
+    if (!/^voltage-compose-.*\.yaml$/.test(name)) continue
+    const f = path.join(dir, name)
+    try {
+      if (Date.now() - fs.statSync(f).mtimeMs > maxAgeMs) fs.unlinkSync(f)
+    } catch { /* gone or not ours */ }
+  }
+}
+
 // One HTTP probe against the service. Ready = an actual 2xx/3xx answer: a 5xx must NOT count —
 // OnlyOffice's DocumentServer fronts itself with nginx, which answers 502 within seconds while the
 // DocService behind it still boots for another ~30-60s, so "any response = up" reported ready far
@@ -181,5 +227,5 @@ async function waitHealthy(port, healthPath, timeoutMs = 30_000) {
 
 module.exports = {
   DEFAULT_PORT_RANGE, findFreePort, isPortFree, withEnv, detectCompose, dockerIsSnap,
-  composeHostPort, composeUp, composeDownSync, waitHealthy,
+  composeHostPort, composeUp, composeDownSync, composeDownDetached, sweepStaleTmpFiles, waitHealthy,
 }

@@ -262,3 +262,126 @@ test('waitForTargets resolves ports from env and skips unresolvable entries', ()
     { port: 9000, path: '/', timeoutMs: 60000 },
   ])
 })
+
+// ── Host-side bind-mount preparation + the user the container runs as ─────────────────────────────
+const { ensureHostDirs } = require('../webapps/plugins/docker-integration/docker-integration.js')
+
+// Setup:    Stack meta whose createDirs carry an absolute path built from a ${VAR}, a relative entry,
+//           and one referencing a variable that is not set.
+// Action:   Prepare the host directories for that compose environment.
+// Expected: Only the absolute, fully-resolved one is created. The relative entry belongs to a rich
+//           stack's materialized directory (materializeStack owns those) and must not be created
+//           relative to the process CWD. The entry with an UNSET variable is skipped entirely — it
+//           would collapse to "/x", an absolute path at the filesystem root, and be created there.
+test('ensureHostDirs creates only the resolved absolute bind sources', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-binds-'))
+  const decks = path.join(base, 'decks')
+  const unset = path.join(base, 'never')
+  ensureHostDirs(
+    { createDirs: ['${VOLTAGE_DATA_DIR}', 'documents', `${'${NOT_SET}'}${unset}`] },
+    { VOLTAGE_DATA_DIR: decks },
+  )
+
+  expect(fs.existsSync(decks)).toBe(true)
+  expect(fs.existsSync(path.join(process.cwd(), 'documents'))).toBe(false)
+  expect(fs.existsSync(unset)).toBe(false)
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+// Setup:    A stack declaring no createDirs at all, and one pointing at a path that cannot be created.
+// Action:   Prepare host directories.
+// Expected: Neither throws — pre-creation is best-effort, and a failure must fall through to docker
+//           (which then fails loudly at `up`) rather than abort the launch before it starts.
+test('ensureHostDirs is silent for nothing to do and for an uncreatable path', () => {
+  expect(() => ensureHostDirs({}, {})).not.toThrow()
+  expect(() => ensureHostDirs({ createDirs: ['/proc/voltage-cannot-exist'] }, {})).not.toThrow()
+})
+
+// Setup:    The compose environment built for any stack.
+// Action:   Read the account variables out of it.
+// Expected: The AppImage's own uid/gid travel to compose, so a stack pinning `user:` writes its
+//           bind-mounted data as the user who owns it instead of root — the failure that makes decks
+//           un-editable without sudo. They are plain numeric strings, as compose's `user:` wants.
+test('composeEnvFor reports the running account for a stack that pins user:', () => {
+  const env = composeEnvFor({}, 18000, {})
+  expect(env.VOLTAGE_UID).toBe(String(process.getuid()))
+  expect(env.VOLTAGE_GID).toBe(String(process.getgid()))
+})
+
+// Setup:    The curated stacks shipped with the plugin.
+// Action:   Look up the trivialSlides entry.
+// Expected: It is offered with its own label/icon and routes to the backend's container port 5000 —
+//           the contract resolveLaunch relies on to find the published host port and probe readiness.
+test('stacks() offers the trivialSlides stack routed at its backend port', () => {
+  const entry = stacks().find(s => s.id === 'trivialslides')
+  expect(entry).toBeTruthy()
+  expect(entry.label).toBe('trivialSlides')
+  const meta = JSON.parse(fs.readFileSync(path.join(STACKS_DIR, 'trivialslides', 'stack.json'), 'utf8'))
+  expect(meta.service).toBe('trivialslides')
+  expect(meta.containerPort).toBe(5000)
+  expect(meta.createDirs).toContain('${VOLTAGE_DATA_DIR}')
+})
+
+// Setup:    The trivialSlides compose file, which builds from a checkout whose location only the app
+//           config knows.
+// Action:   Read it.
+// Expected: No fixed container_name — that name is unique host-wide across every compose project, so
+//           it would collide with the same stack started by hand from the repo. And the source path
+//           is a required variable with a message, so a missing one fails at `up` with something the
+//           log can be read for, rather than building whatever ./backend happens to resolve to.
+test('the trivialSlides compose file stays per-project and demands its source path', () => {
+  const yaml = fs.readFileSync(path.join(STACKS_DIR, 'trivialslides', 'compose.yaml'), 'utf8')
+  expect(yaml).not.toMatch(/^\s*container_name:/m)
+  expect(yaml).toContain('${TRIVIALSLIDES_SRC:?')
+  expect(yaml).toContain('${VOLTAGE_UID:-1000}:${VOLTAGE_GID:-1000}')
+})
+
+// Setup:    The trivialSlides image runs `node app.js` directly, and the backend installs no signal
+//           handler of its own.
+// Action:   Read the compose file.
+// Expected: An init process is requested. A process with PID 1 only receives signals it has an
+//           explicit handler for, so without this the SIGTERM from `compose down` is ignored and
+//           docker waits out its whole grace period before SIGKILL — measured 10.7s versus 0.7s,
+//           paid on every single app close, because teardown runs synchronously at exit.
+test('the trivialSlides stack runs an init so the container stops on SIGTERM', () => {
+  const yaml = fs.readFileSync(path.join(STACKS_DIR, 'trivialslides', 'compose.yaml'), 'utf8')
+  expect(yaml).toMatch(/^\s*init:\s*true\s*$/m)
+})
+
+// ── Teardown must never block the main thread ────────────────────────────────────────────────────
+const { composeDownDetached, sweepStaleTmpFiles } = require('../webapps/plugins/docker-integration/container.js')
+
+// Setup:    A throwaway compose project that was never started (down on it is a no-op).
+// Action:   Tear it down from the window-close path and time how long the CALL takes.
+// Expected: It returns immediately. This runs on Electron's main thread when the last window closes,
+//           so the duration of `compose down` must not be waited for: the synchronous version froze
+//           the app for the full stop grace period AFTER its window had gone, and the desktop then
+//           offered to kill it. The docker work itself continues in a detached child.
+test('composeDownDetached returns at once instead of blocking the quit', () => {
+  const t = Date.now()
+  composeDownDetached({ content: 'services: {}\n' }, 'voltage-test-detached-noop', {})
+  expect(Date.now() - t).toBeLessThan(500)
+})
+
+// Setup:    A compose temp file (the v1 delivery shape) with a fresh mtime and one backdated past
+//           the sweep age.
+// Action:   Sweep.
+// Expected: Only the old one goes. A detached teardown is still reading its own file when it exits,
+//           so it cannot clean up after itself — the next launch does, and must not take a file that
+//           a compose call currently in flight still needs.
+test('sweepStaleTmpFiles removes only the files no compose call can still need', () => {
+  const fresh = path.join(os.tmpdir(), `voltage-compose-${process.pid}-fresh.yaml`)
+  const old   = path.join(os.tmpdir(), `voltage-compose-${process.pid}-old.yaml`)
+  const other = path.join(os.tmpdir(), `voltage-keepme-${process.pid}.yaml`)
+  for (const f of [fresh, old, other]) fs.writeFileSync(f, 'services: {}\n')
+  const longAgo = Date.now() - 7_200_000
+  fs.utimesSync(old, longAgo / 1000, longAgo / 1000)
+  fs.utimesSync(other, longAgo / 1000, longAgo / 1000)
+
+  sweepStaleTmpFiles()
+
+  expect(fs.existsSync(fresh)).toBe(true)
+  expect(fs.existsSync(old)).toBe(false)
+  expect(fs.existsSync(other)).toBe(true)   // not ours, never touched
+  for (const f of [fresh, other]) fs.rmSync(f, { force: true })
+})

@@ -1,0 +1,65 @@
+# Curated trivialSlides stack for the Voltage docker-integration plugin.
+#
+# trivialSlides has no published image — it is built from its own repository, which lives wherever
+# the user checked it out. That path therefore cannot be baked in here: TRIVIALSLIDES_SRC carries it
+# and is set per app in the Manager (the plugin seeds the key on save, see stack.json "env").
+#
+# `image:` alongside `build:` is deliberate: compose builds the context and TAGS the result, so the
+# first launch builds (the in-window "starting…" page covers the minutes that takes) and every later
+# launch reuses the tag instead of rebuilding. Rebuild explicitly after changing the source:
+#   docker compose -p voltage-<profile> build
+#
+# NOTE there is deliberately no `container_name:`. The upstream compose file pins one so `docker ps`
+# and a reverse proxy address the same container — but a fixed name is unique HOST-WIDE, across every
+# compose project, so it would collide with the very same stack started by hand from the repo, and
+# between two Voltage apps built from this stack. Left unset, compose derives the name from the
+# per-app project (voltage-<profile>), which is unique by construction.
+services:
+  trivialslides:
+    image: voltage/trivialslides:local
+    build: ${TRIVIALSLIDES_SRC:?set TRIVIALSLIDES_SRC in the app config - absolute path to the trivialSlides checkout}/backend
+    restart: unless-stopped
+    # tini as PID 1. The image runs `node app.js` directly, and the backend installs no signal
+    # handler — a process with PID 1 only RECEIVES a signal it has an explicit handler for, so the
+    # SIGTERM from `compose down` was ignored and docker waited out its full 10s grace period before
+    # resorting to SIGKILL. Every app window close paid that. tini takes PID 1 and forwards the
+    # signal to node, which is then an ordinary process whose default disposition is to exit:
+    # measured 10.7s → 0.6s. Fixing it here rather than upstream keeps it true for whatever
+    # trivialSlides revision the user has checked out.
+    init: true
+    # The account the container writes as. VOLTAGE_UID/GID come from the AppImage — the process that
+    # actually runs as the owner of these files — so the decks stay editable and backup-able without
+    # sudo. The 1000 fallback only applies if the plugin could not report them (non-Linux).
+    user: "${VOLTAGE_UID:-1000}:${VOLTAGE_GID:-1000}"
+    environment:
+      - NODE_ENV=production
+      # No reverse proxy in front of a Voltage window: the app owns the whole origin, so it sits at
+      # the root and needs no public name (PUBLIC_URL only feeds link-preview cards, which are
+      # meaningless for a container reachable on localhost only).
+      - BASE_PATH=
+      - PUBLIC_URL=
+      # The pinned account has no passwd entry in the image, so its home would be unwritable —
+      # Chromium needs a writable one for the PDF export.
+      - HOME=/tmp
+      # Fixed path INSIDE the container; what the host side is lives in the volume below.
+      - DECKS_DIR=/data/decks
+      # Deck-from-a-prompt. Absent rather than disabled when unset (no key, no route, no button), so
+      # leaving these empty is a valid configuration — see the trivialSlides readme for the dialects.
+      - AI_API=${AI_API:-}
+      # AI_KEY only: the backend reads ANTHROPIC_API_KEY as an alternative for a machine that already
+      # exports it, but here the app config is the single source of every variable — there is no host
+      # environment to inherit from, so a second spelling would only be a second place to look.
+      - AI_KEY=${AI_KEY:-}
+      - AI_URL=${AI_URL:-}
+      - AI_MODEL=${AI_MODEL:-}
+      - AI_ROUNDS=${AI_ROUNDS:-}
+      - AI_PER_HOUR=${AI_PER_HOUR:-}
+    volumes:
+      # The decks: one folder per deck with deck.md plus its assets. A host path, not a named volume,
+      # because the whole point is that they stay readable, editable and backup-able outside the app.
+      # VOLTAGE_DATA_DIR is the plugin's own seam for exactly this (config "dataDir"); stack.json
+      # lists it under createDirs so it exists before docker can create it as root.
+      - ${VOLTAGE_DATA_DIR:?set dataDir in the app config - absolute host path for the decks}:/data/decks
+    # Bound to loopback: this container exists for one desktop app on this machine.
+    ports:
+      - "127.0.0.1:${VOLTAGE_PORT:-5002}:5000"

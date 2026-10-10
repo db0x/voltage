@@ -226,7 +226,37 @@ function composeEnvFor(config, port, meta = {}) {
     }
   }
   env.VOLTAGE_PORT = String(port)
+  // The account the container should run as. A stack that bind-mounts a host directory and does NOT
+  // pin a user writes into it as root, and the bind hands that straight through: the files then
+  // belong to root and cannot be edited or backed up without sudo. The AppImage runs as the very
+  // user whose files these are, so it is the one place that knows the right numbers — a stack's own
+  // `${APP_UID:-1000}` style default is only ever a guess. Linux-only API, hence the guard.
+  if (typeof process.getuid === 'function') env.VOLTAGE_UID = String(process.getuid())
+  if (typeof process.getgid === 'function') env.VOLTAGE_GID = String(process.getgid())
   return env
+}
+
+// Pre-create a stack's bind-mount sources on the HOST. Docker creates a missing bind source itself —
+// as root — which is precisely what makes a pinned-user container unable to write its own data
+// directory. `createDirs` entries are either relative (resolved against a rich stack's materialized
+// dir, done in materializeStack) or absolute once ${VARS} are expanded from the compose environment,
+// which is the shape a stack uses for a real host path like the app's data directory. Only the
+// absolute ones are handled here, so the two cases never fight over the same entry.
+// Best-effort: a directory we cannot create is left to docker, and the stack fails loudly at up.
+function ensureHostDirs(meta = {}, env = {}) {
+  for (const entry of meta.createDirs || []) {
+    let unresolved = false
+    const resolved = String(entry).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, k) => {
+      if (env[k] === undefined || env[k] === '') { unresolved = true; return '' }
+      return env[k]
+    })
+    // An unset variable would collapse "${MISSING}/decks" to "/decks" — an absolute path at the
+    // filesystem ROOT, which we would then dutifully create. Skip the entry instead; compose's own
+    // ${VAR:?message} on the matching volume is what reports the missing value, in one place.
+    if (unresolved || !path.isAbsolute(resolved)) continue
+    try { fs.mkdirSync(resolved, { recursive: true }) }
+    catch (err) { log(`could not pre-create ${resolved}:`, err.message) }
+  }
 }
 
 // Extra readiness gates a stack declares (stack.json "waitFor"): services the entry page depends on
@@ -285,6 +315,9 @@ async function resolveLaunch(pkg, api = {}) {
   const stack = resolveStack(config)
   if (!stack) { log('no stack configured → online fallback'); return null }
 
+  // A detached teardown cannot remove its own v1 temp file; clear out old ones while we are here.
+  container.sweepStaleTmpFiles()
+
   const project = `voltage-${pkg.profile}`
   const { service, containerPort, healthPath = '/', portRange } = stack.meta
   const range = portRange || container.DEFAULT_PORT_RANGE
@@ -314,6 +347,9 @@ async function resolveLaunch(pkg, api = {}) {
   let port = fixed ?? await container.findFreePort(range)
   if (!port) { log('no free port in range', range); return null }
   env.VOLTAGE_PORT = String(port)
+
+  // Bind-mount sources must exist BEFORE up, or docker creates them root-owned (see ensureHostDirs).
+  ensureHostDirs(stack.meta, env)
 
   try {
     log('compose up on port', port, '…')
@@ -357,14 +393,17 @@ async function resolveLaunch(pkg, api = {}) {
 }
 
 // Runs after the window exists (window.js loadPlugins). Refcounts windows and, when the last one
-// closes, tears the container down — but only if this process started it (session set). down runs
-// synchronously so it completes before the process exits on quit.
+// closes, tears the container down — but only if this process started it (session set).
+//
+// The teardown is DETACHED, not synchronous: `compose down` takes seconds, and blocking Electron's
+// main thread for them is what made the desktop offer to kill the app after its window had already
+// gone. A detached child survives this process exiting, so the work still completes.
 function attachPlugin(win, api) {
   windowCount++
   win.on('closed', () => {
     windowCount--
     if (windowCount <= 0 && session) {
-      container.composeDownSync(session.spec, session.project, session.env)
+      container.composeDownDetached(session.spec, session.project, session.env)
       session = null
     }
   })
@@ -376,6 +415,7 @@ function attachPlugin(win, api) {
 // container), so the Manager locks the URL field while it's selected. composeEnvFor/urlSuffixFrom/
 // resolvePathOverride/routeSuffixFor/materializeStack are exported for the unit tests.
 module.exports = {
+  ensureHostDirs,
   attachPlugin, resolveLaunch, launchInfo, available, stacks,
   materializeStack, composeEnvFor, urlSuffixFrom, resolvePathOverride, routeSuffixFor,
   completeConfig, waitForTargets,

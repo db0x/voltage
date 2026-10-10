@@ -45,7 +45,7 @@ A stack is a directory shipping `compose.yaml` **or** `compose.yml` plus a `stac
     "portRange": [18000, 18099],               // optional host-port search range (this is the default)
     "env": { "SOME_VAR": "default" },          // env defaults, seeded into the app config on save
     "secrets": ["JWT_SECRET"],                 // secret names, generated (64-hex) into the config on save
-    "createDirs": ["documents"],               // bind-mount sources to pre-create (else docker makes them root-owned)
+    "createDirs": ["documents", "${VOLTAGE_DATA_DIR}"],  // bind-mount sources to pre-create (see below)
     "waitFor": [                               // extra readiness gates beyond the routed service
         { "portEnv": "DS_PORT", "path": "/healthcheck", "timeoutMs": 90000 }
     ],
@@ -54,10 +54,49 @@ A stack is a directory shipping `compose.yaml` **or** `compose.yml` plus a `stac
 }
 ```
 
+**`createDirs`** names the bind-mount sources that must exist *before* `up`: docker creates a missing
+bind source itself, as root, which is exactly what leaves a pinned-user container unable to write its
+own data directory. An entry is either **relative** — resolved against a rich stack's materialized
+directory, created during materialization — or **absolute** once its `${VARS}` are expanded from the
+compose environment, which is the shape for a real host path such as `${VOLTAGE_DATA_DIR}`. Absolute
+entries are created on every launch, for every stack shape (not just rich ones). Best-effort: a path
+that cannot be created is left to docker, which then fails loudly at `up`.
+
 The compose file parameterizes everything host-specific with `${VARS}`; voltage always provides
 `VOLTAGE_PORT` (the auto-assigned host port — give it a default like `${VOLTAGE_PORT:-8080}` so the
 file also works standalone). A stack is **"rich"** when it ships more than compose + stack.json
 (build contexts, config templates, …) — see *Materialization* below.
+
+### Shipped stacks
+
+| id | what it routes to | notes |
+|---|---|---|
+| `drawio` | `jgraph/drawio` | single stateless container, nothing to configure |
+| `trivialslides` | the trivialSlides deck editor | **builds from source** — see below |
+
+**`trivialslides`** has no published image: it is built from its own repository, wherever that is
+checked out. Two per-app values are therefore required and the compose file demands both with
+`${VAR:?message}`, so a missing one fails at `up` with a line worth reading rather than something
+obscure:
+
+```jsonc
+"plugins/docker-integration/docker-integration.js": {
+    "stack": "trivialslides",
+    "dataDir": "/home/you/Documents/slides",          // host folder the decks live in (bind-mounted)
+    "env": {
+        "TRIVIALSLIDES_SRC": "/home/you/trivialSlides" // the checkout; its ./backend is the build context
+    }
+}
+```
+
+The compose file carries `image:` *alongside* `build:`, so compose tags what it builds: the first
+launch builds (minutes, covered by the in-window "starting…" page) and every later launch reuses the
+tag. After changing the source, rebuild explicitly with
+`docker compose -p voltage-<profile> build`. Set `AI_API`/`AI_KEY`/`AI_MODEL` in `env` to enable the
+deck-from-a-prompt feature; left empty the feature is simply absent.
+
+Unlike the upstream compose file this stack sets **no `container_name`** — see the note on concurrent
+instances above; here it also matters because the same stack may be running from the repo by hand.
 
 ## Per-app config (`pluginConfig`)
 
@@ -83,7 +122,12 @@ seeds the stack's `env` defaults for unset keys and generates every declared-but
 persisted secrets don't leak into the repo — but they **are baked into the AppImage's package.json**,
 so don't hand such an AppImage around.
 
-Env precedence at launch: stack `env` defaults < config `env` < `VOLTAGE_PORT` (always voltage-owned).
+Env precedence at launch: stack `env` defaults < config `env` < `VOLTAGE_PORT`, `VOLTAGE_UID`,
+`VOLTAGE_GID` (always voltage-owned). The latter two are the running account's numeric ids: a stack
+that bind-mounts a host directory should pin `user: "${VOLTAGE_UID:-1000}:${VOLTAGE_GID:-1000}"`,
+otherwise the container writes as root and the bind hands that straight through — the data then
+belongs to root and cannot be edited or backed up without sudo. The AppImage runs as the very user
+who owns those files, so it is the one place that knows the right numbers.
 A declared secret still missing at launch (config never saved through the Manager) gets an
 *ephemeral* value plus a log nudge — better than silently signing with an empty string.
 
@@ -111,7 +155,23 @@ A declared secret still missing at launch (config never saved through the Manage
    sub-path); the `pkg.url` fallback is for apps whose entry page is inherently per-launch
    (e.g. a file association opening a specific document) — the two never apply together.
 6. **Teardown:** window refcount; when the last window closes *and* this process started the stack,
-   `compose down` runs synchronously (async would be killed by process exit). Errors never block quit.
+   `compose down` is started **detached** (own process group, `unref`'d) so it outlives the quitting
+   app instead of being killed with it. It used to run *synchronously* for that same reason, but that
+   blocks Electron's main thread for however long docker takes — with the window already gone, the
+   desktop then offers to kill the unresponsive app. The cost of detaching is ordering: relaunching
+   inside the teardown window can briefly find the old container still going away. Errors never block
+   quit. A compose **v1** temp file cannot be deleted by the detached child that is still reading it;
+   stale ones are swept at the next launch.
+
+**Slow teardown is almost always a missing init.** `compose down` runs when the last window closes,
+and a container whose PID 1 ignores SIGTERM makes docker wait out its full grace period (10s by
+default) before SIGKILL — on every app close. A process with PID 1 only *receives* signals it has an
+explicit handler for, which an image doing `CMD ["node", "app.js"]` (or any other plain interpreter
+entrypoint) does not have. Setting `init: true` on the service puts tini at PID 1 to forward the
+signal; the app is then an ordinary process whose default disposition is to exit. For the
+trivialSlides stack this took teardown from 10.7s to 0.7s. Images that already handle signals (a
+servlet container, an entrypoint using `exec`) need nothing. Teardown is detached (see step 6), so a
+slow one no longer freezes the app — but it still delays a relaunch, and `init: true` costs nothing.
 
 **Running several apps built from the same stack template at once** (e.g. one app per game, sharing
 one container image) needs each to actually get its own container — the compose file must NOT set a

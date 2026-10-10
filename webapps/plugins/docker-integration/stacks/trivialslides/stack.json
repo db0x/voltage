@@ -1,0 +1,17 @@
+{
+    "label": "trivialSlides",
+    "icon": "assets/webapps/trivialSlides.svg",
+    "service": "trivialslides",
+    "containerPort": 5000,
+    "healthPath": "/",
+    "env": {
+        "TRIVIALSLIDES_SRC": "",
+        "AI_API": "",
+        "AI_KEY": "",
+        "AI_URL": "",
+        "AI_MODEL": "",
+        "AI_ROUNDS": "",
+        "AI_PER_HOUR": ""
+    },
+    "createDirs": ["${VOLTAGE_DATA_DIR}"]
+}
