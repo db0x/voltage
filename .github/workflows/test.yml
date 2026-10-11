@@ -50,10 +50,13 @@ jobs:
           echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> $GITHUB_ENV
 
       # The Manager-UI suite. Runs serially (workers: 1 — the fixtures share on-disk config/state),
-      # so it cannot be sped up by parallelism without isolating per-test state. ~4 min today; the
-      # budget keeps headroom so normal runner variance doesn't trip a false timeout.
+      # so it cannot be sped up by parallelism without isolating per-test state. That makes its
+      # runtime grow roughly linearly with the test count: ~4 min at 300-odd tests, ~8 min at 412 on
+      # a developer machine — and a CI runner is slower still. The budget matches the AppImage job's
+      # rather than tracking that number, so adding tests does not quietly walk into a false timeout
+      # again; if a run ever really needs 20 minutes, the suite needs splitting, not more budget.
       - name: Run UI tests
-        timeout-minutes: 8
+        timeout-minutes: 20
         run: npm test
 
       # The heavy integration test: builds a real AppImage (downloads the Electron dist on a cold

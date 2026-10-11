@@ -288,13 +288,24 @@ test('ensureHostDirs creates only the resolved absolute bind sources', () => {
   fs.rmSync(base, { recursive: true, force: true })
 })
 
-// Setup:    A stack declaring no createDirs at all, and one pointing at a path that cannot be created.
+// Setup:    A stack declaring no createDirs at all, and one whose path cannot be created because a
+//           regular FILE sits where a parent directory would have to be (→ ENOTDIR).
 // Action:   Prepare host directories.
 // Expected: Neither throws — pre-creation is best-effort, and a failure must fall through to docker
 //           (which then fails loudly at `up`) rather than abort the launch before it starts.
+//
+// The uncreatable path is deliberately this one and not something under /proc: node's
+// mkdirSync(..., { recursive: true }) does not fail there, it BLOCKS FOREVER — and because it is
+// synchronous, not even Playwright's per-test timeout can interrupt it. That is what hung CI.
 test('ensureHostDirs is silent for nothing to do and for an uncreatable path', () => {
-  expect(() => ensureHostDirs({}, {})).not.toThrow()
-  expect(() => ensureHostDirs({ createDirs: ['/proc/voltage-cannot-exist'] }, {})).not.toThrow()
+  const blocker = path.join(os.tmpdir(), `voltage-notadir-${process.pid}`)
+  fs.writeFileSync(blocker, 'x')
+  try {
+    expect(() => ensureHostDirs({}, {})).not.toThrow()
+    expect(() => ensureHostDirs({ createDirs: [path.join(blocker, 'sub')] }, {})).not.toThrow()
+  } finally {
+    fs.rmSync(blocker, { force: true })
+  }
 })
 
 // Setup:    The compose environment built for any stack.
