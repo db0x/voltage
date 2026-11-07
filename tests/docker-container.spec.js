@@ -440,3 +440,50 @@ test('buildFingerprint changes when the app has been rebuilt', () => {
     fs.rmSync(artifact, { force: true })
   }
 })
+
+// ── The PDFold stack ─────────────────────────────────────────────────────────────────────────────
+
+// Setup:    The curated stacks shipped with the plugin.
+// Action:   Look up the PDFold entry.
+// Expected: Offered with its own label/icon and routed at the server's container port 3000 — the
+//           contract resolveLaunch relies on to find the published host port and probe readiness.
+test('stacks() offers the PDFold stack routed at its server port', () => {
+  const entry = stacks().find(s => s.id === 'pdfold')
+  expect(entry).toBeTruthy()
+  expect(entry.label).toBe('PDFold')
+  const meta = JSON.parse(fs.readFileSync(path.join(STACKS_DIR, 'pdfold', 'stack.json'), 'utf8'))
+  expect(meta.service).toBe('pdfold')
+  expect(meta.containerPort).toBe(3000)
+})
+
+// Setup:    The PDFold compose file. Upstream publishes a hard-wired host port 3000 and the image
+//           runs `node server.js` with no signal handler of its own.
+// Action:   Read it.
+// Expected: The host port comes from VOLTAGE_PORT, not a fixed 3000 — a hard-wired port collides
+//           with whatever else uses 3000 and with a second Voltage app. An init process is
+//           requested, or `compose down` waits out its full grace period on every app close. And
+//           the checkout path is a required variable with a message, so a missing one fails at `up`
+//           with something the log can be read for instead of building the wrong directory.
+test('the PDFold compose file takes its port from voltage and stops on SIGTERM', () => {
+  const yaml = fs.readFileSync(path.join(STACKS_DIR, 'pdfold', 'compose.yaml'), 'utf8')
+  expect(yaml).toContain('${VOLTAGE_PORT:-3000}:3000')
+  expect(yaml).not.toMatch(/^\s*-\s*"?3000:3000/m)
+  expect(yaml).toMatch(/^\s*init:\s*true\s*$/m)
+  expect(yaml).toContain('${PDFOLD_SRC:?')
+})
+
+// Setup:    PDFold keeps uploads in the container's tmpfs under a TTL — scratch data, nothing of
+//           the user's.
+// Action:   Read the compose file and the stack metadata.
+// Expected: The tmpfs is kept and no host directory is bound. That absence is the reason this stack
+//           needs neither createDirs nor a pinned user: both exist only to stop docker creating a
+//           bind source as root, and there is no bind source here.
+test('the PDFold stack binds no host directory, so it needs no uid pinning', () => {
+  const yaml = fs.readFileSync(path.join(STACKS_DIR, 'pdfold', 'compose.yaml'), 'utf8')
+  const meta = JSON.parse(fs.readFileSync(path.join(STACKS_DIR, 'pdfold', 'stack.json'), 'utf8'))
+  expect(yaml).toMatch(/^\s*tmpfs:\s*$/m)
+  expect(yaml).not.toMatch(/^\s*volumes:\s*$/m)
+  // The directive, not the word: the file's own comment explains why no account is pinned here.
+  expect(yaml).not.toMatch(/^\s*user:/m)
+  expect(meta.createDirs).toBeUndefined()
+})

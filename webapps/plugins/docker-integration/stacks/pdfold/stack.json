@@ -1,0 +1,12 @@
+{
+    "label": "PDFold",
+    "icon": "assets/webapps/pdf.svg",
+    "service": "pdfold",
+    "containerPort": 3000,
+    "healthPath": "/",
+    "env": {
+        "PDFOLD_SRC": "",
+        "MAX_MB": "",
+        "TTL_MIN": ""
+    }
+}

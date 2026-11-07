@@ -1,0 +1,44 @@
+# Curated PDFold stack for the Voltage docker-integration plugin.
+#
+# PDFold (a qpdf web UI: drop PDFs in, drag them into order, download the merged file) has no
+# published image — it is built from its own repository, wherever that is checked out. That path
+# cannot be baked in here, so PDFOLD_SRC carries it and is set per app in the Manager (the plugin
+# seeds the key on save, see stack.json "env").
+#
+# `image:` alongside `build:` makes compose TAG what it builds, so the first launch builds (the
+# in-window "starting…" page covers it) and later ones reuse the tag. The plugin adds --build
+# --force-recreate by itself once the app has been rebuilt, so new code does land.
+#
+# Differences from the upstream compose.yaml, each for a reason:
+#   - no fixed host port. The plugin owns port assignment (VOLTAGE_PORT); upstream's hard-wired
+#     3000 would collide with whatever else is on 3000 and with a second Voltage app.
+#   - bound to loopback: this container exists for one desktop app on this machine.
+#   - init: true, see below.
+# Kept from upstream: the tmpfs. Uploads are scratch data with a TTL, so there is deliberately no
+# bind mount and nothing of the user's to own — which is also why this stack needs neither
+# VOLTAGE_UID/GID nor createDirs (the image already runs as its own `node` user).
+services:
+  pdfold:
+    image: voltage/pdfold:local
+    build: ${PDFOLD_SRC:?set PDFOLD_SRC in the app config - absolute path to the PDFold checkout}
+    restart: unless-stopped
+    # tini as PID 1. The image runs `node server.js`, and the server installs no signal handler — a
+    # process with PID 1 only RECEIVES a signal it has a handler for, so the SIGTERM from
+    # `compose down` would be ignored and docker would wait out its full 10s grace period before
+    # SIGKILL, on every app close.
+    init: true
+    environment:
+      - NODE_ENV=production
+      # Must match the port compose publishes below; the server reads it (server.js PORT).
+      - PORT=3000
+      # Scratch space for uploads. Inside the container on purpose: it is the tmpfs, so nothing
+      # outlives the container and no host directory is touched.
+      - DATA_DIR=/tmp/pdfold
+      # Upload size cap and how long an upload survives. Empty keeps the server's own defaults
+      # (200 MB / 60 min) rather than forcing a number this stack has no business choosing.
+      - MAX_MB=${MAX_MB:-}
+      - TTL_MIN=${TTL_MIN:-}
+    tmpfs:
+      - /tmp
+    ports:
+      - "127.0.0.1:${VOLTAGE_PORT:-3000}:3000"

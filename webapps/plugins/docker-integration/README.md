@@ -73,6 +73,7 @@ file also works standalone). A stack is **"rich"** when it ships more than compo
 |---|---|---|
 | `drawio` | `jgraph/drawio` | single stateless container, nothing to configure |
 | `trivialslides` | the trivialSlides deck editor | **builds from source** — see below |
+| `pdfold` | PDFold, a qpdf web UI for merging PDFs | **builds from source** — see below |
 
 **`trivialslides`** has no published image: it is built from its own repository, wherever that is
 checked out. Two per-app values are therefore required and the compose file demands both with
@@ -94,6 +95,23 @@ launch builds (minutes, covered by the in-window "starting…" page) and every l
 tag. After changing the source, rebuild explicitly with
 `docker compose -p voltage-<profile> build`. Set `AI_API`/`AI_KEY`/`AI_MODEL` in `env` to enable the
 deck-from-a-prompt feature; left empty the feature is simply absent.
+
+**`pdfold`** is the same shape — no published image, so `PDFOLD_SRC` points at the checkout whose
+root is the build context:
+
+```jsonc
+"plugins/docker-integration/docker-integration.js": {
+    "stack": "pdfold",
+    "port": 18200,                                        // fixed: the page keeps its theme per origin
+    "env": { "PDFOLD_SRC": "/home/you/Entwicklung/PDFold" }
+}
+```
+
+It needs no `dataDir`: uploads are scratch data with a TTL and live in the container's tmpfs, so
+nothing of the user's is bind-mounted — which is also why this one needs neither `VOLTAGE_UID/GID`
+nor `createDirs`. `MAX_MB` and `TTL_MIN` may be set in `env`; left empty the server keeps its own
+defaults. The upstream compose publishes a hard-wired port 3000, which the stack drops in favour of
+the plugin's `VOLTAGE_PORT`.
 
 Unlike the upstream compose file this stack sets **no `container_name`** — see the note on concurrent
 instances above; here it also matters because the same stack may be running from the repo by hand.
