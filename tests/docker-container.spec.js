@@ -338,12 +338,13 @@ test('stacks() offers the trivialSlides stack routed at its backend port', () =>
 // Action:   Read it.
 // Expected: No fixed container_name — that name is unique host-wide across every compose project, so
 //           it would collide with the same stack started by hand from the repo. And the source path
-//           is a required variable with a message, so a missing one fails at `up` with something the
-//           log can be read for, rather than building whatever ./backend happens to resolve to.
+//           comes from the plugin as a required variable with a message, so a stack whose checkout
+//           could not be produced fails at `up` with something the log can be read for, rather than
+//           building whatever ./backend happens to resolve to.
 test('the trivialSlides compose file stays per-project and demands its source path', () => {
   const yaml = fs.readFileSync(path.join(STACKS_DIR, 'trivialslides', 'compose.yaml'), 'utf8')
   expect(yaml).not.toMatch(/^\s*container_name:/m)
-  expect(yaml).toContain('${TRIVIALSLIDES_SRC:?')
+  expect(yaml).toContain('${VOLTAGE_SOURCE_DIR:?')
   expect(yaml).toContain('${VOLTAGE_UID:-1000}:${VOLTAGE_GID:-1000}')
 })
 
@@ -462,14 +463,14 @@ test('stacks() offers the PDFold stack routed at its server port', () => {
 // Expected: The host port comes from VOLTAGE_PORT, not a fixed 3000 — a hard-wired port collides
 //           with whatever else uses 3000 and with a second Voltage app. An init process is
 //           requested, or `compose down` waits out its full grace period on every app close. And
-//           the checkout path is a required variable with a message, so a missing one fails at `up`
-//           with something the log can be read for instead of building the wrong directory.
+//           the build context is a required variable with a message, so a stack whose checkout could
+//           not be produced fails at `up` readably instead of building the wrong directory.
 test('the PDFold compose file takes its port from voltage and stops on SIGTERM', () => {
   const yaml = fs.readFileSync(path.join(STACKS_DIR, 'pdfold', 'compose.yaml'), 'utf8')
   expect(yaml).toContain('${VOLTAGE_PORT:-3000}:3000')
   expect(yaml).not.toMatch(/^\s*-\s*"?3000:3000/m)
   expect(yaml).toMatch(/^\s*init:\s*true\s*$/m)
-  expect(yaml).toContain('${PDFOLD_SRC:?')
+  expect(yaml).toContain('${VOLTAGE_SOURCE_DIR:?')
 })
 
 // Setup:    PDFold keeps uploads in the container's tmpfs under a TTL — scratch data, nothing of
@@ -486,4 +487,66 @@ test('the PDFold stack binds no host directory, so it needs no uid pinning', () 
   // The directive, not the word: the file's own comment explains why no account is pinned here.
   expect(yaml).not.toMatch(/^\s*user:/m)
   expect(meta.createDirs).toBeUndefined()
+})
+
+// ── Stacks that build from a repository ──────────────────────────────────────────────────────────
+const { resolveSourceDir, stackSourceDir } = require('../webapps/plugins/docker-integration/docker-integration.js')
+
+// Setup:    A stack naming a repository, and an app config pointing at a local working copy.
+// Action:   Resolve the build context, asking for an update.
+// Expected: The local copy wins and is returned untouched — no clone, no fetch, and above all no
+//           `reset --hard`: that directory is the user's, and discarding their uncommitted work
+//           would be an unforgivable price for a convenience feature.
+test('resolveSourceDir: a configured local checkout wins and git stays away from it', async () => {
+  const local = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-src-'))
+  const stack = { meta: { source: { repo: 'https://example.invalid/nope.git' } } }
+  expect(await resolveSourceDir(stack, 'whatever', { sourceDir: local }, true)).toBe(local)
+  expect(fs.existsSync(path.join(local, '.git'))).toBe(false)
+  fs.rmSync(local, { recursive: true, force: true })
+})
+
+// Setup:    A stack whose build context sits in a subdirectory of the repository (trivialSlides'
+//           backend/), with a local checkout configured.
+// Action:   Resolve the build context.
+// Expected: The subdirectory is appended. The compose file then only ever sees one variable and
+//           needs to know nothing about the project's layout — and the local override behaves
+//           exactly like the cloned checkout.
+test('resolveSourceDir: source.dir names the build context inside the checkout', async () => {
+  const local = fs.mkdtempSync(path.join(os.tmpdir(), 'voltage-src-'))
+  const stack = { meta: { source: { repo: 'https://example.invalid/nope.git', dir: 'backend' } } }
+  expect(await resolveSourceDir(stack, 'whatever', { sourceDir: local }, false))
+    .toBe(path.join(local, 'backend'))
+  fs.rmSync(local, { recursive: true, force: true })
+})
+
+// Setup:    A stack that declares no source at all (an image-only stack like draw.io).
+// Action:   Resolve the build context.
+// Expected: null — nothing is cloned and no VOLTAGE_SOURCE_DIR is set, so stacks that never build
+//           are untouched by any of this.
+test('resolveSourceDir: a stack without a source needs no build context', async () => {
+  expect(await resolveSourceDir({ meta: {} }, 'drawio', {}, true)).toBeNull()
+})
+
+// Setup:    The checkout location for a stack id.
+// Action:   Derive it.
+// Expected: An absolute path that is NOT inside the shipped stacks directory — the external docker
+//           process has to read the build context, and the stack dir lives inside app.asar where it
+//           cannot. The path carries the stack id so two stacks never share a checkout.
+test('stackSourceDir keeps the checkout where docker can read it', () => {
+  const dir = stackSourceDir('pdfold')
+  expect(path.isAbsolute(dir)).toBe(true)
+  expect(dir).toContain('pdfold')
+  expect(dir.startsWith(STACKS_DIR)).toBe(false)
+})
+
+// Setup:    Both stacks that build from source.
+// Action:   Read their metadata.
+// Expected: Each names a repository reachable over HTTPS. An ssh:// or git@ remote would need a key
+//           and could prompt in a GUI app where nobody can answer, which is exactly the failure the
+//           no-credentials rule exists to avoid.
+test('the source-building stacks name an https repository', () => {
+  for (const id of ['pdfold', 'trivialslides']) {
+    const meta = JSON.parse(fs.readFileSync(path.join(STACKS_DIR, id, 'stack.json'), 'utf8'))
+    expect(meta.source.repo).toMatch(/^https:\/\//)
+  }
 })

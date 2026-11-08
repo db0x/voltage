@@ -156,6 +156,54 @@ function stackTargetDir(id) {
     : path.join(os.homedir(), '.config', 'voltage', 'docker-stacks', id)
 }
 
+// Where a git-backed stack's checkout lives. Sibling of stackTargetDir and for the same reason:
+// the EXTERNAL docker process has to read the build context, and snap-confined docker cannot reach
+// hidden $HOME paths but can always reach its own $SNAP_USER_COMMON.
+function stackSourceDir(id) {
+  return container.dockerIsSnap()
+    ? path.join(os.homedir(), 'snap', 'docker', 'common', 'voltage-sources', id)
+    : path.join(os.homedir(), '.config', 'voltage', 'docker-sources', id)
+}
+
+// The build context for a stack that builds from source, or null when it needs none. Three cases:
+//
+//  - config.sourceDir — a checkout the USER points at. It wins outright and git never touches it:
+//    that is how you develop a project against the app that runs it.
+//  - stack.json "source.repo" — voltage keeps its own checkout. Cloned when missing; updated only
+//    when something is being rebuilt anyway (`fresh`), so an ordinary start needs no network and
+//    the tool cannot change under the user without them asking for it.
+//  - neither — the stack does not build from source.
+//
+// "source.dir" names the build context INSIDE the checkout (e.g. "backend"), so the compose file
+// only ever sees one variable and needs to know nothing about the project's layout.
+//
+// A failed update is not fatal while a checkout exists: being offline should start the app with the
+// code from last time, not refuse to start it.
+async function resolveSourceDir(stack, stackId, config, fresh) {
+  const src = stack.meta?.source
+  const withSub = (root) => (src?.dir ? path.join(root, src.dir) : root)
+  if (config.sourceDir) return withSub(path.resolve(config.sourceDir))
+  if (!src?.repo) return null
+  if (!container.gitAvailable()) { log('stack builds from a repository but git is not available'); return null }
+
+  const dir = stackSourceDir(stackId)
+  const cloned = fs.existsSync(path.join(dir, '.git'))
+  try {
+    if (!cloned) {
+      log(`cloning ${src.repo} (${src.ref || 'default branch'}) → ${dir}`)
+      fs.mkdirSync(path.dirname(dir), { recursive: true })
+      await container.gitClone(src.repo, src.ref, dir)
+    } else if (fresh) {
+      log(`updating ${dir} to ${src.ref || 'the default branch'}`)
+      await container.gitUpdate(dir, src.ref)
+    }
+  } catch (err) {
+    log('git failed:', (err.stderr || err.message || '').toString().trim())
+    if (!cloned) return null
+  }
+  return withSub(dir)
+}
+
 // Materializes a rich stack onto real disk: copies the shipped tree (overwriting, so bundled updates
 // propagate on every launch), drops stack.json (voltage metadata, not for docker), and pre-creates
 // bind-mount dirs (createDirs) so docker doesn't create them root-owned. NO .env is written — the
@@ -312,12 +360,15 @@ function routeSuffixFor(pkg, config) {
 //
 // The AppImage's own mtime is the app-build signal: every rebuild writes a new artifact. Outside an
 // AppImage (development, tests) there is none, and the compose hash alone then decides.
-function buildFingerprint(spec) {
+function buildFingerprint(spec, sourceDir = null) {
   const h = crypto.createHash('sha256')
   h.update(spec.content ?? '')
   if (spec.file) { try { h.update(fs.readFileSync(spec.file)) } catch { /* unreadable → content only */ } }
   const artifact = process.env.APPIMAGE
   if (artifact) { try { h.update(String(fs.statSync(artifact).mtimeMs)) } catch { /* not accessible */ } }
+  // The commit the build context sits on. Covers both a pull voltage did itself and one the user did
+  // by hand in their own checkout — in each case the image has to be rebuilt from the new code.
+  if (sourceDir) h.update(container.gitHead(sourceDir) ?? '')
   return h.digest('hex')
 }
 
@@ -378,12 +429,19 @@ async function resolveLaunch(pkg, api = {}) {
 
   // Has the app been rebuilt, or the stack redefined, since this container was last created? Then the
   // running one is stale by definition — neither reuse it nor let compose decide it is up to date.
-  const fingerprint = buildFingerprint(spec)
   const previous = readFingerprint()
+  // Two passes, because a git-backed stack's commit is only knowable once the checkout exists. The
+  // first decides whether to UPDATE the checkout at all (the app was rebuilt, or the stack changed);
+  // the second adds the commit that update landed on, so new code forces the image rebuild too.
+  const changedBeforeSource = previous !== null && previous !== buildFingerprint(spec)
+  const sourceDir = await resolveSourceDir(stack, config.stack, config, changedBeforeSource)
+  if (sourceDir) env.VOLTAGE_SOURCE_DIR = sourceDir
+
+  const fingerprint = buildFingerprint(spec, sourceDir)
   // No record at all means a first launch (or a profile wiped clean), not a change — rebuilding then
   // would just make every new app pay a full image build it does not need.
   const fresh = previous !== null && previous !== fingerprint
-  if (fresh) log('app build or stack changed since the last start → rebuilding the container')
+  if (fresh) log('app build, stack or source changed since the last start → rebuilding the container')
 
   // Already up (a second window, or a leftover from a previous session)? Reuse its published port and
   // do NOT mark it as ours, so we won't tear it down.
@@ -471,7 +529,7 @@ function attachPlugin(win, api) {
 // container), so the Manager locks the URL field while it's selected. composeEnvFor/urlSuffixFrom/
 // resolvePathOverride/routeSuffixFor/materializeStack are exported for the unit tests.
 module.exports = {
-  ensureHostDirs, buildFingerprint,
+  ensureHostDirs, buildFingerprint, resolveSourceDir, stackSourceDir,
   attachPlugin, resolveLaunch, launchInfo, available, stacks,
   materializeStack, composeEnvFor, urlSuffixFrom, resolvePathOverride, routeSuffixFor,
   completeConfig, waitForTargets,

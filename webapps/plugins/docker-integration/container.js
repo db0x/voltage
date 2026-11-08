@@ -148,6 +148,46 @@ async function composeUp(spec, project, env, { fresh = false } = {}) {
   await run(bin, args, { input, env, timeout: 600_000 })
 }
 
+// --- git-backed stack sources -----------------------------------------------------------------
+// A curated stack can name the REPOSITORY its build context comes from instead of a directory on
+// this machine. Without that, a stack building from source only works where the project happens to
+// be checked out — an AppImage handed to anyone else cannot start. Plain git over HTTPS, with no
+// credential handling at all: the repository has to be readable without one, which also keeps this
+// from ever prompting in a GUI-launched app where nobody would see the prompt.
+
+function gitAvailable() {
+  try { execFileSync('git', ['--version'], { stdio: 'ignore', env: withEnv() }); return true }
+  catch { return false }
+}
+
+// Clone into `dir`. `ref` (branch, tag or commit) is optional — without one the remote's own default
+// branch is taken, which is what the project itself considers current. --depth 1 because this is a
+// build context, never a working copy anyone commits from.
+async function gitClone(repo, ref, dir) {
+  const args = ['clone', '--depth', '1']
+  if (ref) args.push('--branch', ref)
+  args.push(repo, dir)
+  await run('git', args, { env: withEnv(), timeout: 600_000 })
+}
+
+// Bring an existing MANAGED checkout to the ref's current tip. `reset --hard` is defensible here and
+// only here: this directory belongs to voltage. A checkout the USER pointed at is never passed to
+// this function — throwing away someone's uncommitted work would be an unforgivable price for a
+// convenience feature.
+async function gitUpdate(dir, ref) {
+  await run('git', ['-C', dir, 'fetch', '--depth', '1', 'origin', ref || 'HEAD'],
+    { env: withEnv(), timeout: 600_000 })
+  await run('git', ['-C', dir, 'reset', '--hard', 'FETCH_HEAD'], { env: withEnv(), timeout: 60_000 })
+}
+
+// The commit currently checked out, or null. Feeds the rebuild fingerprint, so new code means a new
+// image — including after a pull the user did by hand in their own checkout.
+function gitHead(dir) {
+  try {
+    return execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: withEnv() }).trim()
+  } catch { return null }
+}
+
 // Tear the stack down (containers + network) and drop any temp compose file. Synchronous on purpose:
 // it runs from the window's 'closed' handler as the app quits, and an async call would be killed when
 // the process exits before it finishes. Best-effort — a failure here must never block shutdown.
@@ -234,4 +274,5 @@ async function waitHealthy(port, healthPath, timeoutMs = 30_000) {
 module.exports = {
   DEFAULT_PORT_RANGE, findFreePort, isPortFree, withEnv, detectCompose, dockerIsSnap,
   composeHostPort, composeUp, composeDownSync, composeDownDetached, sweepStaleTmpFiles, waitHealthy,
+  gitAvailable, gitClone, gitUpdate, gitHead,
 }

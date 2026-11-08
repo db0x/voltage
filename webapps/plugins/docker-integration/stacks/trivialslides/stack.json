@@ -4,8 +4,11 @@
     "service": "trivialslides",
     "containerPort": 5000,
     "healthPath": "/",
+    "source": {
+        "repo": "https://github.com/db0x/trivialSlides.git",
+        "dir": "backend"
+    },
     "env": {
-        "TRIVIALSLIDES_SRC": "",
         "AI_API": "",
         "AI_KEY": "",
         "AI_URL": "",
@@ -13,5 +16,7 @@
         "AI_ROUNDS": "",
         "AI_PER_HOUR": ""
     },
-    "createDirs": ["${VOLTAGE_DATA_DIR}"]
+    "createDirs": [
+        "${VOLTAGE_DATA_DIR}"
+    ]
 }

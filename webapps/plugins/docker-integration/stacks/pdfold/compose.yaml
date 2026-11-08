@@ -1,9 +1,10 @@
 # Curated PDFold stack for the Voltage docker-integration plugin.
 #
 # PDFold (a qpdf web UI: drop PDFs in, drag them into order, download the merged file) has no
-# published image — it is built from its own repository, wherever that is checked out. That path
-# cannot be baked in here, so PDFOLD_SRC carries it and is set per app in the Manager (the plugin
-# seeds the key on save, see stack.json "env").
+# published image — it is built from its own repository, which stack.json names under "source". The
+# plugin clones that repository on first launch and hands the checkout over as VOLTAGE_SOURCE_DIR,
+# so this works on a machine that never checked the project out. Point the app config's `sourceDir`
+# at a local working copy to build that instead; git then never touches it.
 #
 # `image:` alongside `build:` makes compose TAG what it builds, so the first launch builds (the
 # in-window "starting…" page covers it) and later ones reuse the tag. The plugin adds --build
@@ -20,7 +21,7 @@
 services:
   pdfold:
     image: voltage/pdfold:local
-    build: ${PDFOLD_SRC:?set PDFOLD_SRC in the app config - absolute path to the PDFold checkout}
+    build: ${VOLTAGE_SOURCE_DIR:?no build context - the plugin clones stack.json's source.repo, or set sourceDir in the app config}
     restart: unless-stopped
     # tini as PID 1. The image runs `node server.js`, and the server installs no signal handler — a
     # process with PID 1 only RECEIVES a signal it has a handler for, so the SIGTERM from

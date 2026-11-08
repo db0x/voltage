@@ -46,6 +46,11 @@ A stack is a directory shipping `compose.yaml` **or** `compose.yml` plus a `stac
     "env": { "SOME_VAR": "default" },          // env defaults, seeded into the app config on save
     "secrets": ["JWT_SECRET"],                 // secret names, generated (64-hex) into the config on save
     "createDirs": ["documents", "${VOLTAGE_DATA_DIR}"],  // bind-mount sources to pre-create (see below)
+    "source": {                                // builds from a repository instead of a local path
+        "repo": "https://github.com/you/tool.git",
+        "ref": "v1.2.0",                       // optional: branch, tag or commit (default: the remote's own)
+        "dir": "backend"                       // optional: build context inside the checkout
+    },
     "waitFor": [                               // extra readiness gates beyond the routed service
         { "portEnv": "DS_PORT", "path": "/healthcheck", "timeoutMs": 90000 }
     ],
@@ -53,6 +58,28 @@ A stack is a directory shipping `compose.yaml` **or** `compose.yml` plus a `stac
     "pathConfigurable": true                   // shows the config dialog's Path field for this stack (see below)
 }
 ```
+
+**`source`** makes a stack that builds from source portable. Without it such a stack only works
+where the project happens to be checked out already — an AppImage handed to anyone else cannot
+start. With it, the plugin keeps its own checkout (beside the materialization target, and in the
+same snap-readable place for the same reason) and passes the build context to the compose file as
+**`VOLTAGE_SOURCE_DIR`**, so the compose says `build: ${VOLTAGE_SOURCE_DIR}` and needs to know
+nothing about the project's layout.
+
+- **Cloned** on first launch, `--depth 1`, plain git over HTTPS with no credential handling — the
+  repository must be readable without one, which also stops it ever prompting in a GUI app where
+  nobody would see the prompt. Missing git is not fatal for the plugin, only for that stack: it logs
+  and falls back to the app's online url.
+- **Updated** only when something is being rebuilt anyway (the app was rebuilt, or the stack
+  changed). An ordinary start therefore needs no network, and the tool cannot change under the user
+  without them asking for it. A failed update while a checkout exists is not fatal either — being
+  offline starts the app with the code from last time rather than refusing to start it.
+- The commit goes into the rebuild fingerprint, so new code forces a new image — including after a
+  pull the user did by hand in their own checkout.
+- **`sourceDir`** in the app config overrides the whole thing with a local working copy, which is how
+  you develop a project against the app that runs it. **git never touches that directory**: a
+  `reset --hard` on someone's uncommitted work would be an unforgivable price for a convenience
+  feature.
 
 **`createDirs`** names the bind-mount sources that must exist *before* `up`: docker creates a missing
 bind source itself, as root, which is exactly what leaves a pinned-user container unable to write its
@@ -75,18 +102,18 @@ file also works standalone). A stack is **"rich"** when it ships more than compo
 | `trivialslides` | the trivialSlides deck editor | **builds from source** — see below |
 | `pdfold` | PDFold, a qpdf web UI for merging PDFs | **builds from source** — see below |
 
-**`trivialslides`** has no published image: it is built from its own repository, wherever that is
-checked out. Two per-app values are therefore required and the compose file demands both with
+**`trivialslides`** has no published image: it names its repository under `source` (build context
+`backend/`), so the plugin clones it on first launch and nothing has to be checked out beforehand.
+The one value still required per app is where the decks live, and the compose file demands it with
 `${VAR:?message}`, so a missing one fails at `up` with a line worth reading rather than something
 obscure:
 
 ```jsonc
 "plugins/docker-integration/docker-integration.js": {
     "stack": "trivialslides",
-    "dataDir": "/home/you/Documents/slides",          // host folder the decks live in (bind-mounted)
-    "env": {
-        "TRIVIALSLIDES_SRC": "/home/you/trivialSlides" // the checkout; its ./backend is the build context
-    }
+    "dataDir": "/home/you/Documents/slides",    // host folder the decks live in (bind-mounted)
+    "port": 9900,                               // fixed: the deck editor keeps settings per origin
+    "sourceDir": "/home/you/trivialSlides"      // OPTIONAL: build your own working copy instead
 }
 ```
 
@@ -96,14 +123,13 @@ tag. After changing the source, rebuild explicitly with
 `docker compose -p voltage-<profile> build`. Set `AI_API`/`AI_KEY`/`AI_MODEL` in `env` to enable the
 deck-from-a-prompt feature; left empty the feature is simply absent.
 
-**`pdfold`** is the same shape — no published image, so `PDFOLD_SRC` points at the checkout whose
-root is the build context:
+**`pdfold`** is the same shape — no published image, its repository's root is the build context:
 
 ```jsonc
 "plugins/docker-integration/docker-integration.js": {
     "stack": "pdfold",
-    "port": 18200,                                        // fixed: the page keeps its theme per origin
-    "env": { "PDFOLD_SRC": "/home/you/Entwicklung/PDFold" }
+    "port": 18200,                                   // fixed: the page keeps its theme per origin
+    "sourceDir": "/home/you/Entwicklung/PDFold"      // OPTIONAL: build your own working copy instead
 }
 ```
 
@@ -128,6 +154,7 @@ instances above; here it also matters because the same stack may be running from
     "port": 18080,                  // OPTIONAL fixed host port (default: auto — next free in range)
     "composeFile": "/path/x.yml",   // OPTIONAL power-user compose file; overrides the stack
     "dataDir": "/path/data",        // OPTIONAL, passed as VOLTAGE_DATA_DIR
+    "sourceDir": "/path/checkout",  // OPTIONAL local build context; overrides the stack's source.repo
     "path": "/play/tentacle"        // OPTIONAL fixed route (config dialog field); see below
 }
 ```

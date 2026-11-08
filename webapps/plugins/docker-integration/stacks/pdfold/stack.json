@@ -4,8 +4,10 @@
     "service": "pdfold",
     "containerPort": 3000,
     "healthPath": "/",
+    "source": {
+        "repo": "https://github.com/db0x/PDFold.git"
+    },
     "env": {
-        "PDFOLD_SRC": "",
         "MAX_MB": "",
         "TTL_MIN": ""
     }

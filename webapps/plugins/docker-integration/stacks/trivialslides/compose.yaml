@@ -1,8 +1,10 @@
 # Curated trivialSlides stack for the Voltage docker-integration plugin.
 #
-# trivialSlides has no published image — it is built from its own repository, which lives wherever
-# the user checked it out. That path therefore cannot be baked in here: TRIVIALSLIDES_SRC carries it
-# and is set per app in the Manager (the plugin seeds the key on save, see stack.json "env").
+# trivialSlides has no published image — it is built from its own repository, which stack.json names
+# under "source" (with "dir": "backend", the build context inside it). The plugin clones it on first
+# launch and hands the context over as VOLTAGE_SOURCE_DIR, so this works on a machine that never
+# checked the project out. Point the app config's `sourceDir` at a local working copy to build that
+# instead; git then never touches it.
 #
 # `image:` alongside `build:` is deliberate: compose builds the context and TAGS the result, so the
 # first launch builds (the in-window "starting…" page covers the minutes that takes) and every later
@@ -17,7 +19,7 @@
 services:
   trivialslides:
     image: voltage/trivialslides:local
-    build: ${TRIVIALSLIDES_SRC:?set TRIVIALSLIDES_SRC in the app config - absolute path to the trivialSlides checkout}/backend
+    build: ${VOLTAGE_SOURCE_DIR:?no build context - the plugin clones stack.json's source.repo, or set sourceDir in the app config}
     restart: unless-stopped
     # tini as PID 1. The image runs `node app.js` directly, and the backend installs no signal
     # handler — a process with PID 1 only RECEIVES a signal it has an explicit handler for, so the
