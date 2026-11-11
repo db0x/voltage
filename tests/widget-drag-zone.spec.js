@@ -190,3 +190,20 @@ test('dragZone preload is an absolute path to an existing file', () => {
   expect(path.basename(preload)).toBe('drag-zone-preload.js')
   expect(fs.existsSync(preload)).toBe(true)
 })
+
+// Setup:    The overlay markup, whose body is one big -webkit-app-region: drag surface so the bar
+//           can move the frameless window.
+// Action:   Inspect how that region and the control's hit-testing are gated on the shown state.
+// Expected: Both are switched OFF while hidden. A drag region is computed from the PAGE's layout and
+//           handed to the window manager, which takes it out of the renderer's hit region entirely —
+//           and the page stays ~58px tall even while main has clipped the view to a 1px hairline. So
+//           an ungated region let the invisible strip claim a 42px band of the window and swallow
+//           the cursor reports the reveal depends on: measured, the app's reports stopped dead at
+//           y=42 across the bar's draggable middle while the no-drag control groups at either end
+//           still let them through, which is exactly "the titlebar only appears over the controls".
+test('dragZone html stops claiming the window while the bar is hidden', () => {
+  const html = dragZone({}).html
+  expect(html).toMatch(/body:not\(\.shown\)\s*\{[^}]*-webkit-app-region:\s*no-drag/)
+  expect(html).toMatch(/\.handle\s*\{[^}]*pointer-events:\s*none/s)
+  expect(html).toMatch(/body\.shown \.handle\s*\{[^}]*pointer-events:\s*auto/)
+})

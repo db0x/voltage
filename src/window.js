@@ -417,6 +417,12 @@ const DRAG_ZONE_FADE_MS        = 160
 // corner, or a wobble while reaching for a button — and the user has to approach the top edge again.
 // Only pointer-driven hides wait; a button press or the presence watchdog closes immediately.
 const DRAG_ZONE_HIDE_DELAY_MS  = 150
+// Diagnostic trace for the reveal, off unless VOLTAGE_DEBUG_DRAGZONE is set. The decision runs in the
+// main process from coordinates the page reports, so when the strip does not appear there is nothing
+// to inspect: a devtools console shows the page, not this. Launch the AppImage from a terminal with
+// the variable set and every step of the decision is printed.
+const dragZoneDebug = !!process.env.VOLTAGE_DEBUG_DRAGZONE
+const dzLog = (...a) => { if (dragZoneDebug) console.log('[dragzone]', ...a) }
 // Watchdog interval for the "has the pointer left the window?" check while the strip is shown. It is
 // a SAFETY NET for the exits no event reaches us for — chiefly a fast flick straight out of the
 // window that skips the overlay's 6px sensor band between two pointer samples, stranding the strip.
@@ -852,6 +858,7 @@ function createWindow(pkg, opts = {}) {
     let dragOverlay = null
     let dragShown = false
     if (viewMode.dragZone) {
+      dzLog('overlay created — the strip exists for this app')
       dragOverlay = new WebContentsView({
         webPreferences: { preload: viewMode.dragZone.preload, contextIsolation: true, nodeIntegration: false },
       })
@@ -992,29 +999,72 @@ function createWindow(pkg, opts = {}) {
         // here for the same reason — Wayland gives a client no pointer position once it leaves — so
         // that exit is reported by the overlay's own sensor band instead (the 'exit' action above).
         // clientX/Y are window-relative for a top-aligned frame.
-        onCursor: (x, y) => {
-          if (!Number.isFinite(x) || !Number.isFinite(y)) return
+        onCursor: (cssX, cssY) => {
+          if (!Number.isFinite(cssX) || !Number.isFinite(cssY)) return
           notePointer()  // the app view can see the cursor, so it is in the window
+          // clientX/Y arrive as CSS pixels OF THE PAGE, which the zoom factor scales; the window
+          // bounds below are window pixels. At any zoom but 1:1 the two are different units, and
+          // comparing them put the reveal band in the wrong place — on a page zoomed to 130% the
+          // strip stopped appearing where the cursor actually was. Convert once, here, so everything
+          // downstream speaks window pixels.
+          const zoom = (() => {
+            try { const z = appContents.getZoomFactor(); return z > 0 ? z : 1 } catch { return 1 }
+          })()
+          const x = cssX * zoom
+          const y = cssY * zoom
           const { width } = mainWindow.getContentBounds()
           const innerW  = Math.max(0, width - 2 * viewMode.margin)
           const handleW = dragZoneHandleWidth(innerW)
           const viewW   = handleW + 2 * DRAG_ZONE_PAD
           const viewH   = DRAG_ZONE_HEIGHT + DRAG_ZONE_PAD
           const dx      = Math.abs(x - innerW / 2)
+          if (dragZoneDebug) {
+            // The overlay's live bounds travel with every line: a strip that is still at full height
+            // while hidden covers the app view and stops the very reports this decision needs.
+            let ob = '?'
+            try { const b = dragOverlay.getBounds(); ob = `${b.width}x${b.height}+${b.x}+${b.y}` } catch { /* gone */ }
+            dzLog(`cursor css=(${cssX.toFixed(0)},${cssY.toFixed(0)}) zoom=${zoom} → win=(${x.toFixed(0)},${y.toFixed(0)}) ` +
+                  `innerW=${innerW} handleW=${handleW.toFixed(0)} dx=${dx.toFixed(0)} overlay=${ob} ` +
+                  `shown=${dragShown} wouldReveal=${y < DRAG_ZONE_SHOW_AT}`)
+          }
           if (!dragShown) {
-            // Reveal as soon as the cursor is near the very top AND over the visible control (not the
-            // transparent pad). No dwell time: the bar is meant to be there the moment you reach for
-            // it, and the reports are already throttled to 40ms by the preload.
-            if (y < DRAG_ZONE_SHOW_AT && dx <= handleW / 2) setShown(true)
-          } else if (y > viewH + DRAG_ZONE_EDGE_GRACE || dx > viewW / 2 + DRAG_ZONE_EDGE_GRACE) {
-            // The cursor has left the whole overlay view (control + shadow pad) — start the grace
-            // period rather than hiding outright.
+            // Reveal anywhere along the top edge, not just over the bar. The bar used to require the
+            // cursor to be within the visible control's own width, which on a wide window is only
+            // half the frame: measured on a 2052px window the zone ended at x=1539, and a hand
+            // heading for the top edge arrived at x≈1580 — forty pixels past it, so nothing happened.
+            // For a frameless widget this strip IS the titlebar, and there is no other way to reach
+            // the window controls with a mouse, so touching the top edge at all has to be enough.
+            // No dwell time either: the reports are already throttled to 40ms by the preload, and a
+            // fast diagonal approach can skip 200px between two samples.
+            if (y < DRAG_ZONE_SHOW_AT) setShown(true)
+          } else if (y > viewH + DRAG_ZONE_EDGE_GRACE) {
+            // Leaving DOWNWARDS is the only way out. There used to be a sideways test as well — hide
+            // once the cursor is further from the centre than the bar is wide — and it made sense
+            // while the reveal was just as narrow. Once the reveal covers the whole top edge the two
+            // disagree by a single pixel at the window's left and right: y<18 reveals, y>=18 is
+            // always outside the bar's width out there and hid again, so running along the top edge
+            // switched the bar on and off in alternation (measured: shown/hidden/shown within 3
+            // samples at y=17..22). A titlebar you can slide along is worth more than a sideways
+            // guard, so the bar now stays until the cursor drops below it.
             scheduleHide()
           } else {
-            // Still inside the overlay: whatever hide was pending is off.
+            // Still in the bar's band: whatever hide was pending is off.
             cancelHide()
           }
         },
+      })
+
+      // F9 toggles the strip from the keyboard. The reveal otherwise depends entirely on the PAGE
+      // reporting the cursor, and there are apps where it never can: under pointer lock (any canvas
+      // game — Diablo's emscripten runtime grabs it) Chromium freezes clientX/clientY at the position
+      // where the lock began, so the cursor "never" reaches the top edge no matter where the mouse
+      // really is. A frameless widget whose strip cannot appear has no titlebar at all: it cannot be
+      // moved, maximized or closed. before-input-event runs ahead of the page and the keyboard is
+      // unaffected by pointer lock, so this works where nothing else does.
+      appContents.on('before-input-event', (event, input) => {
+        if (input.type !== 'keyDown' || input.key !== 'F9') return
+        event.preventDefault()
+        setShown(!dragShown)
       })
 
       // Window-control buttons on the overlay (About/minimize/maximize/quit). The overlay preload
@@ -1300,7 +1350,8 @@ function createWindow(pkg, opts = {}) {
   })
 
   // F12 toggles the About panel; Shift+F12 toggles DevTools; F11 toggles fullscreen; Shift+F11
-  // toggles maximize for widgets. before-input-event fires ahead of the page, and preventDefault()
+  // toggles maximize for widgets. (F10 enters the widget's move mode and F9 toggles its drag strip —
+  // both are bound where those features live, in the widget plugin and the drag-zone setup above.) before-input-event fires ahead of the page, and preventDefault()
   // swallows the key so the web app never sees it.
   appContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') {

@@ -28,6 +28,15 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
     font: 13px/1 -apple-system, system-ui, sans-serif; }
   body { -webkit-app-region: drag; }
+  /* ...but ONLY once the bar is actually up. A drag region is computed from the PAGE's layout and
+     handed to the window as a region the window manager owns — Chromium takes it out of the
+     renderer's hit region entirely (see the note on the presence watchdog in src/window.js). The
+     page is ~58px tall even while the view is clipped to a 1px hairline, so the hidden strip claimed
+     a 42px band of the window and swallowed the mouse moves the reveal depends on. Measured: cursor
+     reports from the app stopped dead at y=42 everywhere across the bar's draggable middle, while
+     the control groups at either end — no-drag, and therefore still in the hit region — let them
+     through. That is the whole "it only reveals over the controls" report. */
+  body:not(.shown) { -webkit-app-region: no-drag; }
   .handle {
     position: absolute; top: 0; left: 16px; right: 16px; height: 42px;
     box-sizing: border-box;
@@ -48,8 +57,15 @@
     /* Fade duration must match DRAG_ZONE_FADE_MS in src/window.js (the height collapse is delayed by
        that long so the fade-out is visible). */
     opacity: 0; transition: opacity 160ms ease;
+    /* Invisible is not the same as absent: an element at opacity 0 still answers the hit test, so
+       while hidden this 42px-tall bar sat over the app view and SWALLOWED the mouse moves the reveal
+       depends on. The app then reported no cursor above y=42 anywhere near the centre, and the strip
+       could only be summoned out at the window's left and right where the bar does not reach — the
+       "it only works over the controls" report. Measured in a trace: the y values stopped dead at
+       42, the bar's exact height. */
+    pointer-events: none;
   }
-  body.shown .handle { opacity: 1; }
+  body.shown .handle { opacity: 1; pointer-events: auto; }
 
   /* Upward-exit sensor — a no-drag hairline band across the very top of the VIEW (not just the
      control: it spans the transparent pad too, so leaving sideways past the control also registers).

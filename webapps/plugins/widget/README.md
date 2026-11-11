@@ -28,8 +28,20 @@ separate `WebContentsView` on top of the app view) rather than marking a region 
 Chromium only honours `-webkit-app-region: drag` from a frame voltage owns — not from the
 cross-origin iframes some apps render their toolbars in (e.g. Office documents). It is invisible
 (1 px) until the cursor reaches the top-centre edge, then fades in as a translucent bar. The reveal
-zone is the topmost **18 px** of the app view, across the centred handle's width (the handle aims for
-960 px, clamped to 50–90 % of the window width — so it covers a larger share as the window narrows).
+zone is the topmost **18 px** of the app view, across its **full width**. It deliberately is not
+limited to the bar's own width: the bar aims for 960 px, clamped to 50–90 % of the window, so on a
+wide window that would leave the outer quarter on each side dead — and a hand heading for the top
+edge lands there. Measured on a 2052 px window the old zone ended at x=1539 while the cursor arrived
+at x≈1580. For a frameless widget this strip is the only titlebar there is, so touching the top edge
+at all has to be enough.
+**F9 toggles the bar from the keyboard**, and it is the only way that always works. The reveal
+above depends on the *page* reporting the cursor position, which some pages cannot do: under pointer
+lock — any canvas game — Chromium freezes `clientX`/`clientY` at the position where the lock began,
+so as far as the reveal is concerned the cursor never reaches the top edge again. A frameless widget
+whose bar cannot appear has no titlebar at all and can neither be moved nor closed, so there is a
+path that does not involve the mouse. `before-input-event` runs ahead of the page and the keyboard is
+unaffected by pointer lock.
+
 The bar appears immediately on entering that zone. It hides again once the cursor has clearly left
 the whole overlay (below it, or past either side, each with a small grace so the edges don't
 flicker) — and then only after a 150 ms delay, so a diagonal exit across a corner or a wobble while

@@ -3,8 +3,8 @@
   "description": "Turn any web app into a standalone Linux desktop application - packaged as an AppImage, with its own window, session, and taskbar entry.",
   "keywords": [],
   "main": "./main.js",
-  "version": "0.36.4",
-  "minAppImageVersion": "0.36.3",
+  "version": "0.37.0",
+  "minAppImageVersion": "0.37.0",
   "author": {
     "name": "db0x",
     "url": "https://github.com/db0x"
@@ -21,7 +21,7 @@
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@types/node": "^20",
-    "electron": "^42.0.1",
+    "electron": "^45.3.0",
     "electron-builder": "^26.4.0",
     "esbuild": "^0.21",
     "obsidian": "latest",
