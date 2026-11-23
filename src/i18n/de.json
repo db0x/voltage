@@ -27,6 +27,7 @@
   "errorRetry": "Neu laden",
   "errorClose": "App schließen",
   "errorTimedOut": "Zeitüberschreitung der Verbindung",
+  "errorHttpStatus": "Der Server antwortet mit {status}",
   "fullscreen": "Vollbild",
   "pointerLockToastLocked": "🔒 Maus gefangen — Esc zum Verlassen",
   "pointerLockToastUnlocked": "🔓 Maus frei",

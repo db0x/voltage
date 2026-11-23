@@ -13,6 +13,12 @@ keeps the wrapped page completely untouched — native scrolling and layout, no 
 tricks (which broke pages' own scroll containers). The plugin only injects a tint and hides
 scrollbars *inside* the view.
 
+The view itself is **opaque** (white, or dark under a dark system theme) unless `tintBackground` is
+on — the tint is the one feature that blends with the desktop on purpose. A page that paints no
+background of its own, such as a reverse proxy's bare 502 page, would otherwise put dark text
+straight onto the desktop. Pages with their own background (nearly all) cover the backdrop
+completely; the rounded corners come from the view's border radius, not from transparency.
+
 Consequences other code has to know about:
 
 - The app's `webContents` is **not** `win.webContents` — plugins must use `api.webContents`

@@ -27,6 +27,7 @@
   "errorRetry": "Reload",
   "errorClose": "Close app",
   "errorTimedOut": "Connection timed out",
+  "errorHttpStatus": "The server responded with {status}",
   "fullscreen": "Fullscreen",
   "pointerLockToastLocked": "🔒 Mouse captured — Esc to release",
   "pointerLockToastUnlocked": "🔓 Mouse free",

@@ -1,4 +1,4 @@
-const { BrowserWindow, WebContentsView, shell, ipcMain, dialog, app } = require('electron')
+const { BrowserWindow, WebContentsView, shell, ipcMain, dialog, app, nativeTheme } = require('electron')
 const path   = require('node:path')
 const fs     = require('node:fs')
 const crypto = require('node:crypto')
@@ -13,8 +13,14 @@ const { appIconCandidates } = require('./icon-paths')
 const { toggleAboutWindow } = require('./about-window')
 const { toggleFullscreen, toggleMaximize } = require('./fullscreen')
 const { t } = require('./i18n')
+const { isUnreachableStatus, statusReason } = require('./load-status')
 
 const ROUTING_FILE = path.join(app.getPath('appData'), 'voltage', 'plugins', 'routing', 'routing.json')
+
+// Opaque backdrop of a widget's app view (see paintBackdrop in createWindow): neutral page colours
+// for light and dark system themes, so the few pages without a background of their own stay legible.
+const VIEW_BACKDROP_LIGHT = '#ffffff'
+const VIEW_BACKDROP_DARK  = '#1e1e1e'
 
 // Standardised "page unavailable" screen, shown in the app view when the base URL fails to load or
 // hangs — without it a widget-mode app would leave only the transparent shadow frame. Read once.
@@ -70,10 +76,14 @@ function startingPageDataUrl(pkg, info = {}) {
 function installLoadGuard(appContents, pkg) {
   let timer = null
   let showingError = false
+  // Whether the next real top-level navigation is a START of the app (its configured URL, or the
+  // error page's retry of it) — only then does a 404 mean "the app is gone" (see load-status.js).
+  let startLoad = true
   const clear = () => { if (timer) { clearTimeout(timer); timer = null } }
   const showError = (reason) => {
     if (showingError) return
     showingError = true
+    startLoad = true  // the retry button re-loads the app URL: that is a fresh start again
     clear()
     try { appContents.stop() } catch {}
     // .catch: the failed/aborted load rejects loadURL's promise; the guard reacts via events, so
@@ -89,6 +99,17 @@ function installLoadGuard(appContents, pkg) {
     timer = setTimeout(() => showError(t().errorTimedOut || 'Connection timed out'), APP_LOAD_TIMEOUT_MS)
   })
   appContents.on('did-finish-load', clear)
+  // A server that ANSWERS with an error page (a proxy's 502/503/504 when the backend is down, a 404
+  // for a vanished entry point) is a successful load to Chromium, so did-fail-load never fires and
+  // that page used to be shown as the app. did-navigate (main frame only) carries the final status
+  // after redirects; data: pages (our own error/starting pages) are not the app and are skipped.
+  appContents.on('did-navigate', (_e, url, httpResponseCode, httpStatusText) => {
+    if ((url || '').startsWith('data:')) return
+    const isStart = startLoad
+    startLoad = false
+    if (isUnreachableStatus(httpResponseCode, isStart))
+      showError(statusReason(t().errorHttpStatus, httpResponseCode, httpStatusText))
+  })
   appContents.on('did-fail-load', (_e, errorCode, errorDesc, _validatedURL, isMainFrame) => {
     if (!isMainFrame) return
     if (errorCode === -3) return  // ERR_ABORTED: navigation replaced or our own stop() — not a failure
@@ -762,7 +783,8 @@ function collectPluginViewMode(pkg) {
         // Optional self-owned top drag strip ({ html, preload } | null); rendered by createWindow as
         // a WebContentsView on top of the app view when present.
         const dragZone = typeof mod.dragZone === 'function' ? mod.dragZone(config) : null
-        return { margin: vc.margin ?? 0, radius: vc.radius ?? 0, hostHtml: String(mod.hostHtml(config) ?? ''), dragZone }
+        return { margin: vc.margin ?? 0, radius: vc.radius ?? 0, transparent: !!vc.transparent,
+                 hostHtml: String(mod.hostHtml(config) ?? ''), dragZone }
       }
     } catch (err) {
       console.error(`[plugin] viewConfig failed for ${rel}:`, err)
@@ -838,10 +860,21 @@ function createWindow(pkg, opts = {}) {
     const appView = new WebContentsView({ webPreferences: appWebPreferences })
     mainWindow.contentView.addChildView(appView)
     appContents = appView.webContents
-    // Transparent view background: without this the view paints an opaque (white) backdrop, so a
-    // semi-transparent tint blends with THAT instead of the desktop. (On some Linux/Wayland setups
-    // WebContentsView still composites opaquely — a known limitation.)
-    appView.setBackgroundColor('#00000000')
+    // Backdrop behind the page. Transparent ONLY when the plugin asks for it (the widget tint, which
+    // blends with the desktop on purpose — on some Linux/Wayland setups a WebContentsView still
+    // composites opaquely, a known limitation). Otherwise opaque and theme-matched: a page that paints
+    // no background of its own — a proxy's bare 502, a maintenance notice — used to put dark text
+    // straight onto the desktop and was all but unreadable. Pages with their own background (nearly
+    // all) cover it completely, so for them nothing changes; the rounded corners come from
+    // setBorderRadius below, not from the transparency.
+    const paintBackdrop = () => appView.setBackgroundColor(
+      viewMode.transparent ? '#00000000' : (nativeTheme.shouldUseDarkColors ? VIEW_BACKDROP_DARK : VIEW_BACKDROP_LIGHT))
+    paintBackdrop()
+    // Follow a theme switch while the app runs; dropped with the window.
+    if (!viewMode.transparent) {
+      nativeTheme.on('updated', paintBackdrop)
+      mainWindow.on('closed', () => nativeTheme.removeListener('updated', paintBackdrop))
+    }
     // Round the view's corners natively (Electron ≥30); guarded so an older runtime degrades to
     // square corners instead of throwing.
     if (typeof appView.setBorderRadius === 'function') appView.setBorderRadius(viewMode.radius)

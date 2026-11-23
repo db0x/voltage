@@ -212,7 +212,11 @@ function windowOptions() {
 // radius. Shadow off → margin 0 (the view fills the window, still rounded).
 function viewConfig(config) {
   const margin = shadowEnabled(config) ? SHADOW_OFFSET + resolveShadowWidth(config) + 1 : 0
-  return { margin, radius: resolveRadius(config) }
+  // transparent: whether the app view must let the desktop show through. Only the tint needs that —
+  // it clears the page's root backgrounds on purpose. Every other widget gets an opaque backdrop, so
+  // a page without a background of its own (a proxy's bare 502, a maintenance notice) stays readable
+  // instead of printing dark text straight onto the desktop.
+  return { margin, radius: resolveRadius(config), transparent: tintEnabled(config) }
 }
 
 // The host page: a transparent rounded rectangle the size/position of the app view, carrying the
