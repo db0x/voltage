@@ -116,6 +116,7 @@ function expandConfig(app) {
       ...(app.rcloneEditUrlBase && { rcloneEditUrlBase:   app.rcloneEditUrlBase }),
       ...(app.mimeTypes?.length  && { mimeTypes:            app.mimeTypes }),
       ...(app.mailtoTemplate    && { mailtoTemplate:       app.mailtoTemplate }),
+      ...(app.promptTemplate    && { promptTemplate:       app.promptTemplate }),
       ...(app.mailtoParamMap    && { mailtoParamMap:       app.mailtoParamMap }),
       ...(plugins               && { plugins }),
       // Per-plugin settings (e.g. widget radius) must travel into the AppImage's package.json so

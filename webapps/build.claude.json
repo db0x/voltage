@@ -1,8 +1,17 @@
 {
     "profile": "claude",
     "url": "https://claude.ai/new",
+    "promptTemplate": "https://claude.ai/new?q={prompt}",
     "name": "Anthrop\\c Claude AI",
-    "icon":"claude",
-    "geometry": { "width": 1024, "height": 1280, "x": 64, "y": 128 },
-    "internalDomains": ["accounts.google.com", "github.com"]
+    "icon": "claude",
+    "geometry": {
+        "width": 1024,
+        "height": 1280,
+        "x": 64,
+        "y": 128
+    },
+    "internalDomains": [
+        "accounts.google.com",
+        "github.com"
+    ]
 }
