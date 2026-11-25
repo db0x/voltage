@@ -392,3 +392,22 @@ test.describe('two apps on ONE self-hosted service, split by file type', () => {
     expect(primaryKeyFromUrl('http://localhost:5001')).toBe(primaryKeyFromUrl('http://localhost:5001'))
   })
 })
+
+// Setup:    The shipped Teams configs, which start on teams.cloud.microsoft, and a meeting link the
+//           way Outlook hands it out — on the OLD host, teams.microsoft.com.
+// Action:   Build the routing table entries both configs contribute, then resolve the link.
+// Expected: The link routes to vTeams. Microsoft moved Teams to the cloud.microsoft domain but meeting
+//           invitations still carry teams.microsoft.com; without the routingUrls entry those links had
+//           no route at all and fell through to the system browser.
+test('Teams meeting links on the old host still route to the Teams app', () => {
+  const { findRoute, routingUrlKeys, primaryKeyFromUrl } = require('../src/routing-match')
+  for (const file of ['build.teams.json', 'build.private.teams.json']) {
+    let cfg
+    try { cfg = require(`../webapps/${file}`) } catch { continue }  // the private config is gitignored
+    const entry = { path: '/dist/vTeams', name: cfg.name }
+    const table = { base: { [primaryKeyFromUrl(cfg.url)]: entry }, routing: {} }
+    for (const key of routingUrlKeys(cfg)) table.routing[key] = entry
+    const link = new URL('https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=%7b%7d')
+    expect(findRoute(table, link.host, link.pathname + link.search)?.entry).toBe(entry)
+  }
+})

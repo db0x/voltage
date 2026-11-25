@@ -17,4 +17,24 @@ function launchTarget(windows = []) {
   return { win, contents: win._voltageAppContents ?? win.webContents }
 }
 
-module.exports = { launchTarget }
+
+// --- Host aliases --------------------------------------------------------------------------------
+// A service reachable under several hostnames (Teams: teams.cloud.microsoft, but meeting invitations
+// still say teams.microsoft.com) must open every link on its OWN origin. Loading the alias host put
+// the app on a different origin — separate cookies and storage, and Microsoft's "Teams will soon
+// have a new URL" banner — and it stayed there. hostAliases names those hosts; a link on one keeps
+// its path, query and hash but gets the app's own scheme and host.
+//
+// Deliberately NOT done for routingUrls: those also pull in OTHER services' links (SharePoint
+// documents routed to the Office apps), which need their full URL untouched.
+function canonicalAppUrl(pkg, url) {
+  if (!url || !Array.isArray(pkg?.hostAliases) || pkg.hostAliases.length === 0) return url
+  let link, own
+  try { link = new URL(url); own = new URL(pkg.startUrl || pkg.url) } catch { return url }
+  if (!/^https?:$/.test(link.protocol)) return url
+  const aliases = pkg.hostAliases.map(h => String(h).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
+  if (!aliases.includes(link.host.toLowerCase())) return url
+  return `${own.protocol}//${own.host}${link.pathname}${link.search}${link.hash}`
+}
+
+module.exports = { launchTarget, canonicalAppUrl }

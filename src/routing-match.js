@@ -219,7 +219,10 @@ function routingKeysForConfig(cfg) {
 // Returns the routing keys a config's routingUrls claim (empty when it has none).
 function routingUrlKeys(cfg) {
   const keys = []
-  for (const extra of cfg.routingUrls ?? []) {
+  // hostAliases (other hostnames of the SAME service, e.g. teams.microsoft.com for an app on
+  // teams.cloud.microsoft) route here too: a link on an alias is a link to this app. Listed alongside
+  // routingUrls so the overlap check covers them as well — two apps cannot claim the same alias.
+  for (const extra of [...(cfg.routingUrls ?? []), ...(cfg.hostAliases ?? [])]) {
     const k = urlToRoutingKey(extra)
     if (k) keys.push(k)
   }

@@ -12,7 +12,7 @@ const pkg = require(app.getAppPath() + '/package.json')
 const { createWindow, dispatchLaunchArg } = require('./window')
 const { parseMailtoFields }         = require('./mailto')
 const { promptFromArgv, promptUrl } = require('./prompt-arg')
-const { launchTarget }              = require('./launch-target')
+const { launchTarget, canonicalAppUrl } = require('./launch-target')
 const { wmClass, appName }          = require('./app-naming')
 const { profileDir }                = require('./app-paths')
 const { t }                         = require('./i18n')
@@ -186,7 +186,8 @@ module.exports = function setupAppWindow() {
   // src/prompt-arg.js). It outranks a URL/file argument: both name the page to open, and the prompt
   // is the more specific request. Null when no prompt was given or the app declares no template.
   const promptArg = (argv) => promptUrl(pkg.promptTemplate, promptFromArgv(argv))
-  const urlArg   = promptArg(process.argv) ?? resolveUrl(rawArg) ?? resolveFileUrl(rawArg)
+  // A link on one of the app's hostAliases is opened on the app's own origin (launch-target.js).
+  const urlArg   = promptArg(process.argv) ?? canonicalAppUrl(pkg, resolveUrl(rawArg)) ?? resolveFileUrl(rawArg)
 
   // Single-instance lock: if another process already holds it, quit immediately.
   // The second-instance handler forwards the new argument to the running window: a URL is
@@ -197,7 +198,7 @@ module.exports = function setupAppWindow() {
     if (!gotLock) { app.quit(); return }
     app.on('second-instance', (event, argv) => {
       const raw2 = findArg(argv)
-      const url  = promptArg(argv) ?? resolveUrl(raw2) ?? resolveFileUrl(raw2)
+      const url  = promptArg(argv) ?? canonicalAppUrl(pkg, resolveUrl(raw2)) ?? resolveFileUrl(raw2)
       // The app's own window and the webContents the app actually lives in — NOT simply the first
       // window's webContents, which in widget mode is the shadow host page (see launch-target.js).
       const target = launchTarget(BrowserWindow.getAllWindows())

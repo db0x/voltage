@@ -48,3 +48,51 @@ test('no window yields null, an untagged window falls back to its webContents', 
   expect(launchTarget([])).toBeNull()
   expect(launchTarget([popup]).contents).toBe(popup.webContents)
 })
+
+// ── Host aliases: a link on another hostname of the same service opens on the app's own origin ────
+const { canonicalAppUrl } = require('../src/launch-target')
+const { expandConfig } = require('../scripts/build')
+const TEAMS_APP = { url: 'https://teams.cloud.microsoft', hostAliases: ['teams.microsoft.com'] }
+
+// Setup:    Teams on teams.cloud.microsoft, a meeting link from Outlook on teams.microsoft.com.
+// Action:   Canonicalize the link.
+// Expected: Same path, query and hash on the app's own host. Loading the alias host put Teams on a
+//           different origin — own cookies and storage, plus Microsoft's "new URL" banner — and it
+//           stayed there.
+test('a link on a host alias is rewritten to the app origin, path intact', () => {
+  expect(canonicalAppUrl(TEAMS_APP, 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_x/0?context=%7b%7d#top'))
+    .toBe('https://teams.cloud.microsoft/l/meetup-join/19%3ameeting_x/0?context=%7b%7d#top')
+})
+
+// Setup:    Links that are NOT on an alias: the app's own host, a foreign host, a non-web argument,
+//           and an app without aliases.
+// Action:   Canonicalize them.
+// Expected: Returned unchanged. In particular links pulled in via routingUrls (SharePoint documents
+//           for the Office apps) must keep their full URL — rewriting their host would break them.
+test('links that are not on an alias pass through untouched', () => {
+  expect(canonicalAppUrl(TEAMS_APP, 'https://teams.cloud.microsoft/v2/')).toBe('https://teams.cloud.microsoft/v2/')
+  expect(canonicalAppUrl(TEAMS_APP, 'https://contoso.sharepoint.com/:w:/r/doc.docx')).toBe('https://contoso.sharepoint.com/:w:/r/doc.docx')
+  expect(canonicalAppUrl(TEAMS_APP, 'mailto:a@b.c')).toBe('mailto:a@b.c')
+  expect(canonicalAppUrl({ url: 'https://x.example' }, 'https://teams.microsoft.com/l/x')).toBe('https://teams.microsoft.com/l/x')
+  expect(canonicalAppUrl(TEAMS_APP, null)).toBeNull()
+})
+
+// Setup:    An app that was itself launched on a deep link (startUrl is the configured start URL).
+// Action:   Canonicalize an alias link.
+// Expected: The configured origin is used, not the deep link's — the same rule plugins follow.
+test('the configured start URL decides the origin', () => {
+  const pkg = { ...TEAMS_APP, url: 'https://teams.cloud.microsoft/l/somewhere', startUrl: 'https://teams.cloud.microsoft' }
+  expect(canonicalAppUrl(pkg, 'https://teams.microsoft.com/l/x')).toBe('https://teams.cloud.microsoft/l/x')
+})
+
+// Setup:    A config with hostAliases.
+// Action:   Derive its routing keys, and run it through the build's config expander.
+// Expected: The alias is a routing key (so the link reaches the app at all) and it is baked into the
+//           AppImage (so the runtime can rewrite it) — one entry does both jobs.
+test('hostAliases route to the app and are baked into the AppImage', () => {
+  const { routingUrlKeys } = require('../src/routing-match')
+  expect(routingUrlKeys(TEAMS_APP)).toContain('teams.microsoft.com')
+  const base = { profile: 'demo', url: 'https://example.com' }
+  expect('hostAliases' in expandConfig(base).extraMetadata).toBe(false)
+  expect(expandConfig({ ...base, hostAliases: ['old.example.com'] }).extraMetadata.hostAliases).toEqual(['old.example.com'])
+})
