@@ -14,6 +14,7 @@ const { toggleAboutWindow } = require('./about-window')
 const { toggleFullscreen, toggleMaximize } = require('./fullscreen')
 const { t } = require('./i18n')
 const { isUnreachableStatus, statusReason } = require('./load-status')
+const { isBlankPopup, opensInApp } = require('./popup-policy')
 
 const ROUTING_FILE = path.join(app.getPath('appData'), 'voltage', 'plugins', 'routing', 'routing.json')
 
@@ -1240,29 +1241,40 @@ function createWindow(pkg, opts = {}) {
     appContents.loadURL(pkg.url).catch(() => {})
   }
 
+  // Pop-ups: see src/popup-policy.js for the rules. appOrigin is read live (it can change once a
+  // launch resolver provides the real URL).
+  const popupPolicy = () => ({ appOrigin, internalDomains, externalPopups: !!pkg.externalPopups })
+  // Blank pop-ups our handler let through and that did-create-window has not picked up yet. Counted
+  // rather than flagged per window because the two callbacks are not linked by any id — and counted
+  // at all so the guard below only ever applies to windows THIS handler allowed: a plugin that installs
+  // its own open handler (ms-office, which uses hidden blank placeholders of its own) replaces this
+  // one, and its windows must not be second-guessed here.
+  let pendingBlankPopups = 0
   appContents.setWindowOpenHandler(({ url }) => {
     try {
-      const targetUrl = new URL(url)
-      // Allow whitelisted internal domains (e.g., accounts.google.com). Checked FIRST because the
-      // whitelist exists precisely to keep those pages in the app window — externalPopups must not
-      // defeat it, or setting both options would silently break an SSO popup flow.
-      if (internalDomains.some(domain =>
-        targetUrl.hostname === domain || targetUrl.hostname.endsWith('.' + domain)
-      )) {
-        return { action: 'allow' }
-      }
-      // Allow same-origin URLs (OAuth redirects, etc.) — unless the app asked for every pop-up to go
-      // to the system browser. Some apps use target=_blank on their OWN pages as a "new tab", which
-      // has no meaning here and would otherwise spawn a second Electron window per link.
-      if (!pkg.externalPopups && targetUrl.origin === appOrigin) {
-        return { action: 'allow' }
-      }
+      if (isBlankPopup(url)) { pendingBlankPopups++; return { action: 'allow' } }
+      if (opensInApp(url, popupPolicy())) return { action: 'allow' }
       // External URLs: route to another voltage app or open in system browser
       if (!routeExternalUrl(url, pkg.profile)) shell.openExternal(url)
       return { action: 'deny' }
     } catch (err) {
       return { action: 'deny' }
     }
+  })
+  // A blank pop-up is usually filled in place (a Picture-in-Picture call window, a print preview). But
+  // some pages open an empty window first — so pop-up blockers let it through — and only then send it
+  // to its real address. If that address is not one the app keeps in-house, the window would otherwise
+  // show a foreign page as a bare Electron window with none of the app's plugins: hand it on like any
+  // other external pop-up instead, and close the placeholder.
+  appContents.on('did-create-window', (child, details) => {
+    if (!isBlankPopup(details?.url ?? '') || pendingBlankPopups === 0) return
+    pendingBlankPopups--
+    child.webContents.on('will-navigate', (event, navUrl) => {
+      if (isBlankPopup(navUrl) || opensInApp(navUrl, popupPolicy())) return
+      event.preventDefault()
+      if (!routeExternalUrl(navUrl, pkg.profile)) shell.openExternal(navUrl)
+      child.close()
+    })
   })
 
   customSession.on('will-download', (_event, item) => {
